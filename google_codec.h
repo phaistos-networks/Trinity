@@ -8,8 +8,8 @@ namespace Trinity
         {
                 namespace Google
                 {
-                        static constexpr size_t N{2};
-                        static constexpr size_t SKIPLIST_STEP{1}; // generate a new skiplist entry every that many blocks
+                        static constexpr size_t N{2}; 			// block size (Google's block size is 32)
+                        static constexpr size_t SKIPLIST_STEP{1}; 	// generate a new skiplist entry every that many blocks
 
 			struct IndexSession final
 				 : public Trinity::Codecs::IndexSession
@@ -26,7 +26,6 @@ namespace Trinity
 
 				}
 
-                                // you are expected to have invoked encoder->begin_term() and to invoke encoder->end_term() on completion
                                 void merge(range_base<const uint8_t *, uint32_t> *in, const uint32_t chunksCnt, Trinity::Codecs::Encoder *const encoder, dids_scanner_registry *maskedDocuments) override final;
 			};
 
@@ -158,11 +157,8 @@ namespace Trinity
                                 const uint8_t *p, *chunkEnd;
                                 uint8_t blockDocIdx;
                                 uint32_t blockLastDocID{0};
-
                                 uint32_t freqs[N];
-
                                 uint32_t skipListIdx;
-
                                 const uint8_t *base;
                                 std::vector<std::pair<uint32_t, uint32_t>> skiplist;
 
@@ -189,8 +185,6 @@ namespace Trinity
                                 void skip_remaining_block_documents();
 
                               public:
-                                void materialize_attributes();
-
                                 uint32_t begin() override final;
 
                                 Decoder &operator++()
@@ -219,15 +213,7 @@ namespace Trinity
 
                                 bool seek(const uint32_t target) override final;
 
-                        	void materialize_hits(DocWordsSpace *dwspace, term_hit *out) override final
-				{
-
-				}
-
-				bool materialize_hits_with_phrase_prevterm_check(DocWordsSpace *dwspace, term_hit *out, const exec_term_id_t prevPhraseTermID) override final
-				{
-					return false;
-				}
+                        	void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) override final;
 
 				void init(const term_segment_ctx &tctx, Trinity::Codecs::AccessProxy *access, const uint8_t *) override final;
                         };

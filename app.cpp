@@ -101,7 +101,7 @@ int main(int argc, char *argv[])
 	encoder.begin_term();
 	
 	encoder.begin_document(11, 1);
-	encoder.new_position(2);
+	encoder.new_position(51);
 	encoder.end_document();
 
 	encoder.begin_document(50, 1);

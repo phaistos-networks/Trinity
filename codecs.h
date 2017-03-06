@@ -64,6 +64,7 @@ namespace Trinity
 		term_segment_ctx()= default;
         };
  
+	// a materialized document term hit
 	struct term_hit final
         {
                 uint64_t payload;
@@ -153,6 +154,7 @@ namespace Trinity
                 {
                         virtual uint32_t begin() = 0;
 
+			// returns false if no documents list has been exchausted
                         virtual bool next() = 0;
 
                         virtual bool seek(const uint32_t target) = 0;
@@ -162,9 +164,10 @@ namespace Trinity
 
 			virtual uint16_t cur_doc_freq() = 0;
 
-                        virtual void materialize_hits(DocWordsSpace *dwspace, term_hit *out) = 0;
-
-			virtual bool materialize_hits_with_phrase_prevterm_check(DocWordsSpace *dwspace, term_hit *out, const exec_term_id_t prevPhraseTermID) = 0;
+			// XXX: if you materialize, it's likely that cur_doc_freq() will return, at best, 0
+			// so you should not materialize if have already done so -- if you know the codec you use
+			// will reset freqs tracker internally so that cur_doc_freq() == 0 you can check for that
+                        virtual void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) = 0;
 
 			// not going to rely on a constructor for initialization because
 			// we want to force subclasses to define a method with this signature
@@ -191,7 +194,7 @@ namespace Trinity
 			AccessProxy(const char *bp, const uint8_t *index_ptr)
 				: basePath{bp}, indexPtr{index_ptr}
 			{
-
+				// Subclasses should open files, etc
 			}
 
                         virtual ~AccessProxy()

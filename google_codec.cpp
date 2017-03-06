@@ -304,6 +304,24 @@ void Trinity::Codecs::Google::Decoder::skip_block_doc()
 	// the document attributes with materialize_attributes()
 }
 
+void Trinity::Codecs::Google::Decoder::materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out)
+{
+	const auto freq = freqs[blockDocIdx];
+	uint16_t pos{0};
+
+	for (uint16_t i{0}; i != freq; ++i)
+	{
+		pos+=Compression::UnpackUInt32(p);
+		dwspace->set(termID, pos);
+		out[i] = {0, pos, 0};
+	}
+
+	// reset explicitly
+	// we have already materialized here
+	// This is also important because otherwise next() and skip() would haywire
+	freqs[blockDocIdx] = 0; 
+}
+
 void Trinity::Codecs::Google::Decoder::unpack_block(const uint32_t thisBlockLastDocID, const uint8_t n)
 {
 	const auto k{n - 1};
@@ -403,22 +421,6 @@ void Trinity::Codecs::Google::Decoder::skip_remaining_block_documents()
 			++blockDocIdx;
 	}
 }
-
-void Trinity::Codecs::Google::Decoder::materialize_attributes()
-{
-	const auto freq = freqs[blockDocIdx];
-
-	for (uint32_t i{0}; i != freq; ++i)
-		Compression::UnpackUInt32(p);
-
-	// need to reset freqs[blockDocIdx] to 0 because
-	// we have already avanced ptr.
-	// We could have used a local ptr = p and advanced that instead
-	// but for performance reasons we will reset freqs[blockDocIdx] so that
-	// skip_block_doc() won't need to unpack varints again
-	freqs[blockDocIdx] = 0;
-}
-
 
 uint32_t Trinity::Codecs::Google::Decoder::begin()
 {

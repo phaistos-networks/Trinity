@@ -10,7 +10,7 @@ namespace Trinity
                 struct position
                 {
                         uint16_t docSeq;
-                        exec_term_id_t termID; // term index into a runtime_ctx tokens
+                        exec_term_id_t termID;  // See IMPL.md
                 };
 
                 position *const positions;
@@ -31,6 +31,11 @@ namespace Trinity
 
 		void reset(const uint32_t did)
 		{
+			// in order to avoid resetting/clearing positions[] for every other document
+			// we track a document-specific identifier in positions[] so if positions[idx].docSeq != curDocSeq
+			// then whatever is in positions[] is stale and should be considered unset.
+			// In a previous Trinity design we stored the document ID as u32 but that is excessive, we care about cache-misses
+			// so now we instead use a `uint16_t curSeq` and periodically clear. This should be more efficient.
                         if (curSeq == UINT16_MAX)
                         {
 				// we reset every 65k documents
@@ -42,7 +47,7 @@ namespace Trinity
                                 ++curSeq;
 		}
 
-		void set(const exec_term_id_t termID, const uint16_t pos) noexcept
+		[[gnu::always_inline]] void set(const exec_term_id_t termID, const uint16_t pos) noexcept
 		{
                         positions[pos] = {curSeq, termID};
 		}
@@ -62,7 +67,7 @@ namespace Trinity
 		// and iterate across all hits, and for each hit, see if it is set
 		// in the adjacement position for the next phrase term, and the next, and so on, but 
 		// we would need to track the offset(relative index in the phrase)
-		// this is an example impl.
+		// This is an example/reference implementation
 		bool test_phrase(const std::vector<exec_term_id_t> &phraseTerms, const uint16_t *phraseFirstTokenPositions, const uint16_t phraseFirstTokenPositionsCnt) const;
         };
 }

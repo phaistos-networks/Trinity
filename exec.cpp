@@ -83,6 +83,12 @@ struct runtime_ctx
 
 			freq = newFreq;
                 }
+
+		~term_hits()
+		{
+			if (all)
+				free(all);
+		}
 	};
 
 
@@ -101,7 +107,7 @@ struct runtime_ctx
 
 			th->docID = curDocID;
 			th->set_freq(docHits);
-			dec->materialize_hits(&docWordsSpace, th->all);
+			dec->materialize_hits(termID, &docWordsSpace, th->all);
 		}
 
 		return th;
@@ -624,13 +630,22 @@ static inline uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
 
 static uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
 {
+	static constexpr bool trace{true};
         auto p = rctx.evalnode_contexts.phrases + self.nodeCtxIdx;
         const auto firstTermID = p->termIDs[0];
         auto decoder = rctx.decode_ctx.decoders[firstTermID];
         const auto did = rctx.curDocID;
 
+	if (trace)
+		SLog("PHRASE CHECK document ", rctx.curDocID, "\n");
+
+
         if (!decoder->seek(did))
+	{
+		if (trace)
+			SLog("Failed for first phrase token\n");
                 return 0;
+	}
 
         const auto n = p->size;
 
@@ -639,8 +654,15 @@ static uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
                 const auto termID = p->termIDs[i];
                 auto decoder = rctx.decode_ctx.decoders[termID];
 
+		if (trace)
+			SLog("Phrase token ", i, " ", termID, "\n");
+
                 if (!decoder->seek(did))
+		{
+			if (trace)
+				SLog("Failed for phrase token\n");
                         return 0;
+		}
 
 		rctx.materialize_term_hits(termID);
         }
@@ -654,7 +676,8 @@ static uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
         {
                 if (const auto pos = firstTermHits[i].pos)
                 {
-			SLog("<< POS ", pos, "\n");
+			if (trace)
+				SLog("<< POS ", pos, "\n");
 
                         for (uint8_t k{1};; ++k)
                         {
