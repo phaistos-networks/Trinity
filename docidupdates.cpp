@@ -49,10 +49,10 @@ void Trinity::pack_updates(std::vector<uint32_t> &updatedDocumentIDs, IOBuffer *
 // see pack_updates()
 // use this function to unpack the represetnation we need to access the packed (into bitmaps)
 // updated documents
-Trinity::updated_documents Trinity::unpack_updates(const range_base<const uint8_t *, size_t> content)
+Trinity::updated_documents Trinity::unpack_updates(const range_base<const uint8_t *, uint32_t> content)
 {
 	if (content.size() <= sizeof(uint32_t) + sizeof(uint8_t))
-		return {nullptr, 0, 0, nullptr};
+		return {};
 
 	const auto *const b = content.start();
 	const auto *p = b + content.size();

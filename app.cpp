@@ -1,7 +1,7 @@
 #include "exec.h"
 #include "google_codec.h"
 #include "indexer.h"
-#include "index_source.h"
+#include "playground_index_source.h"
 #include "terms.h"
 #include <set>
 
@@ -302,18 +302,18 @@ int main(int argc, char *argv[])
 
 
 	std::unique_ptr<Trinity::Codecs::Google::AccessProxy> ap(new Trinity::Codecs::Google::AccessProxy("/tmp/", (uint8_t *)sess.indexOut.data()));
-	auto seg = Switch::make_sharedref<SegmentIndexSource>(ap.release());
+	auto idxSrc = Switch::make_sharedref<PlaygroundIndexSource>(ap.release());
 
-	seg->tctxMap.insert({"apple"_s8, appleTCTX});
-	seg->tctxMap.insert({"iphone"_s8, iphoneTCTX});
-	seg->tctxMap.insert({"crap"_s8, crapTCTX});
+	idxSrc->tctxMap.insert({"apple"_s8, appleTCTX});
+	idxSrc->tctxMap.insert({"iphone"_s8, iphoneTCTX});
+	idxSrc->tctxMap.insert({"crap"_s8, crapTCTX});
 
 
 	//query q("apple OR iphone NOT crap"_s32);
 	query q("\"apple iphone\""_s32);
 	auto maskedDocumentsRegistry = dids_scanner_registry::make(nullptr, 0);
 
-	exec_query(q, seg.get(), maskedDocumentsRegistry);
+	exec_query(q, idxSrc.get(), maskedDocumentsRegistry);
 
 
         return 0;

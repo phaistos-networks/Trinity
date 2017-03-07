@@ -175,10 +175,12 @@ namespace Trinity
 		// All AccessProxy instances have a pointer to the actual index(posts lists) in common
 		struct AccessProxy
                 {
-			const char *basePath;
+			const char *basePath;	 // not really necessary, but keep it around just in case
 			const uint8_t *const indexPtr;
 
 			// utility function: returns a new decoder for posts list
+			// Some codecs(e.g lucene's) may need to access the filesystem and/or other codec specific state
+			// AccessProxy faciliates that (this is effectively a pointer to self)
                         virtual Decoder *decoder(const term_index_ctx &tctx, AccessProxy *access, const uint8_t *skiplistData) = 0;
 
 			AccessProxy(const char *bp, const uint8_t *index_ptr)

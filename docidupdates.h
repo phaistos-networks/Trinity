@@ -6,7 +6,7 @@ namespace Trinity
 {
         struct updated_documents final
         {
-                const uint32_t *skiplist{nullptr};
+                const uint32_t *skiplist;
                 const uint32_t skiplistSize;
                 const uint32_t bankSize;
                 const uint8_t *banks;
@@ -67,7 +67,7 @@ namespace Trinity
 
 	void pack_updates(std::vector<uint32_t> &updatedDocumentIDs, IOBuffer *const buf);
 
-	updated_documents unpack_updates(const range_base<const uint8_t *, size_t> content);
+	updated_documents unpack_updates(const range_base<const uint8_t *, uint32_t> content);
 
 	struct dids_scanner_registry final
 	{
