@@ -31,6 +31,7 @@ int main(int argc, char *argv[])
         }
 
 
+#if 0
 	{
 		auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/1/");
 		auto maskedDocuments = dids_scanner_registry::make(nullptr, 0);
@@ -41,6 +42,27 @@ int main(int argc, char *argv[])
 		free(maskedDocuments);
 		ss->Release();
 	}
+#else
+	{
+		query q("apple");
+		IndexSourcesCollection bpIndex;
+		auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/1/");
+
+		bpIndex.insert(ss);
+		ss->Release();
+	
+		bpIndex.commit();
+
+		for (uint32_t i{0}; i != bpIndex.sources.size(); ++i)
+		{
+			auto source = bpIndex.sources[i];
+			auto reg = bpIndex.scanner_registry_for(i);
+
+			exec_query(q, source, reg);
+			free(reg);
+		}
+	}
+#endif
 
         return 0;
 }
