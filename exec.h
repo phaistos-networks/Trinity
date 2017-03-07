@@ -6,4 +6,6 @@
 namespace Trinity
 {
 	bool exec_query(const query &in, IndexSource *, dids_scanner_registry *const maskedDocumentsRegistry);
+
+        bool exec_query(const query &in, IndexSourcesCollection *collection);
 };

@@ -96,29 +96,8 @@ namespace Trinity
         // for all more recent sources.
         //
         // It also retains all sources.
-        // In this example, we are executing the query in sequence, but you could do this in parallel using multiple threads and just collect the top-K results from each
-        // and merge/reduce them in the end.
-        /*
-	 *
-		IndexSourcesCollection bpIndex;
-
-		bpIndex.insert(source1);
-		bpIndex.insert(source2);
-		bpIndex.commit();
-
-		source1->Release();
-		source2->Release();
-
-		for (uint32_t i{0}; i != bpIndex.sources.size(); ++i)
-		{
-			auto source = bpIndex.sources[i];
-			auto scanner = bpIndex.scanner_registry_for(i);
-
-			exec_query(query, source, scanner);
-			free(scanner);
-		}
-	*
-	*/
+	// See Trinity::exec_query(const query&, IndexSourcesCollection *) for how to do this in sequence, but you can and should do
+	// this in paralle using multple threads and collecting the top-k results from every exec() and then use merge/reduce to come up with the final set of top-k results
         class IndexSourcesCollection final
         {
               private:

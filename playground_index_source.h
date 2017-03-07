@@ -14,6 +14,7 @@ namespace Trinity
                 PlaygroundIndexSource(Trinity::Codecs::AccessProxy *const ap) // segment assumes ownership of the provided AccessProxy
                     : accessProxy{ap}
                 {
+			gen = Timings::Microseconds::SysTime();
                 }
 
                 Switch::unordered_map<strwlen8_t, term_index_ctx> tctxMap; // for debugging

@@ -5,6 +5,7 @@
 #include "terms.h"
 #include "segment_index_source.h"
 #include <set>
+#include <text.h>
 
 
 using namespace Trinity;
@@ -14,12 +15,36 @@ int main(int argc, char *argv[])
 	{
                 SegmentIndexSession sess;
 
+                const auto index_document = [](auto &documentSess, const strwlen32_t input) {
+			uint32_t pos{1};
+
+                        for (const auto *p = input.data(), *const e = p + input.size(); p != e;)
+                        {
+                                if (const auto len = Text::TermLengthWithEnd(p, e))
+                                {
+					documentSess.insert(strwlen8_t(p, len), pos++);
+					p+=len;
+                                }
+                                else
+				{
+					if (!isblank(*p))
+						++pos;
+                                        ++p;
+				}
+                        }
+                };
+
                 {
                         auto doc = sess.begin(1);
 
-                        doc.insert("apple"_s8, 1);
-                        doc.insert("iphone"_s8, 2);
+			index_document(doc, "world of warcraft mists of pandaria is the most successful MMORPG ever created"_s32);
+                        sess.update(doc);
+                }
 
+                {
+                        auto doc = sess.begin(2);
+
+			index_document(doc, "lord of the rings the return of the king. an incredible film about hobits, rings and powerful wizards in the mythical middle earth"_s32);
                         sess.update(doc);
                 }
 
@@ -44,7 +69,7 @@ int main(int argc, char *argv[])
 	}
 #else
 	{
-		query q("apple");
+		query q(argv[1]);
 		IndexSourcesCollection bpIndex;
 		auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/1/");
 
@@ -53,14 +78,7 @@ int main(int argc, char *argv[])
 	
 		bpIndex.commit();
 
-		for (uint32_t i{0}; i != bpIndex.sources.size(); ++i)
-		{
-			auto source = bpIndex.sources[i];
-			auto reg = bpIndex.scanner_registry_for(i);
-
-			exec_query(q, source, reg);
-			free(reg);
-		}
+		exec_query(q, &bpIndex);
 	}
 #endif
 

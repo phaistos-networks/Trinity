@@ -4,6 +4,56 @@
 
 using namespace Trinity;
 
+namespace Trinity
+{
+        // Materialized hits for a term and the current document
+        // this is used both for evaluation and for scoring documents
+        struct term_hits
+        {
+                term_hit *all{0};
+                uint16_t freq;
+                uint16_t allCapacity{0};
+                uint32_t docID;
+
+                void set_freq(const uint16_t newFreq)
+                {
+                        if (newFreq > allCapacity)
+                        {
+                                allCapacity = newFreq + 32;
+                                if (all)
+                                        std::free(all);
+                                all = (term_hit *)std::malloc(sizeof(term_hit) * allCapacity);
+                        }
+
+                        freq = newFreq;
+                }
+
+                ~term_hits()
+                {
+                        if (all)
+                                std::free(all);
+                }
+        };
+
+	// For each matched document, the score function will get
+	// (documentID, runtime_ctx *, and a list of matched_query_term)
+	// You can get the actual query from matched_query_term.hits->termID and
+	// runtime_ctx methods that accept that ID
+	struct matched_query_term
+	{
+		uint8_t rep; 	// see query::token
+		uint8_t index; 	// see query::token
+		exec_term_id_t termID;
+		term_hits *hits;// we have a term_hits for each distinct query term (e.g runtime_ctx.decode_ctx.termHits[this->termID])
+	};
+};
+
+
+
+
+
+
+
 // tightly packed node (4 bytes)
 // It's possible that we can use 12 bits for the operand(nodeCtxIdx) and the remaining 4 for the opcode
 // and make sizeof(exec_node) == 2
@@ -28,91 +78,63 @@ struct exec_node
 
 static_assert(sizeof(exec_node) == sizeof(uint32_t), "Unexpected sizeof(exec_node)");
 
-// This is initialized by the compiler
-// and used by the VM
-struct runtime_ctx
+namespace 	// static/local this module
 {
-	IndexSource *const idxsrc;
+        // This is initialized by the compiler
+        // and used by the VM
+        struct runtime_ctx
+        {
+                IndexSource *const idxsrc;
 
-	// See compile()
-	struct binop_ctx
-	{
-		exec_node lhs;
-		exec_node rhs;
-	};
-
-	// See compile()
-	struct unaryop_ctx
-	{
-		exec_node expr;
-	};
-
-	// See compile() and OpCodes::MatchToken
-	struct token
-	{
-		uint8_t rep; 		// see phrase::rep
-		uint8_t index; 		// see phrase::index
-		exec_term_id_t termID;	// via resolve_term()
-	};
-
-	// See compile() and OpCodes::MatchPhrase
-	struct phrase
-	{
-		exec_term_id_t *termIDs;// via resolve_term()
-		uint8_t rep; 		// phrase::rep
-		uint16_t index; 	// phrase::index
-		uint8_t size;		// total in termIDs
-	};
-
-	// Materialized hits for a term and the current document
-	// this is used both for evaluation and for scoring documents
-	struct term_hits
-	{
-		term_hit *all{0};
-		uint16_t freq; 
-		uint16_t allCapacity{0};
-		uint32_t docID;
-
-		void set_freq(const uint16_t newFreq)
+                // See compile()
+                struct binop_ctx
                 {
-                        if (newFreq > allCapacity)
+                        exec_node lhs;
+                        exec_node rhs;
+                };
+
+                // See compile()
+                struct unaryop_ctx
+                {
+                        exec_node expr;
+                };
+
+                // See compile() and OpCodes::MatchToken
+                struct token
+                {
+                        uint8_t rep;           // see phrase::rep
+                        uint8_t index;         // see phrase::index
+                        exec_term_id_t termID; // via resolve_term()
+                };
+
+                // See compile() and OpCodes::MatchPhrase
+                struct phrase
+                {
+                        exec_term_id_t *termIDs; // via resolve_term()
+                        uint8_t rep;             // phrase::rep
+                        uint16_t index;          // phrase::index
+                        uint8_t size;            // total in termIDs
+                };
+
+                auto materialize_term_hits(const exec_term_id_t termID)
+                {
+                        auto th = decode_ctx.termHits[termID];
+
+                        require(th);
+
+                        if (th->docID != curDocID)
                         {
-                                allCapacity = newFreq + 32;
-                                if (all)
-                                        std::free(all);
-                                all = (term_hit *)std::malloc(sizeof(term_hit) * allCapacity);
+                                // Not already materialized
+                                auto dec = decode_ctx.decoders[termID];
+                                const auto docHits = dec->cur_doc_freq();
+
+                                th->docID = curDocID;
+                                th->set_freq(docHits);
+                                dec->materialize_hits(termID, &docWordsSpace, th->all);
                         }
 
-			freq = newFreq;
+                        return th;
                 }
-
-		~term_hits()
-		{
-			if (all)
-				std::free(all);
-		}
-	};
-
-
-	auto materialize_term_hits(const exec_term_id_t termID)
-	{
-		auto th = decode_ctx.termHits[termID];
-
-		require(th);
-
-		if (th->docID != curDocID)
-		{
-			// Not already materialized
-			auto dec = decode_ctx.decoders[termID];
-			const auto docHits = dec->cur_doc_freq();
-
-			th->docID = curDocID;
-			th->set_freq(docHits);
-			dec->materialize_hits(termID, &docWordsSpace, th->all);
-		}
-
-		return th;
-	}
 
 #if 0
 	bool materialize_term_hits_with_phrase_prevterm_check(const exec_term_id_t termID, const exec_term_id_t phrasePrevTermID, const uint16_t phraseIdx /* second phrase index=1, etc */)
@@ -149,230 +171,207 @@ struct runtime_ctx
         }
 #endif
 
-        // This is from the lead tokens
-	// We expect all token and phrases opcodes to check against this document
-	uint32_t curDocID;
+                // This is from the lead tokens
+                // We expect all token and phrases opcodes to check against this document
+                uint32_t curDocID;
 
-
-
-
-	// For each matched document, the score function will get
-	// (documentID, runtime_ctx *, and a list of matched_query_term)
-	// You can get the actual query from matched_query_term.hits->termID and
-	// runtime_ctx methods that accept that ID
-	struct matched_query_term
-	{
-		uint8_t rep; 	// see token
-		uint8_t index; 	// see token
-		exec_term_id_t termID;
-		term_hits *hits;// we have a term_hits for each distinct query term (e.g decodersTermHits[token.decoderIdx])
-	};
-
-
-
-	struct
-	{
-		binop_ctx *binaryOps;
-		unaryop_ctx *unaryOps;
-		token *tokens;
-		phrase *phrases;
-	} evalnode_ctx;
-
-        struct decode_ctx_struct
-        {
-                Trinity::Codecs::Decoder **decoders{nullptr};
-                term_hits **termHits{nullptr};
-                uint16_t capacity{0};
-
-                void check(const uint16_t idx)
+                struct
                 {
-                        if (idx >= capacity)
+                        binop_ctx *binaryOps;
+                        unaryop_ctx *unaryOps;
+                        token *tokens;
+                        phrase *phrases;
+                } evalnode_ctx;
+
+                struct decode_ctx_struct
+                {
+                        Trinity::Codecs::Decoder **decoders{nullptr};
+                        term_hits **termHits{nullptr};
+                        uint16_t capacity{0};
+
+                        void check(const uint16_t idx)
                         {
-                                const auto newCapacity{idx + 8};
+                                if (idx >= capacity)
+                                {
+                                        const auto newCapacity{idx + 8};
 
-                                decoders = (Trinity::Codecs::Decoder **)std::realloc(decoders, sizeof(Trinity::Codecs::Decoder *) * newCapacity);
-                                memset(decoders + capacity, 0, (newCapacity - capacity) * sizeof(Trinity::Codecs::Decoder *));
+                                        decoders = (Trinity::Codecs::Decoder **)std::realloc(decoders, sizeof(Trinity::Codecs::Decoder *) * newCapacity);
+                                        memset(decoders + capacity, 0, (newCapacity - capacity) * sizeof(Trinity::Codecs::Decoder *));
 
-                                termHits = (term_hits **)std::realloc(termHits, sizeof(term_hits *) * newCapacity);
-                                memset(termHits + capacity, 0, (newCapacity - capacity) * sizeof(term_hits *));
+                                        termHits = (term_hits **)std::realloc(termHits, sizeof(term_hits *) * newCapacity);
+                                        memset(termHits + capacity, 0, (newCapacity - capacity) * sizeof(term_hits *));
 
-                                capacity = newCapacity;
+                                        capacity = newCapacity;
+                                }
                         }
+
+                        ~decode_ctx_struct()
+                        {
+                                for (uint32_t i{0}; i != capacity; ++i)
+                                {
+                                        delete decoders[i];
+                                        delete termHits[i];
+                                }
+
+                                if (decoders)
+                                        std::free(decoders);
+
+                                if (termHits)
+                                        std::free(termHits);
+                        }
+                } decode_ctx;
+
+                void setup_evalnode_contexts()
+                {
+                        evalnode_ctx.binaryOps = binOpContexts.data();
+                        evalnode_ctx.unaryOps = unaryOpContexts.data();
+                        evalnode_ctx.tokens = registeredTokens.data();
+                        evalnode_ctx.phrases = registeredPhrases.data();
+                };
+
+                // for simplicity's sake, we are just going to map exec_term_id_t => decoders[] without
+                // indirection. For each distict/resolved term, we have a decoder and term_hits in decode_ctx.decoders[] and decode_ctx.termHits[]
+                // This means you can index them using a termID
+                // This means we may have some nullptr in decode_ctx.decoders[] but that's OK
+                void prepare_decoder(exec_term_id_t termID)
+                {
+                        decode_ctx.check(termID);
+
+                        if (!decode_ctx.decoders[termID])
+                        {
+                                decode_ctx.decoders[termID] = idxsrc->new_postings_decoder(term_ctx(termID));
+                                decode_ctx.termHits[termID] = new term_hits();
+                        }
+
+                        SLog("Initialized decoder for ", termID, "\n");
+                        require(decode_ctx.decoders[termID]);
                 }
 
-		~decode_ctx_struct()
-		{
-			for (uint32_t i{0}; i != capacity; ++i)
-			{
-				delete decoders[i];
-				delete termHits[i];
-			}
+                uint16_t register_binop(const exec_node lhs, const exec_node rhs)
+                {
+                        binOpContexts.push_back({lhs, rhs});
+                        return binOpContexts.size() - 1;
+                }
 
-			if (decoders)
-				std::free(decoders);
+                uint16_t register_unaryop(const exec_node expr)
+                {
+                        unaryOpContexts.push_back({expr});
+                        return unaryOpContexts.size() - 1;
+                }
 
-			if (termHits)
-				std::free(termHits);
-		}
-        } decode_ctx;
+                uint16_t register_token(const Trinity::phrase *p)
+                {
+                        auto t = registeredTokens.PushEmpty();
 
-        void setup_evalnode_contexts()
-	{
-		evalnode_ctx.binaryOps = binOpContexts.data();
-		evalnode_ctx.unaryOps = unaryOpContexts.data();
-		evalnode_ctx.tokens = registeredTokens.data();
-		evalnode_ctx.phrases = registeredPhrases.data();
-	};
+                        t->rep = p->rep;
+                        t->index = p->index;
+                        t->termID = resolve_term(p->terms[0].token);
 
-	// for simplicity's sake, we are just going to map exec_term_id_t => decoders[] without
-	// indirection. For each distict/resolved term, we have a decoder and term_hits in decode_ctx.decoders[] and decode_ctx.termHits[]
-	// This means you can index them using a termID
-	// This means we may have some nullptr in decode_ctx.decoders[] but that's OK
-	void prepare_decoder(exec_term_id_t termID)
-	{
-		decode_ctx.check(termID);
+                        prepare_decoder(t->termID);
+                        return registeredTokens.size() - 1;
+                }
 
-		if (!decode_ctx.decoders[termID])
-		{
-			decode_ctx.decoders[termID] = idxsrc->new_postings_decoder(term_ctx(termID));
-			decode_ctx.termHits[termID] = new term_hits();
-		}
+                uint16_t register_phrase(const Trinity::phrase *p)
+                {
+                        auto ptr = registeredPhrases.PushEmpty();
 
-		SLog("Initialized decoder for ", termID, "\n");
-		require(decode_ctx.decoders[termID]);
-	}
+                        ptr->rep = p->rep;
+                        ptr->index = p->index;
+                        ptr->size = p->size;
+                        ptr->termIDs = (exec_term_id_t *)allocator.Alloc(sizeof(exec_term_id_t) * p->size);
 
-	uint16_t register_binop(const exec_node lhs, const exec_node rhs)
-	{
-		binOpContexts.push_back({lhs, rhs});
-		return binOpContexts.size() - 1;
-	}
+                        for (uint32_t i{0}; i != p->size; ++i)
+                        {
+                                const auto id = resolve_term(p->terms[i].token);
 
-	uint16_t register_unaryop(const exec_node expr)
-	{
-		unaryOpContexts.push_back({expr});
-		return unaryOpContexts.size() - 1;
-	}
+                                prepare_decoder(id);
+                                ptr->termIDs[i] = id;
+                        }
 
-	uint16_t register_token(const Trinity::phrase *p)
-	{
-		auto t = registeredTokens.PushEmpty();
+                        return registeredPhrases.size() - 1;
+                }
 
-		t->rep = p->rep;
-		t->index = p->index;
-		t->termID = resolve_term(p->terms[0].token);
+                // compiler/optimizer
+                uint32_t token_eval_cost(const strwlen8_t token)
+                {
+                        const auto termID = resolve_term(token);
 
-		prepare_decoder(t->termID);
-		return registeredTokens.size() - 1;
-	}
+                        if (termID == 0)
+                                return UINT32_MAX;
 
-	uint16_t register_phrase(const Trinity::phrase *p)
-	{
-		auto ptr = registeredPhrases.PushEmpty();
+                        const auto ctx = term_ctx(termID);
 
-		ptr->rep= p->rep;
-		ptr->index = p->index;
-		ptr->size = p->size;
-		ptr->termIDs = (exec_term_id_t *)allocator.Alloc(sizeof(exec_term_id_t) * p->size);
+                        if (ctx.documents == 0)
+                                return UINT32_MAX;
 
-		for (uint32_t i{0}; i != p->size; ++i)
-		{
-			const auto id = resolve_term(p->terms[i].token);
+                        return ctx.documents;
+                }
 
-			prepare_decoder(id);
-			ptr->termIDs[i] = id;
-		}
+                // compiler/optimizer
+                uint32_t phrase_eval_cost(const Trinity::phrase *const p)
+                {
+                        uint32_t sum{0};
 
-		return registeredPhrases.size() - 1;
-	}
+                        for (uint32_t i{0}; i != p->size; ++i)
+                        {
+                                const auto token = p->terms[i].token;
 
-	// compiler/optimizer
-	uint32_t token_eval_cost(const strwlen8_t token)
-	{
-		const auto termID = resolve_term(token);
+                                if (const auto cost = token_eval_cost(token); cost == UINT32_MAX)
+                                        return UINT32_MAX;
+                                else
+                                        sum += cost;
+                        }
 
-		if (termID == 0)
-			return UINT32_MAX;
-		
-		const auto ctx = term_ctx(termID);
+                        // Not sure this is the right way to go about it
+                        return sum;
+                }
 
-		if (ctx.documents == 0)
-			return UINT32_MAX;
+                runtime_ctx(IndexSource *src)
+                    : idxsrc{src}, docWordsSpace{4096}
+                {
+                }
 
-		return ctx.documents;
-	}
+                void reset(const uint32_t did)
+                {
+                        curDocID = did;
+                        docWordsSpace.reset(did);
+                }
 
-	// compiler/optimizer
-	uint32_t phrase_eval_cost(const Trinity::phrase *const p)
-	{
-		uint32_t sum{0};
+                // used during compilation
+                exec_term_id_t resolve_term(const strwlen8_t term)
+                {
+                        exec_term_id_t *ptr;
 
-		for (uint32_t i{0}; i != p->size; ++i)
-		{
-			const auto token = p->terms[i].token;
+                        if (termsDict.Add(term, 0, &ptr))
+                        {
+                                // translate from index source space to runtime_ctx space
+                                *ptr = termsDict.size();
+                                idToTerm.insert({*ptr, term});
+                                toIndexSrcSpace.insert({*ptr, idxsrc->resolve_term(term)});
+                        }
 
-			if (const auto cost = token_eval_cost(token); cost == UINT32_MAX)
-				return UINT32_MAX;
-			else
-				sum+=cost;
-		}
+                        return *ptr;
+                }
 
-		// Not sure this is the right way to go about it
-		return sum;
-	}
+                // used during compilation
+                term_index_ctx term_ctx(const exec_term_id_t termID)
+                {
+                        // from exec session words space to index source words space
+                        return idxsrc->term_ctx(toIndexSrcSpace[termID]);
+                }
 
-	runtime_ctx(IndexSource *src)
-		: idxsrc{src}, docWordsSpace{4096}
-	{
+                DocWordsSpace docWordsSpace;
+                Switch::vector<token> registeredTokens;
+                Switch::vector<phrase> registeredPhrases;
+                std::vector<binop_ctx> binOpContexts;
+                std::vector<unaryop_ctx> unaryOpContexts;
+                Switch::unordered_map<strwlen8_t, exec_term_id_t> termsDict;
+                Switch::unordered_map<exec_term_id_t, uint32_t> toIndexSrcSpace; // translation between runtime_ctx and segment term IDs spaces
+                Switch::unordered_map<exec_term_id_t, strwlen8_t> idToTerm;      // maybe useful for tracing by the score functions
 
-	}
-
-	void reset(const uint32_t did)
-	{
-		curDocID = did;
-		docWordsSpace.reset(did);
-	}
-		
-	
-	// used during compilation
-	exec_term_id_t resolve_term(const strwlen8_t term)
-	{
-		exec_term_id_t *ptr;
-
-		if (termsDict.Add(term, 0, &ptr))
-		{
-			// translate from index source space to runtime_ctx space
-			*ptr = termsDict.size();
-			toIndexSrcSpace.insert({*ptr, idxsrc->resolve_term(term)});
-		}
-
-		return *ptr;
-	}
-
-	// used during compilation
-	term_index_ctx term_ctx(const exec_term_id_t termID)
-	{
-		// from exec session words space to index source words space
-		return idxsrc->term_ctx(toIndexSrcSpace[termID]);
-	}
-
-
-	DocWordsSpace docWordsSpace;
-	Switch::vector<token> registeredTokens;
-	Switch::vector<phrase> registeredPhrases;
-	std::vector<binop_ctx> binOpContexts;
-	std::vector<unaryop_ctx> unaryOpContexts;
-	// decoders for all distinct tokens of the query
-	Switch::unordered_map<strwlen8_t, exec_term_id_t> termsDict;
-	Switch::unordered_map<exec_term_id_t, uint32_t> toIndexSrcSpace; 	// translation between runtime_ctx and segment term IDs spaces
-
-
-	simple_allocator allocator;
-};
-
-
-
-
+                simple_allocator allocator;
+        };
+}
 
 #pragma mark OPTIMIZER
 static uint32_t optimize_binops_impl(ast_node *const n, bool &updates, runtime_ctx &rctx)
@@ -846,6 +845,10 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
 // We will need to create a copy of the `q` after we have normalized it, and then
 // we need to reorder and optimize that copy, get leaders and execute it -- for each segment, but
 // this is a very fast operation anyway
+//
+// We can't reuse the same compiled bytecode/runtime_ctx to run the same query across multiple index sources, because
+// we optimize based on the index source structure and terms involved in the query
+// It is also very cheap to construct those.
 bool Trinity::exec_query(const query &in, IndexSource *idxsrc,  dids_scanner_registry *const maskedDocumentsRegistry)
 {
 	if (!in)
@@ -894,10 +897,42 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc,  dids_scanner_reg
                 Switch::vector<strwlen8_t> leaderTokensV;
 
 		q.leader_nodes(&leaderNodes);
+
+		SLog("leaderNodes.size = ", leaderNodes.size(), "\n");
+
                 for (const auto n : leaderNodes)
                 {
-                        for (uint32_t i{0}; i != n->p->size; ++i)
-                                leaderTokensV.push_back(n->p->terms[i].token);
+			if (const auto phraseSize = n->p->size; phraseSize == 1)
+				leaderTokensV.push_back(n->p->terms[0].token);
+			else
+                        {
+				// A phrase, choose the token among them with the lowest frequency
+				// i.e the on that matches the fewer documents
+                                auto token = n->p->terms[0].token;
+                                const auto termID = rctx.resolve_term(token);
+                                const auto tctx = rctx.term_ctx(termID);
+                                auto low = tctx.documents;
+
+                                for (uint32_t i{1}; i != phraseSize; ++i)
+                                {
+                                        auto t = n->p->terms[i].token;
+                                        const auto termID = rctx.resolve_term(t);
+                                        const auto tctx = rctx.term_ctx(termID);
+
+                                        if (tctx.documents < low)
+                                        {
+                                                token = t;
+                                                low = tctx.documents;
+						if (low == 0)
+						{
+							// early abort
+							break;
+						}
+                                        }
+                                }
+
+                                leaderTokensV.push_back(token);
+                        }
                 }
 
 		Dexpect(leaderTokensV.size() < sizeof_array(toAdvance));
@@ -977,6 +1012,7 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc,  dids_scanner_reg
                         if (res)
                                 SLog(ansifmt::bold, ansifmt::color_blue, "MATCHED ", docID, ansifmt::reset, "\n");
 
+			// TODO: score it and consider for top-k matches
 		}
 
 
@@ -1004,3 +1040,21 @@ l1:;
 
         return true;
 }
+
+bool Trinity::exec_query(const query &q, IndexSourcesCollection *const collection)
+{
+	const auto n = collection->sources.size();
+
+	for (uint32_t i{0}; i != n; ++i)
+	{
+		auto source =collection->sources[i];
+		auto scanner = collection->scanner_registry_for(i);
+
+		Defer({free(scanner);});
+
+		exec_query(q, source, scanner);
+	}
+
+	return true;
+}
+
