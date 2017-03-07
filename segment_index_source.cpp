@@ -5,6 +5,16 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
 {
         int fd;
         char path[PATH_MAX];
+	strwlen32_t bp(basePath);
+
+	if (auto p = bp.SearchR('/'))
+		bp = bp.SuffixFrom(p + 1);
+	bp.StripTrailingCharacter('/');
+
+	if (!bp.IsDigits())
+		throw Switch::data_error("Expected segment name to be a generation(digits)");
+
+	gen = bp.AsUint64();
 
         Snprintf(path, sizeof(path), "%s/updated_documents.ids");
         fd = open(path, O_RDONLY | O_LARGEFILE);
@@ -33,15 +43,40 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
         fd = open(path, O_RDONLY | O_LARGEFILE);
         Dexpect(fd != -1);
 
-	const auto fileSize = lseek64(fd, 0, SEEK_END);
-	auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
+        auto fileSize = lseek64(fd, 0, SEEK_END);
+        auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
 
-	close(fd);
-	Dexpect(fileData != MAP_FAILED);
+        close(fd);
+        Dexpect(fileData != MAP_FAILED);
 
-	index.Set(static_cast<const uint8_t *>(fileData), uint32_t(fileSize));
+        index.Set(static_cast<const uint8_t *>(fileData), uint32_t(fileSize));
 
-	// TODO: read codec from e.g codec.desc file
-	// for now assume its google
-	accessProxy.reset(new Trinity::Codecs::Google::AccessProxy(basePath, index.start()));
+        Snprintf(path, sizeof(path), "%s/codec");
+        fd = open(path, O_RDONLY | O_LARGEFILE);
+        Dexpect(fd != -1);
+
+        fileSize = lseek64(fd, 0, SEEK_END);
+
+        if (!IsBetweenRange<size_t>(fileSize, 3, 128))
+        {
+                close(fd);
+                throw Switch::data_error("Invalid segment codec file");
+        }
+
+        char codecStorage[128];
+
+        if (pread64(fd, codecStorage, fileSize, 0) != fileSize)
+        {
+                close(fd);
+                throw Switch::system_error("Failed to read codec");
+        }
+        else
+                close(fd);
+
+        const strwlen8_t codec(codecStorage, fileSize);
+
+        if (codec.Eq(_S("GOOGLE")))
+                accessProxy.reset(new Trinity::Codecs::Google::AccessProxy(basePath, index.start()));
+        else
+                throw Switch::data_error("Unknown codec");
 }

@@ -26,6 +26,11 @@ namespace Trinity
 
 				}
 
+				strwlen8_t codec_identifier() override final
+				{
+					return "GOOGLE"_s8;
+				}
+
                                 void merge(range_base<const uint8_t *, uint32_t> *in, const uint32_t chunksCnt, Trinity::Codecs::Encoder *const encoder, dids_scanner_registry *maskedDocuments) override final;
 			};
 

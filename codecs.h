@@ -74,6 +74,7 @@ namespace Trinity
                         IOBuffer indexOut;
 			const char *basePath;
 
+			// The segment name should be the generation
                         IndexSession(const char *bp)
 				: basePath{bp}
 			{
@@ -90,17 +91,17 @@ namespace Trinity
 
                         virtual void end() = 0;
 
-			virtual uint8_t dictionary_offsets_count() const 
-			{
-				return 1;
-			}
-
 			// If we have multiple postlists for the same term(i.e merging 2+ segments and same term exists in 2+ of them) then
 			// where we can't just serialize (chunk, chunkSize) but instead we need to merge them, we need to use this codec-specific merge function
 			// that will do this for us
 			// 
 			// You are expected to have encoder->begin_term() before invoking this method, and to invoke encoder->end_term() after the method has returned
                         virtual void merge(range_base<const uint8_t *, uint32_t> *in, const uint32_t chunksCnt, Encoder *const encoder, dids_scanner_registry *maskedDocuments) = 0 ;
+
+
+			// This may be stored in a segment directory in order to determine
+			// which codec to use to access it
+			virtual strwlen8_t codec_identifier() = 0;
 
 			
 			// constructs a new encoder 

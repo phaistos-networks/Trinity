@@ -101,6 +101,7 @@ namespace Trinity
                 }
 
 		// Persist index and masked products into the directory s->basePath
+		// See also SegmentIndexSource::SegmentIndexSource()
                 void commit(Trinity::Codecs::IndexSession *const s);
         };
 }

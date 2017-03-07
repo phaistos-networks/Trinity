@@ -220,6 +220,8 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                 }
         };
 
+        // basepath already set for IndexSession
+        // begin() could open files, etc
         sess->begin();
 
         // IF we flushed b earlier, mmap() and scan() that mampped region first
@@ -254,7 +256,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
 
         if (maskedProductsBuf.size())
         {
-                fd = open(Buffer{}.append(sess->basePath, "/masked_documents").c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_LARGEFILE, 0775);
+                fd = open(Buffer{}.append(sess->basePath, "/updated_documents.ids").c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_LARGEFILE, 0775);
 
                 if (fd == -1)
                         throw Switch::system_error("Failed to persist masked documents");
@@ -280,6 +282,26 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         }
 
         pack_terms(v, &data, &index);
+
+        if (data.SaveInFile(Buffer{}.append(sess->basePath, "/terms.data").c_str()) != data.size())
+                throw Switch::system_error("Failed to persist terms.data");
+
+        if (index.SaveInFile(Buffer{}.append(sess->basePath, "/terms.idx").c_str()) != data.size())
+                throw Switch::system_error("Failed to persist terms.idx");
+
+        fd = open(Buffer{}.append(sess->basePath, "/codec").c_str(), O_WRONLY | O_LARGEFILE | O_TRUNC | O_CREAT, 0775);
+
+        Dexpect(fd != -1);
+
+        const auto codecID = sess->codec_identifier();
+
+        if (write(fd, codecID.data(), codecID.size()) != codecID.size())
+        {
+                close(fd);
+                throw Switch::system_error("Failed to persist codec id");
+        }
+        else
+                close(fd);
 
         sess->end();
 }
