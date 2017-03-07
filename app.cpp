@@ -10,6 +10,7 @@
 
 using namespace Trinity;
 
+#if 0
 int main(int argc, char *argv[])
 {
 	{
@@ -84,6 +85,7 @@ int main(int argc, char *argv[])
 
         return 0;
 }
+#endif
 
 #if 0
 int main(int argc, char *argv[])
@@ -117,7 +119,7 @@ int main(int argc, char *argv[])
 #endif
 
 
-#if 0
+#if 1
 int main(int argc, char *argv[])
 {
 	int fd = open("/home/system/Data/BestPrice/SERVICE/clusters.data", O_RDONLY|O_LARGEFILE);
@@ -194,7 +196,7 @@ int main(int argc, char *argv[])
 
 
 	before = Timings::Microseconds::Tick();
-	pack_terms(terms, &data, &index);	 // Took 2.856s to pack 106.15kb 9mb 4.05mb (we 'd have need about 14MBs without prefix compression, so we save 35%)
+	pack_terms(terms, &data, &index);	  // Took 2.923s to pack 79.01kb 5.74mb 4.06mb (We 'd need about 14MB without prefix compression and varint encoding of term_index_ctx)
 	SLog("Took ", duration_repr(Timings::Microseconds::Since(before)), " to pack ", size_repr(index.size()), " ", size_repr(data.size()), " ", size_repr(termsLenSum), "\n");
 
 	before = Timings::Microseconds::Tick();

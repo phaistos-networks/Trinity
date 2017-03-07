@@ -4,66 +4,77 @@
 
 Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_t> termsData, const strwlen8_t q, const Switch::vector<Trinity::terms_skiplist_entry> &skipList)
 {
-	int32_t top{int32_t(skipList.size()) - 1};
-	const auto skipListData = skipList.data();
+        int32_t top{int32_t(skipList.size()) - 1};
+        const auto skipListData = skipList.data();
 
-	// skiplist search for the appropriate block
-	// we can't use lower_bound
-	for (int32_t btm{0}; btm <= top;)
-	{
-		const auto mid = (btm + top) / 2;
-		const auto t = skipListData + mid;
+        // skiplist search for the appropriate block
+        // we can't use lower_bound
+        for (int32_t btm{0}; btm <= top;)
+        {
+                const auto mid = (btm + top) / 2;
+                const auto t = skipListData + mid;
 
-		if (t->term == q)
-		{
-			// found in the index/skiplist
-			return t->tctx;
-		}
-		else if (Text::StrnncasecmpISO88597(q.data(), q.size(), t->term.data(), t->term.size()) < 0)
-			top = mid - 1;
-		else
-			btm = mid + 1;
-	}
+                if (t->term == q)
+                {
+                        // found in the index/skiplist
+                        return t->tctx;
+                }
+                else if (Text::StrnncasecmpISO88597(q.data(), q.size(), t->term.data(), t->term.size()) < 0)
+                        top = mid - 1;
+                else
+                        btm = mid + 1;
+        }
 
-	if (top == -1)
-		return {};
+        if (top == -1)
+                return {};
 
-	const auto &it = skipList[top];
-	const auto o = it.blockOffset;
-	auto prev = it.term;
-	char prevTerm[255], curTerm[255];
-	uint8_t prevTermLen = prev.size();
+        const auto &it = skipList[top];
+        const auto o = it.blockOffset;
+        auto prev = it.term;
+        char prevTerm[255], curTerm[255];
+        uint8_t prevTermLen = prev.size();
 
-	memcpy(prevTerm, prev.data(), prevTermLen);
+        memcpy(prevTerm, prev.data(), prevTermLen);
 
-	for (const auto *p = termsData.offset + o, *const e = termsData.offset + termsData.size(); p != e;)
-	{
-		const auto commonPrefixLen = *p++;
-		const auto suffixLen = *p++;
+        for (const auto *p = termsData.offset + o, *const e = termsData.offset + termsData.size(); p != e;)
+        {
+                const auto commonPrefixLen = *p++;
+                const auto suffixLen = *p++;
 
-		memcpy(curTerm, prevTerm, commonPrefixLen);
-		memcpy(curTerm + commonPrefixLen, p, suffixLen);
-		p += suffixLen;
+                memcpy(curTerm, prevTerm, commonPrefixLen);
+                memcpy(curTerm + commonPrefixLen, p, suffixLen);
+                p += suffixLen;
 
-		const auto curTermLen = commonPrefixLen + suffixLen;
-		const auto r = Text::StrnncasecmpISO88597(q.data(), q.size(), curTerm, curTermLen);
+                const auto curTermLen = commonPrefixLen + suffixLen;
+                const auto r = Text::StrnncasecmpISO88597(q.data(), q.size(), curTerm, curTermLen);
 
-		if (r < 0)
-		{
-			// definitely not here
-			break;
-		}
-		else if (r == 0)
-			return *(term_index_ctx *)p;
-		else
-		{
-			p += sizeof(term_index_ctx);
-			prevTermLen = curTermLen;
-			memcpy(prevTerm, curTerm, curTermLen);
-		}
-	}
+                if (r < 0)
+                {
+                        // definitely not here
+                        break;
+                }
+                else if (r == 0)
+                {
+                        term_index_ctx tctx;
 
-	return {};
+                        tctx.documents = Compression::decode_varuint32(p);
+                        tctx.indexChunk.len = Compression::decode_varuint32(p);
+                        tctx.indexChunk.offset = *(uint32_t *)p;
+
+                        return tctx;
+                }
+                else
+                {
+                        Compression::decode_varuint32(p);
+                        Compression::decode_varuint32(p);
+                        p += sizeof(uint32_t);
+
+                        prevTermLen = curTermLen;
+                        memcpy(prevTerm, curTerm, curTermLen);
+                }
+        }
+
+        return {};
 }
 
 void Trinity::unpack_terms_skiplist(const range_base<const uint8_t *, const uint32_t> termsIndex, Switch::vector<Trinity::terms_skiplist_entry> *skipList, simple_allocator &allocator)
@@ -72,11 +83,13 @@ void Trinity::unpack_terms_skiplist(const range_base<const uint8_t *, const uint
 	{
 		auto t = skipList->PushEmpty();
 		const strwlen8_t term((char *)p + 1, *p);
-
 		p += term.size() + sizeof(uint8_t);
-		t->tctx = *(term_index_ctx *)p;
-		p += sizeof(term_index_ctx);
-		t->blockOffset = Compression::UnpackUInt32(p);
+		{
+			t->tctx.documents = Compression::decode_varuint32(p);
+			t->tctx.indexChunk.len = Compression::decode_varuint32(p);
+			t->tctx.indexChunk.offset = *(uint32_t *)p; p+=sizeof(uint32_t);
+		}
+		t->blockOffset = Compression::decode_varuint32(p);
 		t->term.Set(allocator.CopyOf(term.data(), term.size()), term.size());
 	}
 }
@@ -104,9 +117,13 @@ void Trinity::pack_terms(std::vector<std::pair<strwlen8_t, term_index_ctx>> &ter
                         nextSkipListEntry = SKIPLIST_INTERVAL;
 
                         index->pack(uint8_t(cur.size()));
-                        index->Serialize(cur.data(), cur.size());
-                        index->pack(it.second);
-                        index->SerializeVarUInt32(data->size()); // offset in the terms data file
+                        index->serialize(cur.data(), cur.size());
+                        {
+                                index->encode_varuint32(it.second.documents);
+                                index->encode_varuint32(it.second.indexChunk.len);
+                                index->pack(it.second.indexChunk.offset);
+                        }
+                        index->encode_varuint32(data->size()); // offset in the terms data file
 
                 }
                 else
@@ -115,8 +132,12 @@ void Trinity::pack_terms(std::vector<std::pair<strwlen8_t, term_index_ctx>> &ter
                         const auto suffix = cur.SuffixFrom(commonPrefix);
 
                         data->pack(uint8_t(commonPrefix), uint8_t(suffix.size()));
-                        data->Serialize(suffix.data(), suffix.size());
-                        data->pack(it.second);
+                        data->serialize(suffix.data(), suffix.size());
+                        {
+                                data->encode_varuint32(it.second.documents);
+                                data->encode_varuint32(it.second.indexChunk.len);
+                                data->pack(it.second.indexChunk.offset);
+                        }
                 }
 
                 prev = cur;

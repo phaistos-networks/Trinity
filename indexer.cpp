@@ -64,14 +64,14 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
                         prev = it.first;
                         if (payloadSize != prevPayloadSize)
                         {
-                                b.SerializeVarUInt32((delta << 1) | 0);
-                                b.SerializeVarUInt32(payloadSize);
+                                b.encode_varuint32((delta << 1) | 0);
+                                b.encode_varuint32(payloadSize);
                                 prevPayloadSize = payloadSize;
                         }
                         else
                         {
                                 // Same paload size
-                                b.SerializeVarUInt32((delta << 1) | 1);
+                                b.encode_varuint32((delta << 1) | 1);
                         }
 
                         if (payloadSize)
@@ -172,10 +172,10 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                                 const auto base{p};
                                 do
                                 {
-                                        const auto deltaMask = Compression::UnpackUInt32(p);
+                                        const auto deltaMask = Compression::decode_varuint32(p);
 
                                         if (0 == (deltaMask & 1))
-                                                payloadSize = Compression::UnpackUInt32(p);
+                                                payloadSize = Compression::decode_varuint32(p);
 
                                         p += payloadSize;
                                 } while (--hitsCnt);
@@ -202,10 +202,10 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                                 enc->begin_document(documentID, hitsCnt);
                                 for (uint32_t i{0}; i != hitsCnt; ++i)
                                 {
-                                        const auto deltaMask = Compression::UnpackUInt32(p);
+                                        const auto deltaMask = Compression::decode_varuint32(p);
 
                                         if (0 == (deltaMask & 1))
-                                                payloadSize = Compression::UnpackUInt32(p);
+                                                payloadSize = Compression::decode_varuint32(p);
 
                                         pos += deltaMask >> 1;
 

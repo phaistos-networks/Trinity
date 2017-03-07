@@ -93,7 +93,7 @@ namespace Trinity
                                         SLog("HIT ", pos, " => ", delta, "\n");
 
                                         ++blockFreqs[curBlockSize];
-                                        hitsData.SerializeVarUInt32(delta);
+                                        hitsData.encode_varuint32(delta);
                                         lastPos = pos;
                                 }
 

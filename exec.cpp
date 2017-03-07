@@ -1,6 +1,6 @@
 #include "exec.h"
-#include "runtime.h"
 #include "docwordspace.h"
+#include "runtime.h"
 
 using namespace Trinity;
 
@@ -35,51 +35,46 @@ namespace Trinity
                 }
         };
 
-	// For each matched document, the score function will get
-	// (documentID, runtime_ctx *, and a list of matched_query_term)
-	// You can get the actual query from matched_query_term.hits->termID and
-	// runtime_ctx methods that accept that ID
-	struct matched_query_term
-	{
-		uint8_t rep; 	// see query::token
-		uint8_t index; 	// see query::token
-		exec_term_id_t termID;
-		term_hits *hits;// we have a term_hits for each distinct query term (e.g runtime_ctx.decode_ctx.termHits[this->termID])
-	};
+        // For each matched document, the score function will get
+        // (documentID, runtime_ctx *, and a list of matched_query_term)
+        // You can get the actual query from matched_query_term.hits->termID and
+        // runtime_ctx methods that accept that ID
+        struct matched_query_term
+        {
+                uint8_t rep;   // see query::token
+                uint8_t index; // see query::token
+                exec_term_id_t termID;
+                term_hits *hits; // we have a term_hits for each distinct query term (e.g runtime_ctx.decode_ctx.termHits[this->termID])
+        };
 };
 
-
-
-
-
-
-
-// tightly packed node (4 bytes)
-// It's possible that we can use 12 bits for the operand(nodeCtxIdx) and the remaining 4 for the opcode
-// and make sizeof(exec_node) == 2
-//
-// Eventually we will be able to compile this down to bytecode or generate machine coder
-//
-// We could also include a weight here -- so that if e.g a phrase or a complex expression matched we'd boost the score
-// by some factor/coefficient(this would have been provided by the input query)
-struct exec_node
-{
-	// dereference implementation in an array of void(*)(void)
-	// so that we won't have to use 8 bytes for the pointer
-	uint8_t implIdx;
-
-	uint8_t flags;
-
-	// instead of using unions here
-	// we will have a node/impl specific context allocated elsehwere with the appropriate size
-	// so that the implementaiton can refer to it
-	uint16_t nodeCtxIdx;
-};
 
 static_assert(sizeof(exec_node) == sizeof(uint32_t), "Unexpected sizeof(exec_node)");
 
-namespace 	// static/local this module
+namespace // static/local this module
 {
+        // tightly packed node (4 bytes)
+        // It's possible that we can use 12 bits for the operand(nodeCtxIdx) and the remaining 4 for the opcode
+        // and make sizeof(exec_node) == 2
+        //
+        // Eventually we will be able to compile this down to bytecode or generate machine coder
+        //
+        // We could also include a weight here -- so that if e.g a phrase or a complex expression matched we'd boost the score
+        // by some factor/coefficient(this would have been provided by the input query)
+        struct exec_node
+        {
+                // dereference implementation in an array of void(*)(void)
+                // so that we won't have to use 8 bytes for the pointer
+                uint8_t implIdx;
+
+                uint8_t flags;
+
+                // instead of using unions here
+                // we will have a node/impl specific context allocated elsehwere with the appropriate size
+                // so that the implementaiton can refer to it
+                uint16_t nodeCtxIdx;
+        };
+
         // This is initialized by the compiler
         // and used by the VM
         struct runtime_ctx
@@ -455,7 +450,7 @@ static uint32_t optimize_binops_impl(ast_node *const n, bool &updates, runtime_c
 // it is important to first make a pass using reorder_root() and then optimize_binops()
 static ast_node *optimize_binops(ast_node *root, runtime_ctx &rctx)
 {
-	ast_node *normalize_root(ast_node *root); // in queries.cpp
+        ast_node *normalize_root(ast_node * root); // in queries.cpp
 
         for (bool updates{false}; root; updates = false)
         {
@@ -471,7 +466,6 @@ static ast_node *optimize_binops(ast_node *root, runtime_ctx &rctx)
         }
         return root;
 }
-
 
 // Considers all binary ops, and potentiall swaps (lhs, rhs) of binary ops, but not based on actual cost
 // but on heuristics .
@@ -548,16 +542,10 @@ static ast_node *reorder_root(ast_node *r)
 
 static bool optimize(Trinity::query &q, runtime_ctx &rctx)
 {
-	reorder_root(q.root);
-	q.root = optimize_binops(q.root, rctx);
-	return q.root;
+        reorder_root(q.root);
+        q.root = optimize_binops(q.root, rctx);
+        return q.root;
 }
-
-
-
-
-
-
 
 #pragma mark INTERPRETER
 
@@ -571,7 +559,7 @@ enum class OpCodes : uint8_t
         LogicalAnd,
         LogicalOr,
         MatchPhrase,
-	LogicalNot,
+        LogicalNot,
         UnaryAnd,
         UnaryNot,
         ConstFalse
@@ -579,27 +567,26 @@ enum class OpCodes : uint8_t
 
 static inline uint8_t eval(const exec_node node, runtime_ctx &ctx);
 
-
 static inline uint8_t noop_impl(const exec_node, runtime_ctx &)
 {
-	return 0;
+        return 0;
 }
 
 static inline uint8_t matchtoken_impl(const exec_node self, runtime_ctx &rctx)
 {
-	//return rctx.decode_ctx.decoders[rctx.evalnode_ctx.tokens[self.nodeCtxIdx].termID]->seek(rctx.curDocID);
-	auto t = rctx.evalnode_ctx.tokens + self.nodeCtxIdx;
-	auto decoder = rctx.decode_ctx.decoders[t->termID];
-	const auto res = decoder->seek(rctx.curDocID);
+        //return rctx.decode_ctx.decoders[rctx.evalnode_ctx.tokens[self.nodeCtxIdx].termID]->seek(rctx.curDocID);
+        auto t = rctx.evalnode_ctx.tokens + self.nodeCtxIdx;
+        auto decoder = rctx.decode_ctx.decoders[t->termID];
+        const auto res = decoder->seek(rctx.curDocID);
 
-	if (res)
-	{
-		// include in the list of tokens found
-		// we will materialize only if needed
-	}
+        if (res)
+        {
+                // include in the list of tokens found
+                // we will materialize only if needed
+        }
 
-	SLog(ansifmt::color_green, "Attempting to match token against ", rctx.curDocID, ansifmt::reset, " => ", res, "\n");
-	return res;
+        SLog(ansifmt::color_green, "Attempting to match token against ", rctx.curDocID, ansifmt::reset, " => ", res, "\n");
+        return res;
 }
 
 #if 0
@@ -640,22 +627,21 @@ static inline uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
 
 static uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
 {
-	static constexpr bool trace{true};
+        static constexpr bool trace{true};
         auto p = rctx.evalnode_ctx.phrases + self.nodeCtxIdx;
         const auto firstTermID = p->termIDs[0];
         auto decoder = rctx.decode_ctx.decoders[firstTermID];
         const auto did = rctx.curDocID;
 
-	if (trace)
-		SLog("PHRASE CHECK document ", rctx.curDocID, "\n");
-
+        if (trace)
+                SLog("PHRASE CHECK document ", rctx.curDocID, "\n");
 
         if (!decoder->seek(did))
-	{
-		if (trace)
-			SLog("Failed for first phrase token\n");
+        {
+                if (trace)
+                        SLog("Failed for first phrase token\n");
                 return 0;
-	}
+        }
 
         const auto n = p->size;
 
@@ -664,17 +650,17 @@ static uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
                 const auto termID = p->termIDs[i];
                 auto decoder = rctx.decode_ctx.decoders[termID];
 
-		if (trace)
-			SLog("Phrase token ", i, " ", termID, "\n");
+                if (trace)
+                        SLog("Phrase token ", i, " ", termID, "\n");
 
                 if (!decoder->seek(did))
-		{
-			if (trace)
-				SLog("Failed for phrase token\n");
+                {
+                        if (trace)
+                                SLog("Failed for phrase token\n");
                         return 0;
-		}
+                }
 
-		rctx.materialize_term_hits(termID);
+                rctx.materialize_term_hits(termID);
         }
 
         auto th = rctx.materialize_term_hits(firstTermID);
@@ -686,8 +672,8 @@ static uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
         {
                 if (const auto pos = firstTermHits[i].pos)
                 {
-			if (trace)
-				SLog("<< POS ", pos, "\n");
+                        if (trace)
+                                SLog("<< POS ", pos, "\n");
 
                         for (uint8_t k{1};; ++k)
                         {
@@ -710,25 +696,24 @@ static uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
 
 static inline uint8_t logicaland_impl(const exec_node self, runtime_ctx &rctx)
 {
-	auto opctx = rctx.evalnode_ctx.binaryOps + self.nodeCtxIdx;
+        auto opctx = rctx.evalnode_ctx.binaryOps + self.nodeCtxIdx;
 
-	return eval(opctx->lhs, rctx) && eval(opctx->rhs, rctx);
+        return eval(opctx->lhs, rctx) && eval(opctx->rhs, rctx);
 }
 
 static inline uint8_t logicalnot_impl(const exec_node self, runtime_ctx &rctx)
 {
-	auto opctx = rctx.evalnode_ctx.binaryOps + self.nodeCtxIdx;
+        auto opctx = rctx.evalnode_ctx.binaryOps + self.nodeCtxIdx;
 
-	return eval(opctx->lhs, rctx) && !eval(opctx->rhs, rctx);
+        return eval(opctx->lhs, rctx) && !eval(opctx->rhs, rctx);
 }
 
 static inline uint8_t logicalor_impl(const exec_node self, runtime_ctx &rctx)
 {
-	auto opctx = rctx.evalnode_ctx.binaryOps + self.nodeCtxIdx;
+        auto opctx = rctx.evalnode_ctx.binaryOps + self.nodeCtxIdx;
 
-	return eval(opctx->lhs, rctx) || eval(opctx->rhs, rctx);
+        return eval(opctx->lhs, rctx) || eval(opctx->rhs, rctx);
 }
-
 
 inline uint8_t eval(const exec_node node, runtime_ctx &ctx)
 {
@@ -737,7 +722,7 @@ inline uint8_t eval(const exec_node node, runtime_ctx &ctx)
                 matchtoken_impl,
                 logicaland_impl,
                 logicalor_impl,
-		matchphrase_impl,
+                matchphrase_impl,
                 logicalnot_impl,
                 noop_impl,
                 noop_impl,
@@ -746,10 +731,6 @@ inline uint8_t eval(const exec_node node, runtime_ctx &ctx)
 
         return implementations[node.implIdx](node, ctx);
 }
-
-
-
-
 
 #pragma mark COMPILER
 static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
@@ -760,8 +741,8 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
         require(n);
         switch (n->type)
         {
-		case ast_node::Type::Dummy:
-			std::abort();
+                case ast_node::Type::Dummy:
+                        std::abort();
 
                 case ast_node::Type::Token:
                         res.implIdx = (unsigned)OpCodes::MatchToken;
@@ -797,9 +778,9 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
                                         res.implIdx = (unsigned)OpCodes::LogicalNot;
                                         break;
 
-				case Operator::NONE:
-					std::abort();
-					break;
+                                case Operator::NONE:
+                                        std::abort();
+                                        break;
                         }
                         res.nodeCtxIdx = ctx.register_binop(compile(n->binop.lhs, ctx), compile(n->binop.rhs, ctx));
                         break;
@@ -820,8 +801,8 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
                                         res.implIdx = (unsigned)OpCodes::UnaryNot;
                                         break;
 
-				default:
-					std::abort();
+                                default:
+                                        std::abort();
                         }
                         res.nodeCtxIdx = ctx.register_unaryop(compile(n->unaryop.expr, ctx));
                         break;
@@ -829,15 +810,6 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
 
         return res;
 }
-
-
-
-
-
-
-
-
-
 
 // If we have multiple segments, we should invoke exec() for each of them
 // in parallel or in sequence, collect the top X hits and then later merge them
@@ -849,65 +821,61 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
 // We can't reuse the same compiled bytecode/runtime_ctx to run the same query across multiple index sources, because
 // we optimize based on the index source structure and terms involved in the query
 // It is also very cheap to construct those.
-bool Trinity::exec_query(const query &in, IndexSource *idxsrc,  dids_scanner_registry *const maskedDocumentsRegistry)
+bool Trinity::exec_query(const query &in, IndexSource *idxsrc, dids_scanner_registry *const maskedDocumentsRegistry)
 {
-	if (!in)
-	{
-		SLog("No root node\n");
-		return false;
-	}
+        if (!in)
+        {
+                SLog("No root node\n");
+                return false;
+        }
 
-	// we need a copy of that query here
-	// for we we will need to modify it
-	query q(in);
+        // we need a copy of that query here
+        // for we we will need to modify it
+        query q(in);
 
+        // Normalize just in case
+        if (!q.normalize())
+        {
+                SLog("No root node after normalization\n");
+                return false;
+        }
 
-	// Normalize just in case
-	if (!q.normalize())
-	{
-		SLog("No root node after normalization\n");
-		return false;
-	}
+        runtime_ctx rctx(idxsrc);
 
-	runtime_ctx rctx(idxsrc);
+        // Optimizations we shouldn't perform on the parsed query because
+        // the rewrite it by potentially moving nodes around or dropping nodes
+        if (!optimize(q, rctx))
+        {
+                // After optimizations nothing's left
+                SLog("No root node after optimizations\n");
+                return false;
+        }
 
-	// Optimizations we shouldn't perform on the parsed query because
-	// the rewrite it by potentially moving nodes around or dropping nodes
-	if (!optimize(q, rctx))
-	{
-		// After optimizations nothing's left
-		SLog("No root node after optimizations\n");
-		return false;
-	}
+        SLog("Compiling\n");
+        // Need to compile before we access the leader nodes
+        const auto rootExecNode = compile(q.root, rctx);
 
-
-	SLog("Compiling\n");
-	// Need to compile before we access the leader nodes
-	const auto rootExecNode = compile(q.root, rctx);
-
-
-	// We need the leader nodes 
-	// See leader_nodes() impl. comments
-	std::vector<ast_node *> leaderNodes;
-	uint16_t toAdvance[1024];
-	Switch::vector<Trinity::Codecs::Decoder *> leaderTokensDecoders;
-
+        // We need the leader nodes
+        // See leader_nodes() impl. comments
+        std::vector<ast_node *> leaderNodes;
+        uint16_t toAdvance[1024];
+        Switch::vector<Trinity::Codecs::Decoder *> leaderTokensDecoders;
 
         {
                 Switch::vector<strwlen8_t> leaderTokensV;
 
-		q.leader_nodes(&leaderNodes);
+                q.leader_nodes(&leaderNodes);
 
-		SLog("leaderNodes.size = ", leaderNodes.size(), "\n");
+                SLog("leaderNodes.size = ", leaderNodes.size(), "\n");
 
                 for (const auto n : leaderNodes)
                 {
-			if (const auto phraseSize = n->p->size; phraseSize == 1)
-				leaderTokensV.push_back(n->p->terms[0].token);
-			else
+                        if (const auto phraseSize = n->p->size; phraseSize == 1)
+                                leaderTokensV.push_back(n->p->terms[0].token);
+                        else
                         {
-				// A phrase, choose the token among them with the lowest frequency
-				// i.e the on that matches the fewer documents
+                                // A phrase, choose the token among them with the lowest frequency
+                                // i.e the on that matches the fewer documents
                                 auto token = n->p->terms[0].token;
                                 const auto termID = rctx.resolve_term(token);
                                 const auto tctx = rctx.term_ctx(termID);
@@ -923,11 +891,11 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc,  dids_scanner_reg
                                         {
                                                 token = t;
                                                 low = tctx.documents;
-						if (low == 0)
-						{
-							// early abort
-							break;
-						}
+                                                if (low == 0)
+                                                {
+                                                        // early abort
+                                                        break;
+                                                }
                                         }
                                 }
 
@@ -935,7 +903,7 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc,  dids_scanner_reg
                         }
                 }
 
-		Dexpect(leaderTokensV.size() < sizeof_array(toAdvance));
+                Dexpect(leaderTokensV.size() < sizeof_array(toAdvance));
 
                 std::sort(leaderTokensV.begin(), leaderTokensV.end(), [](const auto &a, const auto &b) {
                         return Text::StrnncasecmpISO88597(a.data(), a.size(), b.data(), b.size()) < 0;
@@ -949,33 +917,29 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc,  dids_scanner_reg
                 {
                         const auto termID = rctx.resolve_term(t);
                         require(termID);
-			SLog("Leader termID = ", termID, "\n");
+                        SLog("Leader termID = ", termID, "\n");
                         auto decoder = rctx.decode_ctx.decoders[termID];
-			require(decoder);
-			
+                        require(decoder);
 
                         decoder->begin();
-			leaderTokensDecoders.push_back(decoder);
+                        leaderTokensDecoders.push_back(decoder);
                 }
         }
 
-	require(leaderTokensDecoders.size());
-	auto leaderDecoders = leaderTokensDecoders.data();
-	uint32_t leaderDecodersCnt = leaderTokensDecoders.size();
+        require(leaderTokensDecoders.size());
+        auto leaderDecoders = leaderTokensDecoders.data();
+        uint32_t leaderDecodersCnt = leaderTokensDecoders.size();
 
-	SLog("RUNNING\n");
+        SLog("RUNNING\n");
 
+        rctx.setup_evalnode_contexts();
 
-
-	rctx.setup_evalnode_contexts();
-
-
-	// TODO: if (q.root->type == ast_node::Type::Token) {} 
-	// i.e if just a single term was entered, scan that single token's documents  without even having to use a decoder
-	// otherwise use the loop that tracks lead tokens
-	for (;;)
+        // TODO: if (q.root->type == ast_node::Type::Token) {}
+        // i.e if just a single term was entered, scan that single token's documents  without even having to use a decoder
+        // otherwise use the loop that tracks lead tokens
+        for (;;)
         {
-		// Select document from the leader tokens/decoders
+                // Select document from the leader tokens/decoders
                 uint32_t docID = leaderDecoders[0]->cur_doc_id();
                 uint8_t toAdvanceCnt{1};
 
@@ -996,13 +960,10 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc,  dids_scanner_reg
                                 toAdvance[toAdvanceCnt++] = i;
                 }
 
-		SLog("DOCUMENT ", docID, "\n");
+                SLog("DOCUMENT ", docID, "\n");
 
-
-
-
-		if (!maskedDocumentsRegistry->test(docID))
-		{
+                if (!maskedDocumentsRegistry->test(docID))
+                {
                         // now execute rootExecNode
                         // and it it returns true, compute the document's score
                         rctx.reset(docID);
@@ -1012,15 +973,12 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc,  dids_scanner_reg
                         if (res)
                                 SLog(ansifmt::bold, ansifmt::color_blue, "MATCHED ", docID, ansifmt::reset, "\n");
 
-			// TODO: score it and consider for top-k matches
-		}
+                        // TODO: score it and consider for top-k matches
+                }
 
-
-
-
-		// Advance leader tokens/decoders
-		do
-		{
+                // Advance leader tokens/decoders
+                do
+                {
                         const auto idx = toAdvance[--toAdvanceCnt];
                         auto decoder = leaderDecoders[idx];
 
@@ -1043,18 +1001,17 @@ l1:;
 
 bool Trinity::exec_query(const query &q, IndexSourcesCollection *const collection)
 {
-	const auto n = collection->sources.size();
+        const auto n = collection->sources.size();
 
-	for (uint32_t i{0}; i != n; ++i)
-	{
-		auto source =collection->sources[i];
-		auto scanner = collection->scanner_registry_for(i);
+        for (uint32_t i{0}; i != n; ++i)
+        {
+                auto source = collection->sources[i];
+                auto scanner = collection->scanner_registry_for(i);
 
-		Defer({free(scanner);});
+                Defer({ free(scanner); });
 
-		exec_query(q, source, scanner);
-	}
+                exec_query(q, source, scanner);
+        }
 
-	return true;
+        return true;
 }
-
