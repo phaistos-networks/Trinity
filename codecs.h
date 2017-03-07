@@ -4,10 +4,10 @@
 
 namespace Trinity
 {
-	// We are going to map term=>term_segment_ctx representation in a segment's termlist file
-        struct term_segment_ctx final
+	// We are going to map term=>term_index_ctx representation in a segment's termlist file
+        struct term_index_ctx final
         { 
-		// total documents matching term
+		// total documents matching term in the index(i.e segment, or whatever else)
 		// this is really important
 		// However, it's also important to remember that we can't compute TFIDF like Lucene claims to do if multiple segments
 		// are involved in an execution plan and at least one of them has updated documents that override 1+ other segments, because
@@ -15,53 +15,43 @@ namespace Trinity
 		// Maybe we can track that counts during evaluation though
                 uint32_t documents;  
 
-		// size of the chunk that holds all postings for a given term
+		// chunk that holds all postings for a given term
 		// We need to keep track of that size because it allows for all kind of optimizations and efficient skiplist access
-		uint32_t chunkSize;  
+		range32_t indexChunk;
 
-		// codec specific
-		// offsets[0] is usually the offset in the index
-                uint32_t offsets[3]; 
-
-		term_segment_ctx(const term_segment_ctx &o)
+		term_index_ctx(const uint32_t d, const range32_t c)
+			: documents{d}, indexChunk{c}
 		{
-			documents = o.documents;
-			chunkSize = o.chunkSize;
-			offsets[0]= o.offsets[0];
-			offsets[1]= o.offsets[1];
-			offsets[2]= o.offsets[2];
+
 		}
 
-		term_segment_ctx(term_segment_ctx &&o)
+		term_index_ctx(const term_index_ctx &o)
 		{
 			documents = o.documents;
-			chunkSize = o.chunkSize;
-			offsets[0]= o.offsets[0];
-			offsets[1]= o.offsets[1];
-			offsets[2]= o.offsets[2];
+			indexChunk = o.indexChunk;
 		}
 
-		term_segment_ctx &operator=(const term_segment_ctx &o)
+		term_index_ctx(term_index_ctx &&o)
 		{
 			documents = o.documents;
-			chunkSize = o.chunkSize;
-			offsets[0]= o.offsets[0];
-			offsets[1]= o.offsets[1];
-			offsets[2]= o.offsets[2];
+			indexChunk = o.indexChunk;
+		}
+
+		term_index_ctx &operator=(const term_index_ctx &o)
+		{
+			documents = o.documents;
+			indexChunk = o.indexChunk;
 			return *this;
 		}
 
-		term_segment_ctx &operator=(const term_segment_ctx &&o)
+		term_index_ctx &operator=(const term_index_ctx &&o)
 		{
 			documents = o.documents;
-			chunkSize = o.chunkSize;
-			offsets[0]= o.offsets[0];
-			offsets[1]= o.offsets[1];
-			offsets[2]= o.offsets[2];
+			indexChunk = o.indexChunk;
 			return *this;
 		}
 
-		term_segment_ctx()= default;
+		term_index_ctx()= default;
         };
  
 	// a materialized document term hit
@@ -143,7 +133,7 @@ namespace Trinity
 
                         virtual void end_document() = 0;
 
-                        virtual void end_term(term_segment_ctx *) = 0;
+                        virtual void end_term(term_index_ctx *) = 0;
                 };
 
 
@@ -172,7 +162,7 @@ namespace Trinity
 			// not going to rely on a constructor for initialization because
 			// we want to force subclasses to define a method with this signature
 			// TODO: skiplist data should be specific to the AccessProxy
-			virtual void init(const term_segment_ctx &, AccessProxy *, const uint8_t *skiplistData) = 0;
+			virtual void init(const term_index_ctx &, AccessProxy *, const uint8_t *skiplistData) = 0;
 
 			virtual ~Decoder()
 			{
@@ -189,7 +179,7 @@ namespace Trinity
 			const uint8_t *const indexPtr;
 
 			// utility function: returns a new decoder for posts list
-                        virtual Decoder *decoder(const term_segment_ctx &tctx, AccessProxy *access, const uint8_t *skiplistData) = 0;
+                        virtual Decoder *decoder(const term_index_ctx &tctx, AccessProxy *access, const uint8_t *skiplistData) = 0;
 
 			AccessProxy(const char *bp, const uint8_t *index_ptr)
 				: basePath{bp}, indexPtr{index_ptr}

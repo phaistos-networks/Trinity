@@ -1,9 +1,142 @@
 #include "exec.h"
 #include "google_codec.h"
 #include "indexer.h"
-#include "segments.h"
+#include "index_source.h"
+#include "terms.h"
+#include <set>
+
 
 using namespace Trinity;
+
+#if 0
+int main(int argc, char *argv[])
+{
+	std::vector<std::pair<strwlen8_t, term_index_ctx>> terms;
+	const strwlen32_t allTerms(_S("world of warcraft amiga 1200 apple iphone ipad macbook pro imac ipod edge zelda gamecube playstation psp nes snes gameboy sega nintendo atari commodore ibm"));
+	IOBuffer index, data;
+	Switch::vector<terms_skiplist_entry> skipList;
+	simple_allocator allocator;
+
+	for (const auto it : allTerms.Split(' '))
+	{
+		const term_index_ctx tctx{1, {uint32_t(it.data() - allTerms.data()), it.size()}};
+		
+		terms.push_back({{it.data(), it.size()}, tctx});
+	}
+
+	pack_terms(terms, &data, &index);
+
+	unpack_terms_skiplist({(uint8_t *)index.data(), index.size()}, &skipList, allocator);
+
+	for (uint32_t i{1}; i != argc; ++i)
+        {
+                const strwlen8_t q(argv[i]);
+                const auto res = lookup_term({(uint8_t *)data.data(), data.size()}, q, skipList);
+
+                Print(q , " => ", res.indexChunk, "\n");
+        }
+        return 0;
+}
+#endif
+
+
+#if 0
+int main(int argc, char *argv[])
+{
+	int fd = open("/home/system/Data/BestPrice/SERVICE/clusters.data", O_RDONLY|O_LARGEFILE);
+
+	require(fd != -1);
+
+	const auto fileSize = lseek64(fd, 0, SEEK_END);
+	auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
+	simple_allocator a;
+	std::set<strwlen8_t> uniq;
+	std::vector<std::pair<strwlen8_t, term_index_ctx>> terms;
+	size_t termsLenSum{0};
+
+	close(fd);
+	require(fileData != MAP_FAILED);
+
+	for (const auto *p = static_cast<const uint8_t *>(fileData), *const e = p + fileSize; p != e; )
+	{
+		p+=sizeof(uint16_t);
+		const auto chunkSize = *(uint32_t *)p;
+
+		p+=sizeof(uint32_t);
+
+		for (const auto chunkEnd = p + chunkSize; p != chunkEnd; )
+		{
+			p+=sizeof(uint32_t);
+			strwlen8_t title((char *)p + 1, *p); p+=title.size() + sizeof(uint8_t);
+			++p;
+			const auto n = *(uint16_t *)p; p+=sizeof(uint16_t);
+
+			p+=n * sizeof(uint32_t);
+
+			title.p = a.CopyOf(title.data(), title.size());
+
+
+			for (const auto *p = title.p, *const e = p+ title.size(); p != e; )
+                        {
+                                if (const auto len = Text::TermLengthWithEnd(p, e))
+                                {
+					auto mtp = (char *)p;
+
+					for (uint32_t i{0}; i != len; ++i)
+						mtp[i] = Buffer::UppercaseISO88597(p[i]);
+					
+					const strwlen8_t term(p, len);
+
+					if (uniq.insert(term).second)
+					{
+						terms.push_back({term, { 1, {0, 0} }});
+						termsLenSum+=term.size();
+					}
+	
+
+					p+=len;
+                                }
+                                else
+                                        ++p;
+                        }
+                }
+	}
+	munmap(fileData, fileSize);
+	// 574,584 distinct terms across all cluster titles
+
+
+
+	SLog(terms.size(), "\n"); 	
+
+
+
+	IOBuffer index, data;
+	Switch::vector<terms_skiplist_entry> skipList;
+	simple_allocator allocator;
+	uint64_t before;
+
+
+	before = Timings::Microseconds::Tick();
+	pack_terms(terms, &data, &index);	 // Took 2.856s to pack 106.15kb 9mb 4.05mb (we 'd have need about 14MBs without prefix compression, so we save 35%)
+	SLog("Took ", duration_repr(Timings::Microseconds::Since(before)), " to pack ", size_repr(index.size()), " ", size_repr(data.size()), " ", size_repr(termsLenSum), "\n");
+
+	before = Timings::Microseconds::Tick();
+	unpack_terms_skiplist({(uint8_t *)index.data(), index.size()}, &skipList, allocator); 	// Took 0.002s to unpack 4489
+	SLog("Took ", duration_repr(Timings::Microseconds::Since(before)), " to unpack ", skipList.size(), "\n");
+
+	for (uint32_t i{1}; i != argc; ++i)
+        {
+                const strwlen8_t q(argv[i]);
+		const auto before = Timings::Microseconds::Tick();
+                const auto res = lookup_term({(uint8_t *)data.data(), data.size()}, q, skipList);
+		const auto t = Timings::Microseconds::Since(before); // 3 to 26us 
+
+                Print(q , " => (", res.documents, ", ",  res.indexChunk, ") in ", duration_repr(t), "\n"); 
+        }
+        return 0;
+}
+#endif
+
 
 #if 0
 int main(int argc, char *argv[])
@@ -59,7 +192,7 @@ int main(int argc, char *argv[])
 {
 	Trinity::Codecs::Google::IndexSession sess("/tmp/");
 	Trinity::Codecs::Google::Encoder encoder(&sess);
-	term_segment_ctx appleTCTX, iphoneTCTX, crapTCTX;
+	term_index_ctx appleTCTX, iphoneTCTX, crapTCTX;
 
 
 	sess.begin();
@@ -129,7 +262,7 @@ int main(int argc, char *argv[])
 
         {
                 range_base<const uint8_t *, uint32_t> range{(uint8_t *)sess.indexOut.data(), appleTCTX.chunkSize};
-		term_segment_ctx tctx;
+		term_index_ctx tctx;
                 Codecs::Google::IndexSession mergeSess("/tmp/foo");
                 Codecs::Google::Encoder enc(&mergeSess);
 		auto maskedDocuments = dids_scanner_registry::make(nullptr, 0);
@@ -169,7 +302,7 @@ int main(int argc, char *argv[])
 
 
 	std::unique_ptr<Trinity::Codecs::Google::AccessProxy> ap(new Trinity::Codecs::Google::AccessProxy("/tmp/", (uint8_t *)sess.indexOut.data()));
-	auto seg = Switch::make_sharedref<segment>(ap.release());
+	auto seg = Switch::make_sharedref<SegmentIndexSource>(ap.release());
 
 	seg->tctxMap.insert({"apple"_s8, appleTCTX});
 	seg->tctxMap.insert({"iphone"_s8, iphoneTCTX});
@@ -180,7 +313,7 @@ int main(int argc, char *argv[])
 	query q("\"apple iphone\""_s32);
 	auto maskedDocumentsRegistry = dids_scanner_registry::make(nullptr, 0);
 
-	exec_query(q, *seg.get(), maskedDocumentsRegistry);
+	exec_query(q, seg.get(), maskedDocumentsRegistry);
 
 
         return 0;

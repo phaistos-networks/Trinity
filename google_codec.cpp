@@ -200,7 +200,7 @@ void Trinity::Codecs::Google::IndexSession::merge(range_base<const uint8_t *, ui
 
 		if (!maskedDocuments->test(lowestDID))
 		{
-			const auto src = chunks + toAdvance[0];
+			const auto src = chunks + toAdvance[0]; 	// first is always the most recent
 
 			append_from(src);
 		}
@@ -228,6 +228,8 @@ void Trinity::Codecs::Google::IndexSession::merge(range_base<const uint8_t *, ui
 						goto l1;
 					}
 
+					// We can't chunks[idx] = chunks[rem] because
+					// of the invariant chunks[0] being the latest segments
 					memmove(c, c + 1, (rem - idx) * sizeof(chunk));
 				}
 			}
@@ -554,14 +556,12 @@ bool Trinity::Codecs::Google::Decoder::seek(const uint32_t target)
 	return false;
 }
 
-void Trinity::Codecs::Google::Decoder::init(const term_segment_ctx &tctx,  Trinity::Codecs::AccessProxy *proxy, const uint8_t *skiplistData)
+void Trinity::Codecs::Google::Decoder::init(const term_index_ctx &tctx,  Trinity::Codecs::AccessProxy *proxy, const uint8_t *skiplistData)
 {
 	[[maybe_unused]] auto access = static_cast<Trinity::Codecs::Google::AccessProxy *>(proxy);
 	auto indexPtr = access->indexPtr;
-        auto ptr = indexPtr + tctx.offsets[0];
-        const auto chunkSize = tctx.chunkSize;
-
-	SLog("INITIALIZED ", tctx.offsets[0], "\n");
+        auto ptr = indexPtr + tctx.indexChunk.offset;
+        const auto chunkSize = tctx.indexChunk.size();
 
         chunkEnd = ptr + chunkSize;
         blockLastDocID = 0;
@@ -592,7 +592,7 @@ void Trinity::Codecs::Google::Decoder::init(const term_segment_ctx &tctx,  Trini
         }
 }
 
-Trinity::Codecs::Decoder *Trinity::Codecs::Google::AccessProxy::decoder(const term_segment_ctx &tctx,  Trinity::Codecs::AccessProxy *access, const uint8_t *skiplistData)
+Trinity::Codecs::Decoder *Trinity::Codecs::Google::AccessProxy::decoder(const term_index_ctx &tctx,  Trinity::Codecs::AccessProxy *access, const uint8_t *skiplistData)
 {
 	auto d = std::make_unique<Trinity::Codecs::Google::Decoder>();
 

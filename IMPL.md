@@ -1,6 +1,9 @@
 Each segment is a self-contained index. It has its own terms dictionary(i.e there is no real integer termID, certainly not one shared among different segments), and through the use of Codecs different implementations can be used that make different tradeoffs and are more suitable than other for specific use cases.
+Thanks to the efficient terms encoding (see terms.cpp), we can pack terms into small size files and look them up in 5-20us time, so for 200 distinct tokens we would need 400us for a segment, and for 10 segments that 'd be 4,000u(though we 'd process them in parallel anyway)
+See app.cpp main() where we index all cluster titles distinct tokens
 
-There are however logical, transient termIDs in use during indexing (see indexer_session) and during executin (see segments and exec). They facilitate and simplify indexing and execution, but the IDs are transient, session specific and are meaningless otherwise, and not persisted anywhere.
+There are however logical, transient termIDs in use during indexing (see indexer_session) and during execution (see segments and exec). They facilitate and simplify indexing and execution, but the IDs are transient, session specific and are meaningless otherwise, and not persisted anywhere.
+
 
 
 ## Term ID spaces

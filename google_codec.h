@@ -109,7 +109,7 @@ namespace Trinity
                                         ++termDocuments;
                                 }
 
-                                void end_term(term_segment_ctx *tctx) override final
+                                void end_term(term_index_ctx *tctx) override final
                                 {
 					auto out{&sess->indexOut};
 
@@ -118,9 +118,8 @@ namespace Trinity
 
                                         SLog("ENDING term ", curTermOffset, "\n");
 
-                                        tctx->offsets[0] = curTermOffset;
+					tctx->indexChunk.Set(curTermOffset, out->size() - curTermOffset);
                                         tctx->documents = termDocuments;
-                                        tctx->chunkSize = out->size() - curTermOffset;
                                 }
 
                         };
@@ -135,7 +134,7 @@ namespace Trinity
 
 				}
 
-                                Trinity::Codecs::Decoder *decoder(const term_segment_ctx &tctx,  Trinity::Codecs::AccessProxy *access, const uint8_t *skiplistData);
+                                Trinity::Codecs::Decoder *decoder(const term_index_ctx &tctx,  Trinity::Codecs::AccessProxy *access, const uint8_t *skiplistData);
                         };
 
                         // We used to keep track of remDocsInBlocks
@@ -215,7 +214,7 @@ namespace Trinity
 
                         	void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) override final;
 
-				void init(const term_segment_ctx &tctx, Trinity::Codecs::AccessProxy *access, const uint8_t *) override final;
+				void init(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access, const uint8_t *) override final;
                         };
                 }
         }

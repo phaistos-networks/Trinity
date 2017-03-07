@@ -1,5 +1,6 @@
 #include "indexer.h"
 #include "docidupdates.h"
+#include "terms.h"
 #include <text.h>
 
 using namespace Trinity;
@@ -134,16 +135,15 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         };
 
         std::vector<uint32_t> allOffsets;
-        const auto termOffsetsCnt = sess->dictionary_offsets_count();
-        Switch::unordered_map<uint32_t, uint32_t> offsetsMap;
-	std::unique_ptr<Trinity::Codecs::Encoder> enc_(sess->new_encoder(sess));
-	IOBuffer maskedProductsBuf;
+        Switch::unordered_map<uint32_t, term_index_ctx> map;
+        std::unique_ptr<Trinity::Codecs::Encoder> enc_(sess->new_encoder(sess));
+        IOBuffer maskedProductsBuf;
 
-        const auto scan = [enc = enc_.get(), &allOffsets, termOffsetsCnt, &offsetsMap](const auto data, const auto dataSize) {
+        const auto scan = [ enc = enc_.get(), &map ](const auto data, const auto dataSize)
+        {
                 uint8_t payloadSize;
                 std::vector<segment_data> all;
-                uint32_t offsets[3];
-		term_segment_ctx tctx;
+                term_index_ctx tctx;
 
                 for (const auto *p = data, *const e = p + dataSize; p != e;)
                 {
@@ -216,25 +216,22 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                         } while (++it != e && it->termID == term);
 
                         enc->end_term(&tctx);
-                        offsetsMap.insert({term, (uint32_t)allOffsets.size()});
-                        allOffsets.insert(allOffsets.end(), offsets, offsets + termOffsetsCnt);
+                        map.insert({term, tctx});
                 }
         };
-
 
         sess->begin();
 
         // IF we flushed b earlier, mmap() and scan() that mampped region first
         scan(reinterpret_cast<const uint8_t *>(b.data()), b.size());
 
-
-	// Persist index
+        // Persist index
         int fd = open(Buffer{}.append(sess->basePath, "/index").c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_LARGEFILE, 0775);
 
-       if (fd == -1)
+        if (fd == -1)
                 throw Switch::system_error("Failed to persist index");
 
-	// respect 2GB limit
+        // respect 2GB limit
         for (size_t o{0}; o != sess->indexOut.size();)
         {
                 const auto upto = std::min<size_t>(o + uint32_t(2 * 1024 * 1024 * 1024) - 1, sess->indexOut.size());
@@ -252,44 +249,37 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         if (close(fd) == -1)
                 throw Switch::system_error("Failed to persist index");
 
-	// Persist masked documents if any
-	pack_updates(updatedDocumentIDs, &maskedProductsBuf);
+        // Persist masked documents if any
+        pack_updates(updatedDocumentIDs, &maskedProductsBuf);
 
-	if (maskedProductsBuf.size())
-	{
-		fd = open(Buffer{}.append(sess->basePath, "/masked_documents").c_str(), O_WRONLY|O_CREAT|O_TRUNC|O_LARGEFILE, 0775);
+        if (maskedProductsBuf.size())
+        {
+                fd = open(Buffer{}.append(sess->basePath, "/masked_documents").c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_LARGEFILE, 0775);
 
                 if (fd == -1)
                         throw Switch::system_error("Failed to persist masked documents");
-		else if (write(fd, maskedProductsBuf.data(), maskedProductsBuf.size()) != maskedProductsBuf.size())
-		{
-			close(fd);
-                        throw Switch::system_error("Failed to persist masked documents");
-		}
-		else if (close(fd) == -1)
-                        throw Switch::system_error("Failed to persist masked documents");
-
-        }
-
-
-	// Persist terms dictionary
-        {
-                auto kv = dictionary.KeysWithValues();
-
-                std::sort(kv.begin(), kv.end(), [](const auto &a, const auto &b) {
-                        return Text::StrnncasecmpISO88597(a.key.data(), a.key.size(), b.key.data(), b.key.size()) < 0;
-                });
-
-                // Prefix compression etc
-                // store in a session(segment) dictionary
-                for (const auto &it : kv)
+                else if (write(fd, maskedProductsBuf.data(), maskedProductsBuf.size()) != maskedProductsBuf.size())
                 {
-                        [[maybe_unused]] const auto termID = it.key;
-			[[maybe_unused]] const auto term = invDict[termID];	 // actual term
-                        // store termOffsetsCnt offsets starting from offsets for this term
-                        [[maybe_unused]] const auto *offsets = allOffsets.data() + offsetsMap[termID];
+                        close(fd);
+                        throw Switch::system_error("Failed to persist masked documents");
                 }
+                else if (close(fd) == -1)
+                        throw Switch::system_error("Failed to persist masked documents");
         }
+
+        // Persist terms dictionary
+        std::vector<std::pair<strwlen8_t, term_index_ctx>> v;
+        IOBuffer data, index;
+
+        for (const auto &it : map)
+        {
+                const auto termID = it.key();
+                const auto term = invDict[termID]; // actual term
+
+                v.push_back({term, it.value()});
+        }
+
+        pack_terms(v, &data, &index);
 
         sess->end();
 }

@@ -1,9 +1,9 @@
 #pragma once
 #include "queries.h"
-#include "segments.h"
 #include "docidupdates.h"
+#include "index_source.h"
 
 namespace Trinity
 {
-	bool exec_query(const query &in, segment &, dids_scanner_registry *const maskedDocumentsRegistry);
+	bool exec_query(const query &in, IndexSource *, dids_scanner_registry *const maskedDocumentsRegistry);
 };

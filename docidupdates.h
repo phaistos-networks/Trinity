@@ -75,12 +75,14 @@ namespace Trinity
                 {
                         for (uint8_t i{0}; i < rem;)
                         {
-                                if (scanners[i].test(id))
+				auto it = scanners + i;
+
+                                if (it->test(id))
                                         return true;
-                                else if (scanners[i].drained())
+                                else if (it->drained())
 				{
-                                        new (&scanners[i]) updated_documents_scanner(scanners[--rem]);
-					require(scanners[i] == scanners[rem + 1]);
+                                        new (it) updated_documents_scanner(scanners[--rem]);
+					require(*it == scanners[rem + 1]);
 				}	
                                 else
                                         ++i;
