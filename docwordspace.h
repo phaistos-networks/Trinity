@@ -7,6 +7,9 @@ namespace Trinity
         {
               private:
 	      	// just 4 bytes/position
+		// we could have separated docSeq and termID into different arrays(as in, not in the same struct) so that reset()
+		// would only memset() the docSeq array(2 bytes vs 4 bytes) * maxPos
+		// but that 'd make access somewhat slower for set() and test() because we 'd get more cache misses so we optimise for it
                 struct position
                 {
                         uint16_t docSeq;

@@ -5,6 +5,7 @@
 
 namespace Trinity
 {
+	// You can use SegmentIndexSession to create a new segment
         class SegmentIndexSource
             : public IndexSource,
               public RefCounted<SegmentIndexSource>

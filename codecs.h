@@ -9,6 +9,7 @@ namespace Trinity
         { 
 		// total documents matching term in the index(i.e segment, or whatever else)
 		// this is really important
+		//
 		// However, it's also important to remember that we can't compute TFIDF like Lucene claims to do if multiple segments
 		// are involved in an execution plan and at least one of them has updated documents that override 1+ other segments, because
 		// we can't really add the documents across all segments for the same term in order to determine how many document. 
@@ -17,6 +18,7 @@ namespace Trinity
 
 		// chunk that holds all postings for a given term
 		// We need to keep track of that size because it allows for all kind of optimizations and efficient skiplist access
+		// This is codec specific
 		range32_t indexChunk;
 
 		term_index_ctx(const uint32_t d, const range32_t c)
@@ -87,8 +89,10 @@ namespace Trinity
 			}
 
 
+			// Subclasses should e.g open files, allocate memory etc
                         virtual void begin() = 0;
 
+			// Subclasses should undo begin() ops. e.g close files and release resources
                         virtual void end() = 0;
 
 			// If we have multiple postlists for the same term(i.e merging 2+ segments and same term exists in 2+ of them) then
@@ -155,7 +159,9 @@ namespace Trinity
 
 			virtual uint16_t cur_doc_freq() = 0;
 
-			// XXX: if you materialize, it's likely that cur_doc_freq() will return, at best, 0
+			// Materialises hits for the _current_ document
+			//
+			// XXX: if you materialize, it's likely that future cur_doc_freq() calls will return, at best, 0
 			// so you should not materialize if have already done so -- if you know the codec you use
 			// will reset freqs tracker internally so that cur_doc_freq() == 0 you can check for that
                         virtual void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) = 0;

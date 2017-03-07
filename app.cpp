@@ -3,10 +3,47 @@
 #include "indexer.h"
 #include "playground_index_source.h"
 #include "terms.h"
+#include "segment_index_source.h"
 #include <set>
 
 
 using namespace Trinity;
+
+int main(int argc, char *argv[])
+{
+	{
+                SegmentIndexSession sess;
+
+                {
+                        auto doc = sess.begin(1);
+
+                        doc.insert("apple"_s8, 1);
+                        doc.insert("iphone"_s8, 2);
+
+                        sess.update(doc);
+                }
+
+                auto is = new Trinity::Codecs::Google::IndexSession("/tmp/TSEGMENTS/1/");
+
+                sess.commit(is);
+
+                delete is;
+        }
+
+
+	{
+		auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/1/");
+		auto maskedDocuments = dids_scanner_registry::make(nullptr, 0);
+		query q("apple");
+
+		exec_query(q, ss, maskedDocuments);
+
+		free(maskedDocuments);
+		ss->Release();
+	}
+
+        return 0;
+}
 
 #if 0
 int main(int argc, char *argv[])
@@ -187,7 +224,7 @@ int main(int argc, char *argv[])
 }
 #endif
 
-#if 1
+#if 0
 int main(int argc, char *argv[])
 {
 	Trinity::Codecs::Google::IndexSession sess("/tmp/");

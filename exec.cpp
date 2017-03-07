@@ -917,7 +917,6 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc,  dids_scanner_reg
         }
 
 	require(leaderTokensDecoders.size());
-        // We can now compile the AST to an optimised bytecode representation
 	auto leaderDecoders = leaderTokensDecoders.data();
 	uint32_t leaderDecodersCnt = leaderTokensDecoders.size();
 

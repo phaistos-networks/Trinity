@@ -7,16 +7,20 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
         char path[PATH_MAX];
 	strwlen32_t bp(basePath);
 
-	if (auto p = bp.SearchR('/'))
-		bp = bp.SuffixFrom(p + 1);
 	bp.StripTrailingCharacter('/');
 
+	if (auto p = bp.SearchR('/'))
+		bp = bp.SuffixFrom(p + 1);
+
 	if (!bp.IsDigits())
+	{
+		SLog(bp, "\n");
 		throw Switch::data_error("Expected segment name to be a generation(digits)");
+	}
 
 	gen = bp.AsUint64();
 
-        Snprintf(path, sizeof(path), "%s/updated_documents.ids");
+        Snprintf(path, sizeof(path), "%s/updated_documents.ids", basePath);
         fd = open(path, O_RDONLY | O_LARGEFILE);
 
         if (fd == -1)
@@ -39,7 +43,7 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
 
         terms.reset(new SegmentTerms(basePath));
 
-        Snprintf(path, sizeof(path), "%s/index");
+        Snprintf(path, sizeof(path), "%s/index", basePath);
         fd = open(path, O_RDONLY | O_LARGEFILE);
         Dexpect(fd != -1);
 
@@ -51,7 +55,7 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
 
         index.Set(static_cast<const uint8_t *>(fileData), uint32_t(fileSize));
 
-        Snprintf(path, sizeof(path), "%s/codec");
+        Snprintf(path, sizeof(path), "%s/codec", basePath);
         fd = open(path, O_RDONLY | O_LARGEFILE);
         Dexpect(fd != -1);
 

@@ -98,7 +98,9 @@ uint32_t SegmentIndexSession::term_id(const strwlen8_t term)
 {
 	// indexer words space
 	// Each segment has its own terms and there is no need to maintain a global(index) or local(segment) (term=>id) dictionary
-	// but we use transient term IDs (integers). See IMPL.md
+	// but we use transient term IDs (integers) for simplicity and performance
+	// SegmentIndexSession::commit() will store actual terms, not their transient IDs.
+	// . See IMPL.md
         uint32_t *idp;
         strwlen8_t *keyptr;
 
@@ -114,7 +116,7 @@ uint32_t SegmentIndexSession::term_id(const strwlen8_t term)
 void SegmentIndexSession::erase(const uint32_t documentID)
 {
         updatedDocumentIDs.push_back(documentID);
-        b.pack(documentID, uint16_t(0));
+        // NO NEED: b.pack(documentID, uint16_t(0));
 }
 
 Trinity::SegmentIndexSession::document_proxy SegmentIndexSession::begin(const uint32_t documentID)
@@ -137,7 +139,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         std::vector<uint32_t> allOffsets;
         Switch::unordered_map<uint32_t, term_index_ctx> map;
         std::unique_ptr<Trinity::Codecs::Encoder> enc_(sess->new_encoder(sess));
-        IOBuffer maskedProductsBuf;
+        IOBuffer maskedDocumentsBuf;
 
         const auto scan = [ enc = enc_.get(), &map ](const auto data, const auto dataSize)
         {
@@ -224,7 +226,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         // begin() could open files, etc
         sess->begin();
 
-        // IF we flushed b earlier, mmap() and scan() that mampped region first
+        // IF we flushed b earlier, mmap() and scan() that mmmap()ed region first
         scan(reinterpret_cast<const uint8_t *>(b.data()), b.size());
 
         // Persist index
@@ -252,15 +254,15 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                 throw Switch::system_error("Failed to persist index");
 
         // Persist masked documents if any
-        pack_updates(updatedDocumentIDs, &maskedProductsBuf);
+        pack_updates(updatedDocumentIDs, &maskedDocumentsBuf);
 
-        if (maskedProductsBuf.size())
+        if (maskedDocumentsBuf.size())
         {
                 fd = open(Buffer{}.append(sess->basePath, "/updated_documents.ids").c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_LARGEFILE, 0775);
 
                 if (fd == -1)
                         throw Switch::system_error("Failed to persist masked documents");
-                else if (write(fd, maskedProductsBuf.data(), maskedProductsBuf.size()) != maskedProductsBuf.size())
+                else if (write(fd, maskedDocumentsBuf.data(), maskedDocumentsBuf.size()) != maskedDocumentsBuf.size())
                 {
                         close(fd);
                         throw Switch::system_error("Failed to persist masked documents");
@@ -286,9 +288,10 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         if (data.SaveInFile(Buffer{}.append(sess->basePath, "/terms.data").c_str()) != data.size())
                 throw Switch::system_error("Failed to persist terms.data");
 
-        if (index.SaveInFile(Buffer{}.append(sess->basePath, "/terms.idx").c_str()) != data.size())
+        if (index.SaveInFile(Buffer{}.append(sess->basePath, "/terms.idx").c_str()) != index.size())
                 throw Switch::system_error("Failed to persist terms.idx");
 
+	// Persist codec info
         fd = open(Buffer{}.append(sess->basePath, "/codec").c_str(), O_WRONLY | O_LARGEFILE | O_TRUNC | O_CREAT, 0775);
 
         Dexpect(fd != -1);

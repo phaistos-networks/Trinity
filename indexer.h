@@ -9,6 +9,7 @@ namespace Trinity
 {
 	// A utility class suitable for indexing document terms and persisting the index and other codec specifc data into a directory
 	// It offers a simple API for adding, updating and erasing documents
+	// You should use SegmentIndexSource to load the segment(and use it for search)
         class SegmentIndexSession final
         {
               private:
