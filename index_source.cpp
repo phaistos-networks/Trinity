@@ -17,3 +17,20 @@ void Trinity::IndexSourcesCollection::commit()
                         all.push_back(ud);
         }
 }
+
+Trinity::IndexSourcesCollection::~IndexSourcesCollection()
+{
+	while (sources.size())
+	{
+		sources.back()->Release();
+		sources.pop_back();
+	}
+}
+
+Trinity::dids_scanner_registry *Trinity::IndexSourcesCollection::scanner_registry_for(const uint16_t idx) 
+{
+	const auto n = map[idx].second;
+	auto res = dids_scanner_registry::make(all.data(), n);
+
+	return res;
+}

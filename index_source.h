@@ -1,7 +1,7 @@
 #pragma once
+#include "codecs.h"
 #include <switch.h>
 #include <switch_dictionary.h>
-#include "codecs.h"
 
 namespace Trinity
 {
@@ -9,21 +9,21 @@ namespace Trinity
         // It can be a RO wrapper to an index segment, a wrapper to a simple hashtable/list, anything
         // Lucene implements near real-time search by providing a segment wrapper(i.e index source) which accesses the indexer state directly
         // With index sources, we could accomplish that as well
-	//
-	// One could build a fairly impressive scheme, where custom IndexSource and Trinity::Codec::Decoder sub-classes would allow for very interesting use cases
+        //
+        // One could build a fairly impressive scheme, where custom IndexSource and Trinity::Codec::Decoder sub-classes would allow for very interesting use cases
         class IndexSource
-		: public RefCounted<IndexSource>
+            : public RefCounted<IndexSource>
         {
               protected:
                 Switch::unordered_map<strwlen8_t, uint32_t> termIDsMap;
                 Switch::unordered_map<uint32_t, term_index_ctx> cache;
-		uint64_t gen{0}; // See IndexSourcesCollection
+                uint64_t gen{0}; // See IndexSourcesCollection
 
               public:
-	      	inline auto generation() const noexcept
-		{
-			return gen;
-		}
+                inline auto generation() const noexcept
+                {
+                        return gen;
+                }
 
                 // Returns an INDEX SOURCE WORD SPACE integer identifier
                 // You will need to translate to this words space. See exec.cpp
@@ -60,50 +60,45 @@ namespace Trinity
                         return cache[termID];
                 }
 
-
-
-
                 // Subclasses only need to implement 3 methods
                 virtual term_index_ctx resolve_term_ctx(const strwlen8_t term) = 0;
 
                 // factory method
                 virtual Trinity::Codecs::Decoder *new_postings_decoder(const term_index_ctx ctx) = 0;
 
-		// Override if you have any masked documents
-		virtual updated_documents masked_documents()
-		{
-			return {};
-		}
-	
-		virtual ~IndexSource()
-		{
+                // Override if you have any masked documents
+                virtual updated_documents masked_documents()
+                {
+                        return {};
+                }
 
-		}
+                virtual ~IndexSource()
+                {
+                }
         };
 
-
-
-	// A collection of IndexSource; an index of segments or other sources
-	// Each index source is identified by a generation, and no two sources can share the same generation
-	// The generation represents the order of the sources in relation to each other; a higher generation means that
-	// a source with that generation has been created after another with a lower generation.
-	// In practice those are likely Timings::Microseconds::SysTime() at the time of the source creation and
-	// for segments thats when they were persisted to disk. (in fact for segments, their name is their 
-	// generation)
-	//
-	// Each source is also associated with an `updated_documents` instance which tracked all documents updated or deleted when the source was created.
-	// This is not used directly by the source itself, but when executing a query on a source(see exec_query() API), we need to consider the source's generation
-	// and for any other sources that will be involved in the search session that have generation HIGHER than the source's generation, we need to check that
-	// a document is not set in any of their `updated_documents` instances (because that would mean that there is more recent information about that document
-	// in another source that will be considered in this search session).
-	//
-	// IndexSourcesCollection facilitates that arrangement.
-	// It represents a `search session` collection of index sources, and for each such source, it creates a dids_scanner_registry that contains scanners
-	// for all more recent sources.
-	//
-	// It also retains all sources.
-	// Example:
-	/*
+        // A collection of IndexSource; an index of segments or other sources
+        // Each index source is identified by a generation, and no two sources can share the same generation
+        // The generation represents the order of the sources in relation to each other; a higher generation means that
+        // a source with that generation has been created after another with a lower generation.
+        // In practice those are likely Timings::Microseconds::SysTime() at the time of the source creation and
+        // for segments thats when they were persisted to disk. (in fact for segments, their name is their
+        // generation)
+        //
+        // Each source is also associated with an `updated_documents` instance which tracked all documents updated or deleted when the source was created.
+        // This is not used directly by the source itself, but when executing a query on a source(see exec_query() API), we need to consider the source's generation
+        // and for any other sources that will be involved in the search session that have generation HIGHER than the source's generation, we need to check that
+        // a document is not set in any of their `updated_documents` instances (because that would mean that there is more recent information about that document
+        // in another source that will be considered in this search session).
+        //
+        // IndexSourcesCollection facilitates that arrangement.
+        // It represents a `search session` collection of index sources, and for each such source, it creates a dids_scanner_registry that contains scanners
+        // for all more recent sources.
+        //
+        // It also retains all sources.
+        // In this example, we are executing the query in sequence, but you could do this in parallel using multiple threads and just collect the top-K results from each
+        // and merge/reduce them in the end.
+        /*
 	 *
 		IndexSourcesCollection bpIndex;
 
@@ -124,42 +119,29 @@ namespace Trinity
 		}
 	*
 	*/
-	class IndexSourcesCollection
-	{
-		private:
-		std::vector<updated_documents> all;
-		// for each source, we track how many of the first update_documents in all[]
-		// we should consider for masking documents
-		std::vector<std::pair<IndexSource *, uint16_t>> map; 
+        class IndexSourcesCollection final
+        {
+              private:
+                std::vector<updated_documents> all;
+                // for each source, we track how many of the first update_documents in all[]
+                // we should consider for masking documents
+                std::vector<std::pair<IndexSource *, uint16_t>> map;
 
-		public:
-		std::vector<IndexSource *> sources;
+              public:
+                std::vector<IndexSource *> sources;
 
-		public:
-		void insert(IndexSource *is)
-		{
-			is->Retain();
-			sources.push_back(is);
-		}
+              public:
+                void insert(IndexSource *is)
+                {
+                        is->Retain();
+                        sources.push_back(is);
+                }
 
-		~IndexSourcesCollection()
-		{
-			while (sources.size())
-			{
-				sources.back()->Release();
-				sources.pop_back();
-			}
-		}
+                ~IndexSourcesCollection();
 
-		void commit();
+                void commit();
 
-		auto scanner_registry_for(const uint16_t idx)
-		{
-			const auto n = map[idx].second;
-			auto res = dids_scanner_registry::make(all.data(), n);
-
-			return res;
-		}
-
-	};
+		// remember to std::free() the result
+                Trinity::dids_scanner_registry *scanner_registry_for(const uint16_t idx) ;
+        };
 }
