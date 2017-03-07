@@ -61,10 +61,52 @@ namespace Trinity
                         return positions[pos - 1].docSeq == curSeq && positions[pos - 1].termID == phrasePrevTermID;
 		}
 
+#if 0
+		/*
+		 * -O1
+
+        movq    (%rdi), %rax
+        movzwl  (%rax,%rdx,4), %ecx
+        cmpw    12(%rdi), %cx
+        jne     .LBB3_1
+        cmpw    %si, 2(%rax,%rdx,4)
+        sete    %al
+        retq
+.LBB3_1:
+        xorl    %eax, %eax
+        retq
+		*
+		*/
+
 		inline bool test(const exec_term_id_t termID, const uint16_t pos) const noexcept
 		{
 			return positions[pos].docSeq == curSeq && positions[pos].termID == termID;
 		}
+#else
+		/* 
+		 * -O1
+
+        shll    $16, %esi
+        movzwl  12(%rdi), %eax
+        orl     %esi, %eax
+        movq    (%rdi), %rcx
+        cmpl    (%rcx,%rdx,4), %eax
+        sete    %al
+        retq
+
+		*
+ 		*/	
+		inline bool test(const exec_term_id_t termID, const uint16_t pos) const noexcept
+		{
+			// this works thanks on little-endian arhs.
+			// not sure if this is faster than the older impl.
+			// in -O1, this saves us 2 instructions and looks faster. Will investigate
+			static_assert(sizeof(termID) == sizeof(uint16_t));
+			static_assert(sizeof(curSeq) == sizeof(uint16_t));
+
+			return ((uint32_t(termID) << 16) | curSeq) == *(uint32_t *)&positions[pos];
+		}
+#endif
 
 		// We can probably just sort all phrase terms by freq asc
 		// and iterate across all hits, and for each hit, see if it is set
