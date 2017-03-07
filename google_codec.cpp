@@ -545,8 +545,9 @@ bool Trinity::Codecs::Google::Decoder::seek(const uint32_t target)
         return false;
 }
 
-void Trinity::Codecs::Google::Decoder::init(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *proxy, const uint8_t *skiplistData)
+void Trinity::Codecs::Google::Decoder::init(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *proxy)
 {
+	const uint8_t *skiplistData{nullptr};
         [[maybe_unused]] auto access = static_cast<Trinity::Codecs::Google::AccessProxy *>(proxy);
         auto indexPtr = access->indexPtr;
         auto ptr = indexPtr + tctx.indexChunk.offset;
@@ -581,11 +582,11 @@ void Trinity::Codecs::Google::Decoder::init(const term_index_ctx &tctx, Trinity:
         }
 }
 
-Trinity::Codecs::Decoder *Trinity::Codecs::Google::AccessProxy::decoder(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access, const uint8_t *skiplistData)
+Trinity::Codecs::Decoder *Trinity::Codecs::Google::AccessProxy::new_decoder(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access)
 {
         auto d = std::make_unique<Trinity::Codecs::Google::Decoder>();
 
-        d->init(tctx, access, skiplistData);
+        d->init(tctx, access);
         return d.release();
 }
 

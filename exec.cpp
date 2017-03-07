@@ -7,7 +7,9 @@ using namespace Trinity;
 // tightly packed node (4 bytes)
 // It's possible that we can use 12 bits for the operand(nodeCtxIdx) and the remaining 4 for the opcode
 // and make sizeof(exec_node) == 2
-// Eventually we will be able to compile this down to bytecode ro 
+//
+// Eventually we will be able to compile this down to bytecode or generate machine coder
+//
 // We could also include a weight here -- so that if e.g a phrase or a complex expression matched we'd boost the score
 // by some factor/coefficient(this would have been provided by the input query)
 struct exec_node
@@ -50,16 +52,16 @@ struct runtime_ctx
 	{
 		uint8_t rep; 		// see phrase::rep
 		uint8_t index; 		// see phrase::index
-		exec_term_id_t termID;
+		exec_term_id_t termID;	// via resolve_term()
 	};
 
 	// See compile() and OpCodes::MatchPhrase
 	struct phrase
 	{
-		exec_term_id_t *termIDs;
+		exec_term_id_t *termIDs;// via resolve_term()
 		uint8_t rep; 		// phrase::rep
 		uint16_t index; 	// phrase::index
-		uint8_t size;
+		uint8_t size;		// total in termIDs
 	};
 
 	// Materialized hits for a term and the current document
@@ -590,6 +592,12 @@ static inline uint8_t matchtoken_impl(const exec_node self, runtime_ctx &rctx)
 	auto t = rctx.evalnode_ctx.tokens + self.nodeCtxIdx;
 	auto decoder = rctx.decode_ctx.decoders[t->termID];
 	const auto res = decoder->seek(rctx.curDocID);
+
+	if (res)
+	{
+		// include in the list of tokens found
+		// we will materialize only if needed
+	}
 
 	SLog(ansifmt::color_green, "Attempting to match token against ", rctx.curDocID, ansifmt::reset, " => ", res, "\n");
 	return res;

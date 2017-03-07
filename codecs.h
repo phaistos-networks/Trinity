@@ -145,6 +145,8 @@ namespace Trinity
 		class AccessProxy;
 
 		// Decoder interface for decoding a single term's postlists
+		// If a decoder makes use of skiplist data, they are expected to be serialized in the index
+		// and the decoder is responsible for deserializing and using them from there
                 struct Decoder
                 {
                         virtual uint32_t begin() = 0;
@@ -169,7 +171,7 @@ namespace Trinity
 			// not going to rely on a constructor for initialization because
 			// we want to force subclasses to define a method with this signature
 			// TODO: skiplist data should be specific to the AccessProxy
-			virtual void init(const term_index_ctx &, AccessProxy *, const uint8_t *skiplistData) = 0;
+			virtual void init(const term_index_ctx &, AccessProxy *) = 0;
 
 			virtual ~Decoder()
 			{
@@ -188,7 +190,7 @@ namespace Trinity
 			// utility function: returns a new decoder for posts list
 			// Some codecs(e.g lucene's) may need to access the filesystem and/or other codec specific state
 			// AccessProxy faciliates that (this is effectively a pointer to self)
-                        virtual Decoder *decoder(const term_index_ctx &tctx, AccessProxy *access, const uint8_t *skiplistData) = 0;
+                        virtual Decoder *new_decoder(const term_index_ctx &tctx, AccessProxy *access) = 0;
 
 			AccessProxy(const char *bp, const uint8_t *index_ptr)
 				: basePath{bp}, indexPtr{index_ptr}

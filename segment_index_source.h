@@ -6,13 +6,11 @@
 namespace Trinity
 {
 	// You can use SegmentIndexSession to create a new segment
-        class SegmentIndexSource
-            : public IndexSource,
-              public RefCounted<SegmentIndexSource>
+        class SegmentIndexSource final
+            : public IndexSource
         {
               private:
                 std::unique_ptr<Trinity::Codecs::AccessProxy> accessProxy;
-                uint64_t gen;       // Timings::Microseconds::SysTime() when it was comitted
 		std::unique_ptr<SegmentTerms> terms; // all terms for this segment
 		range_base<const uint8_t *, uint32_t> index;
 
@@ -36,8 +34,6 @@ namespace Trinity
               public:
                 SegmentIndexSource(const char *basePath);
 
-                Switch::unordered_map<strwlen8_t, term_index_ctx> tctxMap; // for debugging
-
                 term_index_ctx resolve_term_ctx(const strwlen8_t term) override final
                 {
                         return terms->lookup(term);
@@ -45,10 +41,15 @@ namespace Trinity
 
                 Trinity::Codecs::Decoder *new_postings_decoder(const term_index_ctx ctx) override final
                 {
-                        return accessProxy->decoder(ctx, accessProxy.get(), nullptr);
+                        return accessProxy->new_decoder(ctx, accessProxy.get());
                 }
 
-		~SegmentIndexSource()
+                updated_documents masked_documents() override final
+                {
+                        return maskedDocuments.set;
+                }
+
+                ~SegmentIndexSource()
 		{
 			if (auto ptr = (void *)index.offset)
 				munmap(ptr, index.size());

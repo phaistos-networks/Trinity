@@ -139,7 +139,7 @@ namespace Trinity
 
 				}
 
-                                Trinity::Codecs::Decoder *decoder(const term_index_ctx &tctx,  Trinity::Codecs::AccessProxy *access, const uint8_t *skiplistData);
+                                Trinity::Codecs::Decoder *new_decoder(const term_index_ctx &tctx,  Trinity::Codecs::AccessProxy *access);
                         };
 
                         // We used to keep track of remDocsInBlocks
@@ -219,7 +219,7 @@ namespace Trinity
 
                         	void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) override final;
 
-				void init(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access, const uint8_t *) override final;
+				void init(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access) override final;
                         };
                 }
         }

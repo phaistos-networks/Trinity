@@ -61,7 +61,7 @@ namespace Trinity
                         return positions[pos - 1].docSeq == curSeq && positions[pos - 1].termID == phrasePrevTermID;
 		}
 
-#if 0
+#if 1
 		/*
 		 * -O1
 
@@ -78,6 +78,8 @@ namespace Trinity
 		*
 		*/
 
+		// Turns out with -O1 or higher, this is faster than the alternative impl
+		// based on my folly benchmarks
 		inline bool test(const exec_term_id_t termID, const uint16_t pos) const noexcept
 		{
 			return positions[pos].docSeq == curSeq && positions[pos].termID == termID;
@@ -101,6 +103,11 @@ namespace Trinity
 			// this works thanks on little-endian arhs.
 			// not sure if this is faster than the older impl.
 			// in -O1, this saves us 2 instructions and looks faster. Will investigate
+			// 
+			// TODO: We could in theory use this trick to check for _2_ positions ahead by
+			// building a u64 and using *(uint64_t *)&positions[pos] which will also
+			// access the adjacent positions[pos+1].
+			// e.g test2() method
 			static_assert(sizeof(termID) == sizeof(uint16_t));
 			static_assert(sizeof(curSeq) == sizeof(uint16_t));
 

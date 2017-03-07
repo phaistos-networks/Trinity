@@ -4,9 +4,8 @@
 namespace Trinity
 {
 	// A simple playground index source for monkey around
-        class PlaygroundIndexSource
-            : public IndexSource,
-              public RefCounted<PlaygroundIndexSource>
+        class PlaygroundIndexSource final
+            : public IndexSource
         {
               private:
                 std::unique_ptr<Trinity::Codecs::AccessProxy> accessProxy;
@@ -26,7 +25,7 @@ namespace Trinity
 
                 Trinity::Codecs::Decoder *new_postings_decoder(const term_index_ctx ctx) override final
                 {
-                        return accessProxy->decoder(ctx, accessProxy.get(), nullptr);
+                        return accessProxy->new_decoder(ctx, accessProxy.get());
                 }
         };
 }

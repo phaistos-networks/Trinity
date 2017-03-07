@@ -41,6 +41,7 @@ namespace Trinity
 
                         void insert(const uint32_t termID, const uint32_t position, range_base<const uint8_t *, const uint8_t> payload);
 
+			// new `term` hit at `position` with `payload`(attrs.)
                         void insert(const strwlen8_t term, const uint32_t position, range_base<const uint8_t *, const uint8_t> payload)
                         {
                                 insert(term_id(term), position, payload);
@@ -51,6 +52,7 @@ namespace Trinity
                                 insert(termID, position, {});
                         }
 
+			// new `term` hit at `position`
                         void insert(const strwlen8_t term, const uint32_t position)
                         {
                                 insert(term_id(term), position, {});

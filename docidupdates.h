@@ -10,6 +10,11 @@ namespace Trinity
                 const uint32_t skiplistSize;
                 const uint32_t bankSize;
                 const uint8_t *banks;
+		
+		inline operator bool() const
+		{
+			return banks;
+		}
         };
 
         // Facilitates fast set test operations for updated/deleted documents packed
