@@ -14,11 +14,11 @@ namespace Trinity
                 IndexSourceTermsView *terms;
 
                 // Faciliates access to the index and other content
-                // it allows us to create decoders etc
                 Trinity::Codecs::AccessProxy *ap;
 
                 // All documents masked in this index source
                 // more recent candidates(i.e candidates where gen < this gen) will use it
+		// see MergeCandidatesCollection::merge() impl.
                 updated_documents maskedDocuments;
 
                 merge_candidate &operator=(const merge_candidate &o)
@@ -51,9 +51,14 @@ namespace Trinity
 
                 std::unique_ptr<Trinity::masked_documents_registry> scanner_registry_for(const uint16_t idx);
 
+		// This method will merge all registered merge candidates into a new index session and will also output all
+		// distinct terms and their term_index_ctx.
+		// It will properly and optimally handle different input codecs and mismatches between output codec(i.e is->codec_identifier() )
+		// and input codecs.
+		//
                 // You may want to use
                 // - Trinity::pack_terms() to build the terms files and then persist them
                 // - Trinity::persist_segment() to persist the actual index
-                void merge(Codecs::IndexSession *is, simple_allocator *, std::vector<std::pair<strwlen8_t, term_index_ctx>> *const terms);
+                void merge(Codecs::IndexSession *outIndexSess, simple_allocator *, std::vector<std::pair<strwlen8_t, term_index_ctx>> *const outTerms);
         };
 }

@@ -201,8 +201,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 			}
 			else
 			{
-				// this is tricky now
-				// we got to merge-sort across different codecs and output to an encoder of a differen codec
+				// we got to merge-sort across different codecs and output to an encoder of a different, potentially, codec
 				term_index_ctx tctx;
 				std::unique_ptr<Trinity::Codecs::Encoder> enc(is->new_encoder(is));
 
@@ -211,16 +210,18 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 					const auto idx = toAdvance[i];
 					auto ap = all[idx].candidate.ap;
 					auto dec = ap->new_decoder(all[idx].candidate.terms->cur().second, ap);
+					auto reg = scanner_registry_for(all[idx].idx).release();
 					
+					require(reg);
 					dec->begin();
-					decodersV.push_back({dec, scanner_registry_for(all[idx].idx).release()});
+					decodersV.push_back({dec, reg});
 				}
 
 				uint16_t rem{toAdvanceCnt};
 				auto decoders = decodersV.data();
 				uint16_t toAdvance[128]; 
 
-				require(sizeof_array(toAdvance) <= decodersV.size());
+				require(sizeof_array(toAdvance) >= decodersV.size());
 
 				enc->begin_term();
 
@@ -229,6 +230,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 					uint16_t toAdvanceCnt{1};
 					uint32_t lowestDID = decoders[0].first->cur_doc_id();
 
+					toAdvance[0] = 0;
 					for (uint16_t i{1}; i != rem; ++i)
 					{
 						const auto id = decoders[i].first->cur_doc_id();

@@ -213,6 +213,8 @@ int main(int argc, char *argv[])
 
 	collection.merge(is, &allocator, &terms);
 
+	SLog(size_repr(is->indexOut.size()), "\n");
+
 
 
         return 0;

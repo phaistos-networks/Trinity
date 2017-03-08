@@ -16,8 +16,13 @@ Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_
 
                 if (t->term == q)
                 {
+#ifdef TRINITY_TERMS_FAT_INDEX
                         // found in the index/skiplist
                         return t->tctx;
+#else
+			top = mid;
+			goto l100;
+#endif
                 }
                 else if (Text::StrnncasecmpISO88597(q.data(), q.size(), t->term.data(), t->term.size()) < 0)
                         top = mid - 1;
@@ -28,53 +33,9 @@ Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_
         if (top == -1)
                 return {};
 
+l100:
         const auto &it = skipList[top];
         const auto o = it.blockOffset;
-#if 0
-        auto prev = it.term;
-        char prevTerm[255], curTerm[255];
-        uint8_t prevTermLen = prev.size();
-
-        memcpy(prevTerm, prev.data(), prevTermLen);
-
-        for (const auto *p = termsData.offset + o, *const e = termsData.offset + termsData.size(); p != e;)
-        {
-                const auto commonPrefixLen = *p++;
-                const auto suffixLen = *p++;
-
-                memcpy(curTerm, prevTerm, commonPrefixLen);
-                memcpy(curTerm + commonPrefixLen, p, suffixLen);
-                p += suffixLen;
-
-                const auto curTermLen = commonPrefixLen + suffixLen;
-                const auto r = Text::StrnncasecmpISO88597(q.data(), q.size(), curTerm, curTermLen);
-
-                if (r < 0)
-                {
-                        // definitely not here
-                        break;
-                }
-                else if (r == 0)
-                {
-                        term_index_ctx tctx;
-
-                        tctx.documents = Compression::decode_varuint32(p);
-                        tctx.indexChunk.len = Compression::decode_varuint32(p);
-                        tctx.indexChunk.offset = *(uint32_t *)p;
-
-                        return tctx;
-                }
-                else
-                {
-                        Compression::decode_varuint32(p);
-                        Compression::decode_varuint32(p);
-                        p += sizeof(uint32_t);
-
-                        prevTermLen = curTermLen;
-                        memcpy(prevTerm, curTerm, curTermLen);
-                }
-        }
-#else
         auto prev = it.term;
 	char termStorage[256];
 
@@ -113,7 +74,6 @@ Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_
                         p += sizeof(uint32_t);
                 }
         }
-#endif
 
         return {};
 }
@@ -125,11 +85,13 @@ void Trinity::unpack_terms_skiplist(const range_base<const uint8_t *, const uint
 		auto t = skipList->PushEmpty();
 		const strwlen8_t term((char *)p + 1, *p);
 		p += term.size() + sizeof(uint8_t);
+#ifdef TRINITY_TERMS_FAT_INDEX
 		{
 			t->tctx.documents = Compression::decode_varuint32(p);
 			t->tctx.indexChunk.len = Compression::decode_varuint32(p);
 			t->tctx.indexChunk.offset = *(uint32_t *)p; p+=sizeof(uint32_t);
 		}
+#endif
 		t->blockOffset = Compression::decode_varuint32(p);
 		t->term.Set(allocator.CopyOf(term.data(), term.size()), term.size());
 	}
@@ -137,7 +99,8 @@ void Trinity::unpack_terms_skiplist(const range_base<const uint8_t *, const uint
 
 void Trinity::pack_terms(std::vector<std::pair<strwlen8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index)
 {
-        static constexpr uint32_t SKIPLIST_INTERVAL{128};	 // 128 or 64 is more than fine
+        //static constexpr uint32_t SKIPLIST_INTERVAL{128};	 // 128 or 64 is more than fine
+        static constexpr uint32_t SKIPLIST_INTERVAL{2};	 // 128 or 64 is more than fine
         uint32_t nextSkipListEntry{1}; 	// so that we will output for the first term (required)
         strwlen8_t prev;
 
@@ -157,22 +120,17 @@ void Trinity::pack_terms(std::vector<std::pair<strwlen8_t, term_index_ctx>> &ter
 
                         index->pack(uint8_t(cur.size()));
                         index->serialize(cur.data(), cur.size());
+#ifdef TRINITY_TERMS_FAT_INDEX
                         {
                                 index->encode_varuint32(it.second.documents);
                                 index->encode_varuint32(it.second.indexChunk.len);
                                 index->pack(it.second.indexChunk.offset);
                         }
+#endif
                         index->encode_varuint32(data->size()); // offset in the terms data file
 
                 }
-#if 0
-		// we no longer emit the (term, term_index_ctx) from the data file 
-		// because while it works great for lookup, it means we can't iterate all terms by going through
-		// the data file along -- and this is important for merge (See terms_data_view struct)
-		// Hopefully, this is not such a big deal
-		// 
-		// For other applications that do not need to iterate/access all terms and only care for quick lookups
-		// we should build an alternative imp that does omit the term from the data file if stored in the index
+#ifdef TRINITY_TERMS_FAT_INDEX
                 else
 #endif
                 {

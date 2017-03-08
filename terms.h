@@ -12,11 +12,22 @@
 // https://lucene.apache.org/core/2_9_4/fileformats.html#Term%20Dictionary
 namespace Trinity
 {
+
+// We can no longer ommit (term, term_index_ctx) from the terms data file and keep
+// that just in the index, beause while it works great for lookups, it means we can't trivially iterate
+// over all terms in the terms data file (see terms_data_view struct), and this is important for merging segments.
+// For other applications that do not need to access to all terms, one couild get those structures, make sure TRINITY_TERMS_FAT_INDEX is defined
+// and use it .
+//#define TRINITY_TERMS_FAT_INDEX 
 	struct terms_skiplist_entry
         {
                 strwlen8_t term;
+#ifdef TRINITY_TERMS_FAT_INDEX
                 uint32_t blockOffset; 	// offset in the terms datafile
                 term_index_ctx tctx;	// payload
+#else
+                uint32_t blockOffset; 	// offset in the terms datafile
+#endif
         };
 
         term_index_ctx lookup_term(range_base<const uint8_t *, uint32_t> termsData, const strwlen8_t term, const Switch::vector<terms_skiplist_entry> &skipList);
