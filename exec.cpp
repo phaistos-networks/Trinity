@@ -813,7 +813,7 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
         // We need the leader nodes
         // See leader_nodes() impl. comments
         std::vector<ast_node *> leaderNodes;
-        uint16_t toAdvance[1024];
+        uint16_t toAdvance[Limits::MaxQueryTokens];
         Switch::vector<Trinity::Codecs::Decoder *> leaderTokensDecoders;
 
         {

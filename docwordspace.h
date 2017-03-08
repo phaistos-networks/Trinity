@@ -1,4 +1,5 @@
 #pragma once
+#include "limits.h"
 #include "runtime.h"
 
 namespace Trinity
@@ -22,12 +23,12 @@ namespace Trinity
                 uint16_t curSeq{0};
 
               public:
-		// allocating max + 256, because 256 is the theoritical maximum phrase size
+		// allocating max + Trinity::Limits::MaxPhraseSize, because that is the theoritical maximum phrase size
 		// and if we are going to test starting from maxPos extending to 10 positions ahead, we want to
 		// make sure we won't read outside positions. 
 		// The extra positions will be always initialized to 0 and we won't need to reset those in reset()
                 DocWordsSpace(const uint32_t max)
-			: positions((position *)calloc(sizeof(position), max + 256)), maxPos{max} 
+			: positions((position *)calloc(sizeof(position), max + Trinity::Limits::MaxPhraseSize)), maxPos{max} 
 		{
 
 		}

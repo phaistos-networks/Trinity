@@ -3,6 +3,7 @@
 #include <switch_mallocators.h>
 #include <switch_vector.h>
 #include <text.h>
+#include "limits.h"
 
 namespace Trinity
 {
@@ -105,7 +106,7 @@ namespace Trinity
         {
                 strwlen32_t content;
                 simple_allocator &allocator;
-                term terms[128];
+                term terms[Trinity::Limits::MaxPhraseSize];
 
                 auto *alloc_node(const ast_node::Type t)
                 {

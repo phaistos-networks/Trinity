@@ -125,7 +125,6 @@ namespace Trinity
 
                 void commit();
 
-		// remember to std::free() the result
                 std::unique_ptr<Trinity::masked_documents_registry> scanner_registry_for(const uint16_t idx) ;
         };
 }

@@ -54,6 +54,9 @@ static ast_node *parse_phrase_or_token(parse_ctx &ctx)
 
                         if (const auto t = parse_term(ctx); t.token)
                         {
+				if (unlikely(t.token.size() > Limits::MaxTermLength))
+					return ctx.alloc_node(ast_node::Type::ConstFalse);
+
                                 if (n != sizeof_array(terms))
                                 {
                                         // silently ignore the rest
@@ -82,6 +85,9 @@ static ast_node *parse_phrase_or_token(parse_ctx &ctx)
         }
         else if (const auto t = parse_term(ctx); t.token)
         {
+                if (unlikely(t.token.size() > Limits::MaxTermLength))
+                        return ctx.alloc_node(ast_node::Type::ConstFalse);
+
                 auto node = ctx.alloc_node(ast_node::Type::Token);
                 auto p = (phrase *)ctx.allocator.Alloc(sizeof(phrase) + sizeof(term));
 
@@ -362,6 +368,7 @@ static ast_node *parse_expr(const strwlen32_t e, simple_allocator &a)
 struct normalizer_ctx
 {
         uint32_t updates;
+	uint32_t tokensCnt{0};
 };
 
 static void normalize(ast_node *, normalizer_ctx &);
@@ -673,6 +680,8 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx)
                         SLog("after:", *n, "\n");
                 }
         }
+	else if (n->type == ast_node::Type::Token || n->type == ast_node::Type::Phrase)
+		ctx.tokensCnt += n->p->size;
 }
 
 static void assign_phrase_index(ast_node *const n, uint32_t &nextIndex)
@@ -721,10 +730,16 @@ ast_node *normalize_root(ast_node *root)
         do
         {
                 ctx.updates = 0;
+		ctx.tokensCnt = 0;
                 normalize(root, ctx);
         } while (ctx.updates);
 
-        if (root->is_dummy())
+	if (unlikely(ctx.tokensCnt > Limits::MaxQueryTokens))
+	{
+		SLog("Too many query tokens\n");
+		root = nullptr;
+	}
+        else if (root->is_dummy())
         {
                 Print("Ignoring dummy root\n");
                 root = nullptr;

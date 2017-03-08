@@ -112,13 +112,17 @@ namespace Trinity
 			// By providing the access to an index and a term's tctx, we should append to the current indexOut
 			// for most codecs, that's just a matter of copying the region in tctx.indexChunk into indexOut, but
 			// some other codecs may need to access other files in the src (e.g lucene codec uses two extra files for positions/attributes)
+			//
 			// must hold that (src->codec_identifier() == this->codec_identifier())
 			//
 			// XXX: If you want to filter a chunk's documents though, don't use this method. see MergeCandidatesCollection::merge()
+			//
+			// If you have a fancy codec that you don't expect to use for merging other segments (e.g some fancy in-memory wrapper that is
+			// really only used for queries as an IndexSource), then you can just implement this and merge() as no-ops.
 			virtual range32_t append_index_chunk(const AccessProxy *src, const term_index_ctx srcTCTX) = 0;
 
 			// If we have multiple postlists for the same term(i.e merging 2+ segments and same term exists in 2+ of them) then
-			// where we can't just serialize (chunk, chunkSize) but instead we need to merge them, we need to use this codec-specific merge function
+			// where we can't just use append_index_chunk()  but instead we need to merge them, we need to use this codec-specific merge function
 			// that will do this for us. Use append_index_chunk() otherwise.
 			// 
 			// You are expected to have encoder->begin_term() before invoking this method, and to invoke encoder->end_term() after the method has returned
@@ -171,9 +175,11 @@ namespace Trinity
 			// before iterating via next(), you need to begin()
 			// if you do not intend to iterate the documents list, and only wish to seek documents
 			// you can/should skip begin() and just use seek()
+			// returns UINT32_MAX if there are no documents
                         virtual uint32_t begin() = 0;
 
 			// returns false if no documents list has been exchausted
+			// or advances to the next document and returns true
                         virtual bool next() = 0;
 
                         virtual bool seek(const uint32_t target) = 0;
