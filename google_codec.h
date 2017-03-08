@@ -31,7 +31,10 @@ namespace Trinity
 					return "GOOGLE"_s8;
 				}
 
-                                void merge(range_base<const uint8_t *, uint32_t> *in, const uint32_t chunksCnt, Trinity::Codecs::Encoder *const encoder, dids_scanner_registry *maskedDocuments) override final;
+
+				range32_t append_index_chunk(const Trinity::Codecs::AccessProxy *, const term_index_ctx srcTCTX) override final;
+
+                        	void merge(merge_participant *, const uint16_t, Trinity::Codecs::Encoder *) override final;
 			};
 
 
@@ -139,7 +142,12 @@ namespace Trinity
 
 				}
 
-                                Trinity::Codecs::Decoder *new_decoder(const term_index_ctx &tctx,  Trinity::Codecs::AccessProxy *access);
+				strwlen8_t codec_identifier() override final
+				{
+					return "GOOGLE"_s8;
+				}
+
+                                Trinity::Codecs::Decoder *new_decoder(const term_index_ctx &tctx,  Trinity::Codecs::AccessProxy *access) override final;
                         };
 
                         // We used to keep track of remDocsInBlocks

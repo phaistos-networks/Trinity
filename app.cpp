@@ -6,6 +6,7 @@
 #include "segment_index_source.h"
 #include <set>
 #include <text.h>
+#include "merge.h"
 
 
 using namespace Trinity;
@@ -60,7 +61,7 @@ int main(int argc, char *argv[])
 #if 0
 	{
 		auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/1/");
-		auto maskedDocuments = dids_scanner_registry::make(nullptr, 0);
+		auto maskedDocuments = masked_documents_registry::make(nullptr, 0);
 		query q("apple");
 
 		exec_query(q, ss, maskedDocuments);
@@ -87,7 +88,139 @@ int main(int argc, char *argv[])
 }
 #endif
 
+
 #if 1
+int main(int argc, char *argv[])
+{
+        const auto index_document = [](auto &documentSess, const strwlen32_t input) {
+                uint32_t pos{1};
+
+                for (const auto *p = input.data(), *const e = p + input.size(); p != e;)
+                {
+                        if (const auto len = Text::TermLengthWithEnd(p, e))
+                        {
+                                documentSess.insert(strwlen8_t(p, len), pos++);
+                                p += len;
+                        }
+                        else
+                        {
+                                if (!isblank(*p))
+                                        ++pos;
+                                ++p;
+                        }
+                }
+        };
+
+
+        {
+                SegmentIndexSession sess;
+
+                {
+                        auto doc = sess.begin(1);
+
+                        index_document(doc, "world of warcraft mists of pandaria is the most successful MMORPG ever created"_s32);
+                        sess.update(doc);
+                }
+
+                {
+                        auto doc = sess.begin(2);
+
+                        index_document(doc, "lord of the rings the return of the king. an incredible film about hobits, rings and powerful wizards in the mythical middle earth"_s32);
+                        sess.update(doc);
+                }
+
+                auto is = new Trinity::Codecs::Google::IndexSession("/tmp/TSEGMENTS/1/");
+
+                sess.commit(is);
+                delete is;
+        }
+
+
+        {
+                SegmentIndexSession sess;
+
+                {
+                        auto doc = sess.begin(1);
+
+                        index_document(doc, "world of warcraft mists of pandaria is the most successful MMORPG ever created"_s32);
+                        sess.update(doc);
+                }
+
+
+                auto is = new Trinity::Codecs::Google::IndexSession("/tmp/TSEGMENTS/2/");
+
+                sess.commit(is);
+                delete is;
+        }
+
+
+	int fd = open("/tmp/TSEGMENTS/1/terms.data", O_RDONLY|O_LARGEFILE);
+	require(fd != -1);
+	auto fileSize = lseek64(fd, 0, SEEK_END);
+	auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
+	const range_base<const uint8_t *, uint32_t> termsData1((uint8_t *)fileData, uint32_t(fileSize));
+	IndexSourcePrefixCompressedTermsView tv1(termsData1);
+
+	fd = open("/tmp/TSEGMENTS/1/index", O_RDONLY|O_LARGEFILE);
+	require(fd != -1);
+	fileSize = lseek64(fd, 0, SEEK_END);
+	fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
+	auto ap1 = new Trinity::Codecs::Google::AccessProxy("/tmp/TSEGMENTS/1/", (uint8_t *)fileData);
+
+	fd = open("/tmp/TSEGMENTS/2/terms.data", O_RDONLY|O_LARGEFILE);
+	require(fd != -1);
+	fileSize = lseek64(fd, 0, SEEK_END);
+	fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
+	const range_base<const uint8_t *, uint32_t> termsData2((uint8_t *)fileData, uint32_t(fileSize));
+	IndexSourcePrefixCompressedTermsView tv2(termsData2);
+
+	fd = open("/tmp/TSEGMENTS/2/index", O_RDONLY|O_LARGEFILE);
+	require(fd != -1);
+	fileSize = lseek64(fd, 0, SEEK_END);
+	fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
+	auto ap2 = new Trinity::Codecs::Google::AccessProxy("/tmp/TSEGMENTS/2/", (uint8_t *)fileData);
+
+	
+	MergeCandidatesCollection collection;
+
+	collection.insert({1, &tv1, ap1, {}});
+	collection.insert({2, &tv2, ap2, {}});
+	collection.commit();
+
+	Print("====================================================================\n");
+
+#if 0
+	{
+		while (!tv1.done())
+		{
+			Print(tv1.cur().first, "\n");
+			tv1.next();
+		}
+
+		Print("-- --- -- -- - - - ----\n");
+		while (!tv2.done())
+		{
+			Print(tv2.cur().first, "\n");
+			tv2.next();
+		}
+		return 0;
+	}
+#endif
+
+	auto is = new Trinity::Codecs::Google::IndexSession("/tmp/TSEGMENTS/3");
+	simple_allocator allocator;
+	std::vector<std::pair<strwlen8_t, term_index_ctx>> terms;
+
+	collection.merge(is, &allocator, &terms);
+
+
+
+        return 0;
+}
+#endif
+
+
+#if 0
 int main(int argc, char *argv[])
 {
 	std::vector<std::pair<strwlen8_t, term_index_ctx>> terms;
@@ -264,7 +397,7 @@ int main(int argc, char *argv[])
 
         auto ap = new Trinity::Codecs::Google::AccessProxy("/tmp/segment_1/", (uint8_t *)fileData);
         auto seg = Switch::make_sharedref<Trinity::segment>(ap);
-        auto maskedDocsReg = dids_scanner_registry::make(nullptr, 0);
+        auto maskedDocsReg = masked_documents_registry::make(nullptr, 0);
 
         exec_query(Trinity::query("apple"_s32), *seg.get(), maskedDocsReg);
 
@@ -350,7 +483,7 @@ int main(int argc, char *argv[])
 		term_index_ctx tctx;
                 Codecs::Google::IndexSession mergeSess("/tmp/foo");
                 Codecs::Google::Encoder enc(&mergeSess);
-		auto maskedDocuments = dids_scanner_registry::make(nullptr, 0);
+		auto maskedDocuments = masked_documents_registry::make(nullptr, 0);
 
                 enc.begin_term();
                 mergeSess.merge(&range, 1, &enc, maskedDocuments);
@@ -396,7 +529,7 @@ int main(int argc, char *argv[])
 
 	//query q("apple OR iphone NOT crap"_s32);
 	query q("\"apple iphone\""_s32);
-	auto maskedDocumentsRegistry = dids_scanner_registry::make(nullptr, 0);
+	auto maskedDocumentsRegistry = masked_documents_registry::make(nullptr, 0);
 
 	exec_query(q, idxSrc.get(), maskedDocumentsRegistry);
 

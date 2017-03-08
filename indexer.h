@@ -7,6 +7,11 @@
 
 namespace Trinity
 {
+	// persists an index sesion as a segment
+	// the application is responsible for persisting the terms (see SegmentIndexSession::commit() for example)
+	void persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<uint32_t> &updatedDocumentIDs);
+
+
 	// A utility class suitable for indexing document terms and persisting the index and other codec specifc data into a directory
 	// It offers a simple API for adding, updating and erasing documents
 	// You should use SegmentIndexSource to load the segment(and use it for search)

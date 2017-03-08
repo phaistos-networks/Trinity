@@ -11,6 +11,8 @@ namespace Trinity
         // With index sources, we could accomplish that as well
         //
         // One could build a fairly impressive scheme, where custom IndexSource and Trinity::Codec::Decoder sub-classes would allow for very interesting use cases
+	// An Index Source doesn't need to be a segment, or use the terms infrastructure to store and access terms. It can be anything, as long as it implements the 3 methods and
+	// a decoder doesn't need to be accessing a segment either. It can be accessing e.g dicts and lists or vectors or whatever.
         class IndexSource
             : public RefCounted<IndexSource>
         {
@@ -60,6 +62,8 @@ namespace Trinity
                         return cache[termID];
                 }
 
+
+
                 // Subclasses only need to implement 3 methods
                 virtual term_index_ctx resolve_term_ctx(const strwlen8_t term) = 0;
 
@@ -77,6 +81,7 @@ namespace Trinity
                 }
         };
 
+
         // A collection of IndexSource; an index of segments or other sources
         // Each index source is identified by a generation, and no two sources can share the same generation
         // The generation represents the order of the sources in relation to each other; a higher generation means that
@@ -92,7 +97,7 @@ namespace Trinity
         // in another source that will be considered in this search session).
         //
         // IndexSourcesCollection facilitates that arrangement.
-        // It represents a `search session` collection of index sources, and for each such source, it creates a dids_scanner_registry that contains scanners
+        // It represents a `search session` collection of index sources, and for each such source, it creates a masked_documents_registry that contains scanners
         // for all more recent sources.
         //
         // It also retains all sources.
@@ -121,6 +126,6 @@ namespace Trinity
                 void commit();
 
 		// remember to std::free() the result
-                Trinity::dids_scanner_registry *scanner_registry_for(const uint16_t idx) ;
+                std::unique_ptr<Trinity::masked_documents_registry> scanner_registry_for(const uint16_t idx) ;
         };
 }

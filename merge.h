@@ -49,7 +49,7 @@ namespace Trinity
 
                 void commit();
 
-                Trinity::dids_scanner_registry *scanner_registry_for(const uint16_t idx);
+                std::unique_ptr<Trinity::masked_documents_registry> scanner_registry_for(const uint16_t idx);
 
                 // You may want to use
                 // - Trinity::pack_terms() to build the terms files and then persist them

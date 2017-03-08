@@ -165,7 +165,16 @@ void Trinity::pack_terms(std::vector<std::pair<strwlen8_t, term_index_ctx>> &ter
                         index->encode_varuint32(data->size()); // offset in the terms data file
 
                 }
+#if 0
+		// we no longer emit the (term, term_index_ctx) from the data file 
+		// because while it works great for lookup, it means we can't iterate all terms by going through
+		// the data file along -- and this is important for merge (See terms_data_view struct)
+		// Hopefully, this is not such a big deal
+		// 
+		// For other applications that do not need to iterate/access all terms and only care for quick lookups
+		// we should build an alternative imp that does omit the term from the data file if stored in the index
                 else
+#endif
                 {
                         const auto commonPrefix = cur.CommonPrefixLen(prev);
                         const auto suffix = cur.SuffixFrom(commonPrefix);

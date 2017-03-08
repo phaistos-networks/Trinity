@@ -67,6 +67,7 @@ namespace Trinity
         namespace Codecs
         {
 		struct Encoder;
+		struct AccessProxy;
 
 		// represents a new indexer session
 		// all indexer sessions have an indexOut that holds the index(posts)
@@ -95,13 +96,6 @@ namespace Trinity
 			// Subclasses should undo begin() ops. e.g close files and release resources
                         virtual void end() = 0;
 
-			// If we have multiple postlists for the same term(i.e merging 2+ segments and same term exists in 2+ of them) then
-			// where we can't just serialize (chunk, chunkSize) but instead we need to merge them, we need to use this codec-specific merge function
-			// that will do this for us
-			// 
-			// You are expected to have encoder->begin_term() before invoking this method, and to invoke encoder->end_term() after the method has returned
-                        virtual void merge(range_base<const uint8_t *, uint32_t> *in, const uint32_t chunksCnt, Encoder *const encoder, dids_scanner_registry *maskedDocuments) = 0 ;
-
 
 			// This may be stored in a segment directory in order to determine
 			// which codec to use to access it
@@ -111,6 +105,32 @@ namespace Trinity
 			// constructs a new encoder 
 			// handy utility function
 			virtual Encoder *new_encoder(IndexSession *) = 0;
+
+
+
+			// This is used during merge
+			// By providing the access to an index and a term's tctx, we should append to the current indexOut
+			// for most codecs, that's just a matter of copying the region in tctx.indexChunk into indexOut, but
+			// some other codecs may need to access other files in the src (e.g lucene codec uses two extra files for positions/attributes)
+			// must hold that (src->codec_identifier() == this->codec_identifier())
+			//
+			// XXX: If you want to filter a chunk's documents though, don't use this method. see MergeCandidatesCollection::merge()
+			virtual range32_t append_index_chunk(const AccessProxy *src, const term_index_ctx srcTCTX) = 0;
+
+			// If we have multiple postlists for the same term(i.e merging 2+ segments and same term exists in 2+ of them) then
+			// where we can't just serialize (chunk, chunkSize) but instead we need to merge them, we need to use this codec-specific merge function
+			// that will do this for us. Use append_index_chunk() otherwise.
+			// 
+			// You are expected to have encoder->begin_term() before invoking this method, and to invoke encoder->end_term() after the method has returned
+			// The input pairs hold an AccessProxy for the data and a range in the the index of that data, and the encoder the target codec encoer
+			struct merge_participant
+			{
+				AccessProxy *ap;
+				range32_t indexChunk;
+				masked_documents_registry *maskedDocsReg;
+			};
+				
+                        virtual void merge(merge_participant *participants, const uint16_t participantsCnt, Encoder *const encoder) = 0;
                 };
 
                 // Encoder interface for encoding a single term's postlists
@@ -142,13 +162,15 @@ namespace Trinity
                 };
 
 
-		class AccessProxy;
 
 		// Decoder interface for decoding a single term's postlists
 		// If a decoder makes use of skiplist data, they are expected to be serialized in the index
 		// and the decoder is responsible for deserializing and using them from there
                 struct Decoder
                 {
+			// before iterating via next(), you need to begin()
+			// if you do not intend to iterate the documents list, and only wish to seek documents
+			// you can/should skip begin() and just use seek()
                         virtual uint32_t begin() = 0;
 
 			// returns false if no documents list has been exchausted
@@ -197,6 +219,9 @@ namespace Trinity
 			{
 				// Subclasses should open files, etc
 			}
+
+			// See IndexSession::codec_identifier()
+			virtual strwlen8_t codec_identifier() = 0;
 
                         virtual ~AccessProxy()
 			{

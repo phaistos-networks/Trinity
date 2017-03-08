@@ -776,7 +776,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
 // We can't reuse the same compiled bytecode/runtime_ctx to run the same query across multiple index sources, because
 // we optimize based on the index source structure and terms involved in the query
 // It is also very cheap to construct those.
-bool Trinity::exec_query(const query &in, IndexSource *idxsrc, dids_scanner_registry *const maskedDocumentsRegistry)
+bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_registry *const maskedDocumentsRegistry)
 {
         if (!in)
         {
@@ -972,9 +972,7 @@ bool Trinity::exec_query(const query &q, IndexSourcesCollection *const collectio
                 auto source = collection->sources[i];
                 auto scanner = collection->scanner_registry_for(i);
 
-                Defer({ free(scanner); });
-
-                exec_query(q, source, scanner);
+                exec_query(q, source, scanner.get());
         }
 
         return true;

@@ -1,13 +1,19 @@
 #pragma once
 #include <switch.h>
+#include <memory>
 
 
+// Efficient, lean, fixed-size bitmaps based document IDs tracking
+// You are expected to test for document IDs in ascending order
 namespace Trinity
 {
         struct updated_documents final
         {
+		// Each bitmaps bank can be accessed by a skiplist via binary search
                 const uint32_t *skiplist;
                 const uint32_t skiplistSize;
+
+		// Fixed size bitmap banks
                 const uint32_t bankSize;
                 const uint8_t *banks;
 		
@@ -74,7 +80,9 @@ namespace Trinity
 
 	updated_documents unpack_updates(const range_base<const uint8_t *, uint32_t> content);
 
-	struct dids_scanner_registry final
+
+	// manages multiple scanners and tests among all of them, and if any of them is exchausted, it is removed from the collection
+	struct masked_documents_registry final
 	{
 		bool test(const uint32_t id)
                 {
@@ -99,16 +107,26 @@ namespace Trinity
                 uint8_t rem;
 		updated_documents_scanner scanners[0];		
 
-		static dids_scanner_registry *make(const updated_documents *ud, const uint8_t n)
+		masked_documents_registry()
+			: rem{0}
 		{
-			auto ptr = (dids_scanner_registry *)malloc(sizeof(dids_scanner_registry) + sizeof(updated_documents_scanner) * n);
-
-			ptr->rem = n;
-
-			for (uint32_t i{0}; i != n; ++i)
-				new (&ptr->scanners[i])updated_documents_scanner(ud[i]);
-
-			return ptr;
 		}
-	};
+
+
+		static std::unique_ptr<Trinity::masked_documents_registry> make(const updated_documents *ud, const uint8_t n)
+                {
+			// ASAN will complain that about alloc-dealloc-mismatch
+			// because we are using placement new operator and apparently there is no way to tell ASAN that this is fine
+			// I need to figure this out
+			// TODO: do whatever makes sense here later
+                        auto ptr = new (malloc(sizeof(masked_documents_registry) + sizeof(updated_documents_scanner) * n)) masked_documents_registry();
+
+                        ptr->rem = n;
+
+                        for (uint32_t i{0}; i != n; ++i)
+                                new (&ptr->scanners[i]) updated_documents_scanner(ud[i]);
+
+                        return std::unique_ptr<Trinity::masked_documents_registry>(ptr);
+                }
+        };
 }

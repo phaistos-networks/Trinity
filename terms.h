@@ -25,8 +25,26 @@ namespace Trinity
 
         void pack_terms(std::vector<std::pair<strwlen8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index);
 
+	// An abstract index source terms access wrapper
+	// For segments, you will likely use the prefix-compressed terms infra. but you may have
+	// an index source that is e.g storing all those terms in an in-memory std::unordered_map<> or whatever else
+	// for some reason and you can just write an IndexSourceTermsView subclass to access that.
+	//
+	// IndexSourceTermsView subclasses are used while merging index sources
+	//
+	// see merge.h
+	struct IndexSourceTermsView
+	{
+		virtual std::pair<strwlen8_t, term_index_ctx> cur() = 0;
+
+		virtual void next() = 0;
+
+		virtual bool done() = 0;
+	};
+
+
 	// iterator access to the terms data
-	// this is very useful for merging terms dictionaries
+	// this is very useful for merging terms dictionaries (see IndexSourcePrefixCompressedTermsView)
 	struct terms_data_view
         {
               public:
@@ -104,6 +122,35 @@ namespace Trinity
                 terms_data_view(const range_base<const uint8_t *, uint32_t> d)
                     : termsData{d}
                 {
+                }
+        };
+
+	// A specialised IndexSourceTermsView for accessing prefix-encoded terms dictionaries
+	struct IndexSourcePrefixCompressedTermsView
+		: public IndexSourceTermsView
+        {
+              private:
+                terms_data_view::iterator it, end;
+
+              public:
+                IndexSourcePrefixCompressedTermsView(const range_base<const uint8_t *, uint32_t> termsData)
+                    : it{termsData.start()}, end{termsData.stop()}
+                {
+                }
+
+                std::pair<strwlen8_t, term_index_ctx> cur() override final
+                {
+                        return *it;
+                }
+
+                void next() override final
+                {
+                        ++it;
+                }
+
+                bool done() override final
+                {
+                        return it == end;
                 }
         };
 

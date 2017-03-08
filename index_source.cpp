@@ -27,10 +27,9 @@ Trinity::IndexSourcesCollection::~IndexSourcesCollection()
 	}
 }
 
-Trinity::dids_scanner_registry *Trinity::IndexSourcesCollection::scanner_registry_for(const uint16_t idx) 
+std::unique_ptr<Trinity::masked_documents_registry> Trinity::IndexSourcesCollection::scanner_registry_for(const uint16_t idx) 
 {
 	const auto n = map[idx].second;
-	auto res = dids_scanner_registry::make(all.data(), n);
 
-	return res;
+	return masked_documents_registry::make(all.data(), n);
 }

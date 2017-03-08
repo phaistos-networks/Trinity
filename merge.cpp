@@ -22,17 +22,18 @@ void Trinity::MergeCandidatesCollection::commit()
 	}
 }
 
-Trinity::dids_scanner_registry *Trinity::MergeCandidatesCollection::scanner_registry_for(const uint16_t idx)
+std::unique_ptr<Trinity::masked_documents_registry> Trinity::MergeCandidatesCollection::scanner_registry_for(const uint16_t idx)
 {
 	const auto n = map[idx].second;
-	auto res = dids_scanner_registry::make(all.data(), n);
 
-	return res;
+	return masked_documents_registry::make(all.data(), n);
 }
 
 // Make sure you have commited first
 void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is, simple_allocator *allocator, std::vector<std::pair<strwlen8_t, Trinity::term_index_ctx>> *const terms)
 {
+	static constexpr bool trace{true};
+
 	struct tracked_candidate
 	{
 		uint16_t idx;
@@ -42,13 +43,16 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
         std::vector<tracked_candidate> all_;
         uint16_t rem{uint16_t(candidates.size())};
 
+	if (trace)
+		SLog("Merging ", candidates.size(), " candidates\n");
 
         for (uint16_t i{0}; i != rem; ++i)
         {
+		if (trace)
+			SLog("Candidate ", i, " ", candidates[i].gen, "\n");
+
                 if (false == candidates[i].terms->done())
-                {
                         all_.push_back({i, candidates[i]});
-                }
         }
 
         if (all_.empty())
@@ -60,8 +64,8 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 	DocWordsSpace dws{65536}; // dummy, for materialize_hits()
 	size_t termHitsCapacity{0};
 	term_hit *termHitsStorage{nullptr};
-	std::vector<std::pair<Trinity::Codecs::AccessProxy *, range32_t>> mergePairs;
-	std::vector<Trinity::Codecs::Decoder *> decodersV;
+	std::vector<Trinity::Codecs::IndexSession::merge_participant> mergeParticipants;
+	std::vector<std::pair<Trinity::Codecs::Decoder *, masked_documents_registry *>> decodersV;
 
         Defer(
             {
@@ -106,6 +110,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 			}
                 }
 
+		if (trace)
+			SLog("TERM [", selected.first, "], toAdvanceCnt = ", toAdvanceCnt, ", sameCODEC = ", sameCODEC, ", first = ", toAdvance[0], "\n");
+
 		const strwlen8_t outTerm(allocator->CopyOf(selected.first.data(), selected.first.size()), selected.first.size());
 		[[maybe_unused]] const bool fastPath = sameCODEC && codec == isCODEC;
 
@@ -124,6 +131,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 				term_index_ctx tctx;
 				std::unique_ptr<Trinity::Codecs::Encoder> enc(is->new_encoder(is));
 				std::unique_ptr<Trinity::Codecs::Decoder> dec(c.ap->new_decoder(selected.second, c.ap));
+				auto maskedDocsReg = scanner_registry_for(all[toAdvance[0]].idx);
 
 				dec->begin();
 				enc->begin_term();
@@ -133,31 +141,31 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 					const auto freq = dec->cur_doc_freq();
 					const auto docID = dec->cur_doc_id();
 
-					// TODO: check if docID is masked
+					if (!maskedDocsReg->test(docID))
+                                        {
+                                                if (freq > termHitsCapacity)
+                                                {
+                                                        if (termHitsStorage)
+                                                                std::free(termHitsStorage);
+                                                        termHitsCapacity = freq + 128;
+                                                        termHitsStorage = (term_hit *)malloc(sizeof(term_hit) * termHitsCapacity);
+                                                }
 
-					if (freq > termHitsCapacity)
-					{
-						if (termHitsStorage)
-							std::free(termHitsStorage);
-						termHitsCapacity = freq + 128;
-						termHitsStorage = (term_hit *)malloc(sizeof(term_hit) * termHitsCapacity);
-					}
+                                                enc->begin_document(docID, freq);
+                                                dec->materialize_hits(1 /* dummy */, &dws /* dummy */, termHitsStorage);
 
+                                                for (uint32_t i{0}; i != freq; ++i)
+                                                {
+                                                        const auto &th = termHitsStorage[i];
+                                                        const auto bytes = (uint8_t *)&th.payload;
 
-					enc->begin_document(docID, freq);
-					dec->materialize_hits(1 /* dummy */, &dws /* dummy */, termHitsStorage);
+                                                        enc->new_hit(th.pos, {bytes, th.payloadLen});
+                                                }
 
-					for (uint32_t i{0}; i != freq; ++i)
-					{
-						const auto &th = termHitsStorage[i];
-						const auto bytes = (uint8_t *)&th.payload;
+                                                enc->end_document();
+                                        }
 
-						enc->new_hit(th.pos, {bytes, th.payloadLen});
-					}
-
-					enc->end_document();
-
-				} while (dec->next());
+                                } while (dec->next());
 
 				enc->end_term(&tctx);
 				terms->push_back({outTerm, tctx});
@@ -170,18 +178,26 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 				std::unique_ptr<Trinity::Codecs::Encoder> enc(is->new_encoder(is));
 				term_index_ctx tctx;
 
-				mergePairs.clear();
+				mergeParticipants.clear();
 				for (uint16_t i{0}; i != toAdvanceCnt; ++i)
 				{
 					const auto idx = toAdvance[i];
 
-                                        mergePairs.push_back({all[idx].candidate.ap, all[idx].candidate.terms->cur().second.indexChunk});
+					mergeParticipants.push_back(
+					{
+						all[idx].candidate.ap,
+						all[idx].candidate.terms->cur().second.indexChunk,
+						scanner_registry_for(all[idx].idx).release()
+					});
                                 }
 
 				enc->begin_term();
-				is->merge(mergePairs.data(), mergePairs.size(), enc.get(), nullptr);
+				is->merge(mergeParticipants.data(), mergeParticipants.size(), enc.get());
 				enc->end_term(&tctx);
 				terms->push_back({outTerm, tctx});
+
+				for (uint16_t i{0}; i != toAdvanceCnt; ++i)
+					delete mergeParticipants[i].maskedDocsReg;
 			}
 			else
 			{
@@ -197,7 +213,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 					auto dec = ap->new_decoder(all[idx].candidate.terms->cur().second, ap);
 					
 					dec->begin();
-					decodersV.push_back(dec);
+					decodersV.push_back({dec, scanner_registry_for(all[idx].idx).release()});
 				}
 
 				uint16_t rem{toAdvanceCnt};
@@ -211,11 +227,11 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 				for (;;)
 				{
 					uint16_t toAdvanceCnt{1};
-					uint32_t lowestDID = decoders[0]->cur_doc_id();
+					uint32_t lowestDID = decoders[0].first->cur_doc_id();
 
 					for (uint16_t i{1}; i != rem; ++i)
 					{
-						const auto id = decoders[i]->cur_doc_id();
+						const auto id = decoders[i].first->cur_doc_id();
 
 						if (id < lowestDID)
 						{
@@ -229,39 +245,42 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 
 
 					// always choose the first because they are always sorted by gen DESC
-					auto dec = decoders[toAdvance[0]];
-					const auto freq = dec->cur_doc_freq();
+					if (!decoders[toAdvance[0]].second->test(lowestDID))
+                                        {
+                                                auto dec = decoders[toAdvance[0]].first;
+                                                const auto freq = dec->cur_doc_freq();
 
-					if (freq > termHitsCapacity)
-					{
-						if (termHitsStorage)
-							std::free(termHitsStorage);
-						termHitsCapacity = freq + 128;
-						termHitsStorage = (term_hit *)malloc(sizeof(term_hit) * termHitsCapacity);
-					}
+                                                if (freq > termHitsCapacity)
+                                                {
+                                                        if (termHitsStorage)
+                                                                std::free(termHitsStorage);
+                                                        termHitsCapacity = freq + 128;
+                                                        termHitsStorage = (term_hit *)malloc(sizeof(term_hit) * termHitsCapacity);
+                                                }
 
-					enc->begin_document(lowestDID, freq);
-					dec->materialize_hits(1 /* dummy */, &dws /* dummy */, termHitsStorage);
+                                                enc->begin_document(lowestDID, freq);
+                                                dec->materialize_hits(1 /* dummy */, &dws /* dummy */, termHitsStorage);
 
-					for (uint32_t i{0}; i != freq; ++i)
-					{
-						const auto &th = termHitsStorage[i];
-						const auto bytes = (uint8_t *)&th.payload;
+                                                for (uint32_t i{0}; i != freq; ++i)
+                                                {
+                                                        const auto &th = termHitsStorage[i];
+                                                        const auto bytes = (uint8_t *)&th.payload;
 
-						enc->new_hit(th.pos, {bytes, th.payloadLen});
-					}
-					enc->end_document();
+                                                        enc->new_hit(th.pos, {bytes, th.payloadLen});
+                                                }
+                                                enc->end_document();
+                                        }
 
-
-
-					do
+                                        do
 					{
 						const auto idx = toAdvance[--toAdvanceCnt];
-						auto dec = decoders[idx];
+						auto dec = decoders[idx].first;
 
 						if (!dec->next())
 						{
 							delete dec;
+							delete decoders[idx].second;
+
 							if (!--rem)
 								goto l10;
 

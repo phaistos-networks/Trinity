@@ -39,6 +39,7 @@ void Trinity::Codecs::Google::Encoder::commit_block()
 
         out->encode_varuint32(delta);       // delta to last docID in block from previous block's last document ID
         out->encode_varuint32(blockLength); // block length in bytes, excluding this header
+	require(curBlockSize);
         out->pack(curBlockSize);              // one byte will suffice
 
         out->Serialize(block.data(), block.size());
@@ -62,18 +63,25 @@ void Trinity::Codecs::Google::Encoder::commit_block()
         SLog("Commited Block ", out->size(), "\n");
 }
 
-void Trinity::Codecs::Google::IndexSession::merge(range_base<const uint8_t *, uint32_t> *in, const uint32_t chunksCnt, Trinity::Codecs::Encoder *const encoder_, dids_scanner_registry *maskedDocuments)
+range32_t Trinity::Codecs::Google::IndexSession::append_index_chunk(const Trinity::Codecs::AccessProxy *src_, const term_index_ctx srcTCTX)
 {
-        // if it's just one chunk we can copy it as is because we now track
-        // the chunk size
-        //
-        // need to be provided by more recent to the least recent
+	auto src = static_cast<const Trinity::Codecs::Google::AccessProxy *>(src_);
+	const auto o = indexOut.size();
+
+	indexOut.serialize(src->indexPtr + srcTCTX.indexChunk.offset, srcTCTX.indexChunk.size());
+	return {uint32_t(o), srcTCTX.indexChunk.size()};
+}
+
+void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participant *participants, const uint16_t participantsCnt, Trinity::Codecs::Encoder *encoder_)
+{
+        // XXX: need to be provided by more recent to the least recent
         //require(chunksCnt > 1);
 
         struct chunk
         {
                 const uint8_t *p;
                 const uint8_t *e;
+		masked_documents_registry *maskedDocsReg;
 
                 struct
                 {
@@ -90,6 +98,8 @@ void Trinity::Codecs::Google::IndexSession::merge(range_base<const uint8_t *, ui
 
                 bool skip_current()
                 {
+			SLog("Skipping current cur_block.idx = ", cur_block.idx, " out of ", cur_block.size, ", freq = ", cur_block.freqs[cur_block.idx], "\n");
+
                         for (auto n = cur_block.freqs[cur_block.idx]; n; --n)
                                 Compression::decode_varuint32(p);
 
@@ -97,23 +107,26 @@ void Trinity::Codecs::Google::IndexSession::merge(range_base<const uint8_t *, ui
                 }
         };
 
-        chunk chunks[32];
-        uint32_t toAdvance[32];
-        uint32_t rem{chunksCnt};
+        chunk chunks[128];
+        uint16_t toAdvance[128];
+        uint16_t rem{participantsCnt};
         auto encoder = static_cast<Trinity::Codecs::Google::Encoder *>(encoder_);
 
-        require(chunksCnt <= sizeof_array(chunks));
+        require(participantsCnt <= sizeof_array(chunks));
 
-        for (uint32_t i{0}; i != chunksCnt; ++i)
+        for (uint32_t i{0}; i != participantsCnt; ++i)
         {
                 auto c = chunks + i;
 
-                c->p = in[i].start();
-                c->e = in[i].stop();
+                c->p = participants[i].ap->indexPtr + participants[i].indexChunk.offset;
+                c->e = c->p + participants[i].indexChunk.size();
+                c->maskedDocsReg = participants[i].maskedDocsReg;
 
                 // Simplifies refill()
                 c->cur_block.size = 1;
                 c->cur_block.documents[0] = 0;
+
+		SLog("merge participant ", i, " ", participants[i].indexChunk, "\n");
         }
 
         const auto refill = [](auto c) {
@@ -122,14 +135,16 @@ void Trinity::Codecs::Google::IndexSession::merge(range_base<const uint8_t *, ui
                 const auto thisBlockLastDocID = prevBlockLastID + Compression::decode_varuint32(p);
                 [[maybe_unused]] const auto blockLength = Compression::decode_varuint32(p);
                 const auto n = *p++;
+		require(n);
                 auto id{prevBlockLastID};
                 const auto k = n - 1;
-                SLog("prevBlockLastID = ", prevBlockLastID, ", thisBlockLastDocID = ", thisBlockLastDocID, " ", n, "\n");
+
+                SLog("Refilling chunk prevBlockLastID = ", prevBlockLastID, ", thisBlockLastDocID = ", thisBlockLastDocID, " ", n, "\n");
 
                 for (uint8_t i{0}; i != k; ++i)
                 {
                         id += Compression::decode_varuint32(p);
-                        SLog("<< ", id, "\n");
+                        SLog("<< docID ", id, "\n");
                         c->cur_block.documents[i] = id;
                 }
 
@@ -144,6 +159,8 @@ void Trinity::Codecs::Google::IndexSession::merge(range_base<const uint8_t *, ui
                 c->cur_block.size = n;
                 c->cur_block.idx = 0;
                 c->p = p;
+
+		SLog("block size = ", c->cur_block.size, "\n");
         };
 
         const auto append_from = [encoder](auto c) {
@@ -155,11 +172,12 @@ void Trinity::Codecs::Google::IndexSession::merge(range_base<const uint8_t *, ui
 
                 encoder->begin_document(did, freq);
 
-                SLog("APENDING ", did, " ", freq, "\n");
+                SLog("APENDING document ", did, " freq ", freq, "\n");
 
                 for (uint32_t i{0}, pos{0}; i != freq; ++i)
                 {
                         pos += Compression::decode_varuint32(p);
+			SLog("<< ", pos, "\n");
                         encoder->new_position(pos);
                 }
 
@@ -169,7 +187,7 @@ void Trinity::Codecs::Google::IndexSession::merge(range_base<const uint8_t *, ui
                 c->cur_block.freqs[idx] = 0; // this is important, otherwise skip_current() will skip those hits we just consumed
         };
 
-        for (uint32_t i{0}; i != chunksCnt; ++i)
+        for (uint32_t i{0}; i != participantsCnt; ++i)
                 refill(chunks + i);
 
         for (;;)
@@ -194,27 +212,37 @@ void Trinity::Codecs::Google::IndexSession::merge(range_base<const uint8_t *, ui
                         }
                 }
 
+
+
                 // We use the first chunk
+		auto maskedDocsReg = chunks[toAdvance[0]].maskedDocsReg;
                 SLog("To advance ", toAdvanceCnt, " ", toAdvance[0], " ", lowestDID, "\n");
 
-                if (!maskedDocuments->test(lowestDID))
+                if (!maskedDocsReg->test(lowestDID))
                 {
                         const auto src = chunks + toAdvance[0]; // first is always the most recent
 
+
                         append_from(src);
                 }
+		else
+			SLog("MASKED ", lowestDID, "\n");
+
+
 
                 do
                 {
-                        auto idx = --toAdvanceCnt;
+                        auto idx = toAdvance[--toAdvanceCnt];
                         auto c = chunks + idx;
+
+			SLog("ADVANCING ", idx, "\n");
 
                         if (c->skip_current()) // end of the block
                         {
                                 if (c->p != c->e)
                                 {
                                         // more blocks available
-                                        SLog("No more block documents\n");
+                                        SLog("No more block documents but more content in index chunk\n");
                                         refill(c);
                                 }
                                 else
@@ -235,7 +263,6 @@ void Trinity::Codecs::Google::IndexSession::merge(range_base<const uint8_t *, ui
 
                 } while (toAdvanceCnt);
         }
-
 l1:;
 }
 
