@@ -1,55 +1,8 @@
 #include "exec.h"
 #include "docwordspace.h"
-#include "runtime.h"
+#include "matches.h"
 
 using namespace Trinity;
-
-namespace Trinity
-{
-        // Materialized hits for a term and the current document
-        // this is used both for evaluation and for scoring documents
-        struct term_hits
-        {
-                term_hit *all{0};
-                uint16_t freq;
-                uint16_t allCapacity{0};
-                uint32_t docID;
-
-                void set_freq(const uint16_t newFreq)
-                {
-                        if (newFreq > allCapacity)
-                        {
-                                allCapacity = newFreq + 32;
-                                if (all)
-                                        std::free(all);
-                                all = (term_hit *)std::malloc(sizeof(term_hit) * allCapacity);
-                        }
-
-                        freq = newFreq;
-                }
-
-                ~term_hits()
-                {
-                        if (all)
-                                std::free(all);
-                }
-        };
-
-        // For each matched document, the score function will get
-        // (documentID, runtime_ctx *, and a list of matched_query_term)
-        // You can get the actual query from matched_query_term.hits->termID and
-        // runtime_ctx methods that accept that ID
-        struct matched_query_term
-        {
-                uint8_t rep;   // see query::token
-                uint8_t index; // see query::token
-                exec_term_id_t termID;
-                term_hits *hits; // we have a term_hits for each distinct query term (e.g runtime_ctx.decode_ctx.termHits[this->termID])
-        };
-};
-
-
-static_assert(sizeof(exec_node) == sizeof(uint32_t), "Unexpected sizeof(exec_node)");
 
 namespace // static/local this module
 {
@@ -74,6 +27,8 @@ namespace // static/local this module
                 // so that the implementaiton can refer to it
                 uint16_t nodeCtxIdx;
         };
+
+        static_assert(sizeof(exec_node) == sizeof(uint32_t), "Unexpected sizeof(exec_node)");
 
         // This is initialized by the compiler
         // and used by the VM
@@ -929,10 +884,13 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, dids_scanner_regi
         require(leaderTokensDecoders.size());
         auto leaderDecoders = leaderTokensDecoders.data();
         uint32_t leaderDecodersCnt = leaderTokensDecoders.size();
+	matched_document matchedDocument;
 
         SLog("RUNNING\n");
 
+	matchedDocument.idToTerm = &rctx.idToTerm;
         rctx.setup_evalnode_contexts();
+
 
         // TODO: if (q.root->type == ast_node::Type::Token) {}
         // i.e if just a single term was entered, scan that single token's documents  without even having to use a decoder
@@ -960,6 +918,7 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, dids_scanner_regi
                                 toAdvance[toAdvanceCnt++] = i;
                 }
 
+
                 SLog("DOCUMENT ", docID, "\n");
 
                 if (!maskedDocumentsRegistry->test(docID))
@@ -971,10 +930,15 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, dids_scanner_regi
                         const auto res = eval(rootExecNode, rctx);
 
                         if (res)
+			{
                                 SLog(ansifmt::bold, ansifmt::color_blue, "MATCHED ", docID, ansifmt::reset, "\n");
 
-                        // TODO: score it and consider for top-k matches
+				matchedDocument.id = docID;
+                        	// TODO: score it and consider for top-k matches using matchedDocument
+			}
                 }
+
+
 
                 // Advance leader tokens/decoders
                 do

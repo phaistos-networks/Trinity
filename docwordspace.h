@@ -17,12 +17,17 @@ namespace Trinity
                 };
 
                 position *const positions;
+		// TODO: We could track the maximum seen position in a segment/index source and use that to create the DocWordsSpace
                 const uint32_t maxPos;
                 uint16_t curSeq{0};
 
               public:
+		// allocating max + 256, because 256 is the theoritical maximum phrase size
+		// and if we are going to test starting from maxPos extending to 10 positions ahead, we want to
+		// make sure we won't read outside positions. 
+		// The extra positions will be always initialized to 0 and we won't need to reset those in reset()
                 DocWordsSpace(const uint32_t max)
-			: positions((position *)calloc(sizeof(position), max)), maxPos{max}
+			: positions((position *)calloc(sizeof(position), max + 256)), maxPos{max} 
 		{
 
 		}
@@ -39,7 +44,7 @@ namespace Trinity
 			// then whatever is in positions[] is stale and should be considered unset.
 			// In a previous Trinity design we stored the document ID as u32 but that is excessive, we care about cache-misses
 			// so now we instead use a `uint16_t curSeq` and periodically clear. This should be more efficient.
-                        if (curSeq == UINT16_MAX)
+                        if (unlikely(curSeq == UINT16_MAX))
                         {
 				// we reset every 65k documents
 				// this is preferrable to using uint32_t to encode the actual document in position{}
@@ -53,12 +58,6 @@ namespace Trinity
 		[[gnu::always_inline]] void set(const exec_term_id_t termID, const uint16_t pos) noexcept
 		{
                         positions[pos] = {curSeq, termID};
-		}
-
-		bool set_checkprev_set(const exec_term_id_t termID, const uint16_t pos, const uint16_t phrasePrevTermID) noexcept
-		{
-                        positions[pos] = {curSeq, termID};
-                        return positions[pos - 1].docSeq == curSeq && positions[pos - 1].termID == phrasePrevTermID;
 		}
 
 #if 1

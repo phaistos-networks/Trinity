@@ -87,7 +87,7 @@ int main(int argc, char *argv[])
 }
 #endif
 
-#if 0
+#if 1
 int main(int argc, char *argv[])
 {
 	std::vector<std::pair<strwlen8_t, term_index_ctx>> terms;
@@ -114,12 +114,18 @@ int main(int argc, char *argv[])
 
                 Print(q , " => ", res.indexChunk, "\n");
         }
+
+	for (const auto &&it : terms_data_view({(uint8_t *)data.data(), data.size()}))
+	{
+		Print("[", it.first, "] => [", it.second.documents, "]\n");
+	}
+
         return 0;
 }
 #endif
 
 
-#if 1
+#if 0
 int main(int argc, char *argv[])
 {
 	int fd = open("/home/system/Data/BestPrice/SERVICE/clusters.data", O_RDONLY|O_LARGEFILE);

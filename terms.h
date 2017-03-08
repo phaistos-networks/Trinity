@@ -2,8 +2,14 @@
 #include <switch.h>
 #include <switch_mallocators.h>
 #include <switch_vector.h>
+#include <compress.h>
 #include "codecs.h"
 
+
+// prefic compressed terms dictionary
+// maps from strwlen8_t=>term_index_ctx
+// Based in part on Lucene's prefix compression scheme
+// https://lucene.apache.org/core/2_9_4/fileformats.html#Term%20Dictionary
 namespace Trinity
 {
 	struct terms_skiplist_entry
@@ -19,15 +25,97 @@ namespace Trinity
 
         void pack_terms(std::vector<std::pair<strwlen8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index);
 
-	class SegmentTerms
-	{
+	// iterator access to the terms data
+	// this is very useful for merging terms dictionaries
+	struct terms_data_view
+        {
+              public:
+                struct iterator
+                {
+                        friend struct terms_data_view;
+
+                      public:
+                        const uint8_t *p;
+                        char termStorage[256];
+                        struct
+                        {
+                                strwlen8_t term;
+                                term_index_ctx tctx;
+                        } cur;
+
+                        iterator(const uint8_t *ptr)
+                            : p{ptr}
+                        {
+                                cur.term.p = termStorage;
+                        }
+
+                        inline bool operator==(const iterator &o) const noexcept
+                        {
+                                return p == o.p;
+                        }
+
+                        inline bool operator!=(const iterator &o) const noexcept
+                        {
+                                return p != o.p;
+                        }
+
+                        strwlen8_t term() noexcept
+                        {
+                                decode_cur();
+                                return cur.term;
+                        }
+
+                        term_index_ctx tctx() noexcept
+                        {
+                                decode_cur();
+                                return cur.tctx;
+                        }
+
+                        inline iterator &operator++()
+                        {
+                                cur.term.len = 0;
+                                return *this;
+                        }
+
+                        inline std::pair<strwlen8_t, term_index_ctx> operator*() noexcept
+                        {
+                                decode_cur();
+                                return {cur.term, cur.tctx};
+                        }
+
+                      protected:
+                        void decode_cur();
+                };
+
+              private:
+                const range_base<const uint8_t *, uint32_t> termsData;
+
+              public:
+                iterator begin() const
+                {
+                        return {termsData.start()};
+                }
+
+                iterator end() const
+                {
+                        return {termsData.stop()};
+                }
+
+                terms_data_view(const range_base<const uint8_t *, uint32_t> d)
+                    : termsData{d}
+                {
+                }
+        };
+
+        class SegmentTerms
+        {
 		private:
 			Switch::vector<terms_skiplist_entry> skiplist;
 			simple_allocator allocator;
 			range_base<const uint8_t *, uint32_t> termsData;
 
 
-		public:
+                      public:
 			SegmentTerms(const char *segmentBasePath);
 
 			~SegmentTerms()
@@ -40,5 +128,11 @@ namespace Trinity
 			{
 				return lookup_term(termsData, term, skiplist);
 			}
+
+			auto terms_data_access() const
+			{ 
+				return terms_data_view(termsData);
+			}
 	};
+
 };

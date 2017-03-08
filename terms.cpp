@@ -30,6 +30,7 @@ Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_
 
         const auto &it = skipList[top];
         const auto o = it.blockOffset;
+#if 0
         auto prev = it.term;
         char prevTerm[255], curTerm[255];
         uint8_t prevTermLen = prev.size();
@@ -73,6 +74,46 @@ Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_
                         memcpy(prevTerm, curTerm, curTermLen);
                 }
         }
+#else
+        auto prev = it.term;
+	char termStorage[256];
+
+        memcpy(termStorage, prev.data(), prev.size());
+
+        for (const auto *p = termsData.offset + o, *const e = termsData.offset + termsData.size(); p != e;)
+        {
+                const auto commonPrefixLen = *p++;
+                const auto suffixLen = *p++;
+
+                memcpy(termStorage + commonPrefixLen, p, suffixLen);
+                p += suffixLen;
+
+                const auto curTermLen = commonPrefixLen + suffixLen;
+                const auto r = Text::StrnncasecmpISO88597(q.data(), q.size(), termStorage, curTermLen);
+
+                if (r < 0)
+                {
+                        // definitely not here
+                        break;
+                }
+                else if (r == 0)
+                {
+                        term_index_ctx tctx;
+
+                        tctx.documents = Compression::decode_varuint32(p);
+                        tctx.indexChunk.len = Compression::decode_varuint32(p);
+                        tctx.indexChunk.offset = *(uint32_t *)p;
+
+                        return tctx;
+                }
+                else
+                {
+                        Compression::decode_varuint32(p);
+                        Compression::decode_varuint32(p);
+                        p += sizeof(uint32_t);
+                }
+        }
+#endif
 
         return {};
 }
@@ -94,8 +135,6 @@ void Trinity::unpack_terms_skiplist(const range_base<const uint8_t *, const uint
 	}
 }
 
-// Similar but not identical to Apache Lucene's termlist encoding
-// https://lucene.apache.org/core/2_9_4/fileformats.html#Term%20Dictionary
 void Trinity::pack_terms(std::vector<std::pair<strwlen8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index)
 {
         static constexpr uint32_t SKIPLIST_INTERVAL{128};	 // 128 or 64 is more than fine
@@ -175,4 +214,22 @@ Trinity::SegmentTerms::SegmentTerms(const char *segmentBasePath)
         expect(fileData != MAP_FAILED);
 
         termsData.Set(reinterpret_cast<const uint8_t *>(fileData), fileSize);
+}
+
+void Trinity::terms_data_view::iterator::decode_cur()
+{
+	if (!cur.term)
+	{
+		const auto commonPrefixLen = *p++;
+		const auto suffixLen = *p++;
+
+		memcpy(termStorage + commonPrefixLen, p, suffixLen);
+		p += suffixLen;
+
+		cur.term.len = commonPrefixLen + suffixLen;
+		cur.tctx.documents = Compression::decode_varuint32(p);
+		cur.tctx.indexChunk.len = Compression::decode_varuint32(p);
+		cur.tctx.indexChunk.offset = *(uint32_t *)p;
+		p += sizeof(uint32_t);
+	}
 }
