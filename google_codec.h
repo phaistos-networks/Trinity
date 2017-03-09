@@ -199,6 +199,8 @@ namespace Trinity
                                         blockLastDocID = UINT32_MAX; // magic value; signifies end of documents
                                         documents[0] = UINT32_MAX;
                                         p = chunkEnd;
+
+					curDocument.id = UINT32_MAX;
                                 }
 
                                 // see skip_block_doc()

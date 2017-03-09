@@ -165,16 +165,37 @@ namespace Trinity
 		// and the decoder is responsible for deserializing and using them from there
                 struct Decoder
                 {
+			// We now use a curDocument structure that holds the current document and its frequency(number of hits)
+			// whereas in the past we only had access to those via cur_doc_id() and cur_doc_freq()
+			// That results in potentially millions of virtual calls to those methods, wheras now can access them without
+			// having to call anything.
+			//
+			// The only minor downside is that Decoder subclases *MUST* update curDocument in their begin(), next() and seek() methods
+			// Recall that document ID UINT32_MAX can be used for 'no more documents'. 
+			// 
+			// Using `dec->curDocument` instea of dec->cur_doc_id() and dec->cur_doc_freq()
+			// results in a drop from 0.238s to 0.222s for a very fancy query
+			struct
+			{
+				uint32_t id;
+				uint16_t freq;
+			} curDocument;
+
+
+
 			// before iterating via next(), you need to begin()
 			// if you do not intend to iterate the documents list, and only wish to seek documents
 			// you can/should skip begin() and just use seek()
 			// returns UINT32_MAX if there are no documents
+			// (Remeber to update curDocument)
                         virtual uint32_t begin() = 0;
 
 			// returns false if no documents list has been exchausted
 			// or advances to the next document and returns true
+			// (Remeber to update curDocument)
                         virtual bool next() = 0;
 
+			// (Remeber to update curDocument)
                         virtual bool seek(const uint32_t target) = 0;
 
 			// returns UINT32_MAX if no more documents left

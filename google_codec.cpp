@@ -513,6 +513,9 @@ uint32_t Trinity::Codecs::Google::Decoder::begin()
                 finalize();
         }
 
+	curDocument.id = documents[blockDocIdx];
+	curDocument.freq = freqs[blockDocIdx];
+
         return documents[blockDocIdx];
 }
 
@@ -557,6 +560,9 @@ bool Trinity::Codecs::Google::Decoder::next()
 
                 skip_block_doc();
         }
+
+	curDocument.id = documents[blockDocIdx];
+	curDocument.freq = freqs[blockDocIdx];
 
         return true;
 }
@@ -627,13 +633,15 @@ bool Trinity::Codecs::Google::Decoder::seek(const uint32_t target)
                 {
                         if (trace)
                                 SLog("Not in this block or maybe any block\n");
-                        return false;
+			break;
                 }
                 else if (docID == target)
                 {
                         // got it
                         if (trace)
                                 SLog("Got target\n");
+                        curDocument.id = documents[blockDocIdx];
+                        curDocument.freq = freqs[blockDocIdx];
                         return true;
                 }
                 else if (docID == blockLastDocID)
@@ -642,16 +650,20 @@ bool Trinity::Codecs::Google::Decoder::seek(const uint32_t target)
                         // we determined we don't have this document
                         if (trace)
                                 SLog("Exhausted block\n");
-                        return false;
+
+			break;
                 }
                 else
                 {
                         if (trace)
                                 SLog("Skipping block document\n");
+
                         skip_block_doc();
                 }
         }
 
+        curDocument.id = documents[blockDocIdx];
+        curDocument.freq = freqs[blockDocIdx];
         return false;
 }
 

@@ -84,7 +84,7 @@ namespace // static/local this module
 		{
                         auto th = decode_ctx.termHits[termID];
 			auto dec = decode_ctx.decoders[termID];
-			const auto docHits = dec->cur_doc_freq();
+			const auto docHits = dec->curDocument.freq; 	// see Codecs::Decoder::curDocument comments
 
 			th->docSeq = curDocSeq;
 			th->set_freq(docHits);
@@ -1102,7 +1102,7 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
         for (;;)
         {
                 // Select document from the leader tokens/decoders
-                uint32_t docID = leaderDecoders[0]->cur_doc_id();
+                uint32_t docID = leaderDecoders[0]->curDocument.id; 	// // see Codecs::Decoder::curDocument comments
                 uint8_t toAdvanceCnt{1};
 
                 toAdvance[0] = 0;
@@ -1110,7 +1110,7 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                 for (uint32_t i{1}; i < leaderDecodersCnt; ++i)
                 {
                         const auto decoder = leaderDecoders[i];
-                        const auto did = decoder->cur_doc_id();
+                        const auto did = decoder->curDocument.id; 	// see Codecs::Decoder::curDocument comments
 
                         if (did < docID)
                         {
