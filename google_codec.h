@@ -8,8 +8,8 @@ namespace Trinity
         {
                 namespace Google
                 {
-                        static constexpr size_t N{2};             // block size (Google's block size is 32)
-                        static constexpr size_t SKIPLIST_STEP{1}; // generate a new skiplist entry every that many blocks
+                        static constexpr size_t N{32};             // block size (Google's block size is 32)
+                        static constexpr size_t SKIPLIST_STEP{512}; // generate a new skiplist entry every that many blocks
 
                         struct IndexSession final
                             : public Trinity::Codecs::IndexSession

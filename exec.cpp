@@ -6,6 +6,8 @@ using namespace Trinity;
 
 namespace // static/local this module
 {
+	static constexpr bool traceExec{false};
+
         // tightly packed node (4 bytes)
         // It's possible that we can use 12 bits for the operand(nodeCtxIdx) and the remaining 4 for the opcode
         // and make sizeof(exec_node) == 2
@@ -94,7 +96,7 @@ namespace // static/local this module
 
                 void capture_matched_term(const exec_term_id_t termID)
 		{
-			static constexpr bool trace{true};
+			static constexpr bool trace{false};
 
 			if (trace)
 				SLog("Capturing matched term ", termID, "\n");
@@ -588,23 +590,24 @@ static inline uint8_t noop_impl(const exec_node, runtime_ctx &)
 
 static inline uint8_t matchtoken_impl(const exec_node self, runtime_ctx &rctx)
 {
-        //return rctx.decode_ctx.decoders[rctx.evalnode_ctx.tokens[self.nodeCtxIdx].termID]->seek(rctx.curDocID);
-        auto t = rctx.evalnode_ctx.tokens + self.nodeCtxIdx;
+	//return rctx.decode_ctx.decoders[rctx.evalnode_ctx.tokens[self.nodeCtxIdx].termID]->seek(rctx.curDocID);
+	const auto t = rctx.evalnode_ctx.tokens + self.nodeCtxIdx;
 	const auto termID = t->termID;
-        auto decoder = rctx.decode_ctx.decoders[termID];
-        const auto res = decoder->seek(rctx.curDocID);
+	auto decoder = rctx.decode_ctx.decoders[termID];
+	const auto res = decoder->seek(rctx.curDocID);
 
-        if (res)
+	if (res)
 		rctx.capture_matched_term(termID);
 
 
-        SLog(ansifmt::color_green, "Attempting to match token against ", rctx.curDocID, ansifmt::reset, " => ", res, "\n");
-        return res;
+	if (traceExec)
+		SLog(ansifmt::color_green, "Attempting to match token against ", rctx.curDocID, ansifmt::reset, " => ", res, "\n");
+	return res;
 }
 
 static uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
 {
-        static constexpr bool trace{true};
+        static constexpr bool trace{false};
         auto p = rctx.evalnode_ctx.phrases + self.nodeCtxIdx;
         const auto firstTermID = p->termIDs[0];
         auto decoder = rctx.decode_ctx.decoders[firstTermID];
@@ -1078,6 +1081,11 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
 
         SLog("RUNNING\n");
 
+	uint32_t matchedDocuments{0};
+	const auto start = Timings::Microseconds::Tick();
+
+
+
 
 
 
@@ -1108,7 +1116,8 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                 }
 
 
-                SLog("DOCUMENT ", docID, "\n");
+		if (traceExec)
+	                SLog("DOCUMENT ", docID, "\n");
 
                 if (!maskedDocumentsRegistry->test(docID))
                 {
@@ -1134,17 +1143,18 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
 
 
                         	// TODO: score it and consider for top-k matches using matchedDocument
-                                SLog(ansifmt::bold, ansifmt::color_blue, "MATCHED ", docID, ansifmt::reset, "\n");
-				for (uint16_t i{0}; i != n; ++i)
-				{
-					auto mt = allMatchedTerms + i;
-					
-					SLog("MATCHED TERM [", mt->queryTermInstances->term.token, "]\n");
+				if (traceExec)
+                                {
+                                        SLog(ansifmt::bold, ansifmt::color_blue, "MATCHED ", docID, ansifmt::reset, "\n");
+                                        for (uint16_t i{0}; i != n; ++i)
+                                        {
+                                                auto mt = allMatchedTerms + i;
 
-				}
-
-
-			}
+                                                SLog("MATCHED TERM [", mt->queryTermInstances->term.token, "]\n");
+                                        }
+                                }
+				++matchedDocuments;
+                        }
                 }
 
 
@@ -1169,6 +1179,9 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
 
 l1:;
 
+	const auto duration = Timings::Microseconds::Since(start);
+
+	SLog(dotnotation_repr(matchedDocuments), " matched in ", duration_repr(duration), "\n");
         return true;
 }
 
