@@ -8,35 +8,32 @@ namespace Trinity
         {
                 namespace Google
                 {
-                        static constexpr size_t N{2}; 			// block size (Google's block size is 32)
-                        static constexpr size_t SKIPLIST_STEP{1}; 	// generate a new skiplist entry every that many blocks
+                        static constexpr size_t N{2};             // block size (Google's block size is 32)
+                        static constexpr size_t SKIPLIST_STEP{1}; // generate a new skiplist entry every that many blocks
 
-			struct IndexSession final
-				 : public Trinity::Codecs::IndexSession
-			{
-				void begin() override final;
+                        struct IndexSession final
+                            : public Trinity::Codecs::IndexSession
+                        {
+                                void begin() override final;
 
-				void end() override final;
+                                void end() override final;
 
-				Trinity::Codecs::Encoder *new_encoder(Trinity::Codecs::IndexSession *)  override final;
+                                Trinity::Codecs::Encoder *new_encoder(Trinity::Codecs::IndexSession *) override final;
 
-				IndexSession(const char *bp)
-					: Trinity::Codecs::IndexSession{bp}
-				{
+                                IndexSession(const char *bp)
+                                    : Trinity::Codecs::IndexSession{bp}
+                                {
+                                }
 
-				}
+                                strwlen8_t codec_identifier() override final
+                                {
+                                        return "GOOGLE"_s8;
+                                }
 
-				strwlen8_t codec_identifier() override final
-				{
-					return "GOOGLE"_s8;
-				}
+                                range32_t append_index_chunk(const Trinity::Codecs::AccessProxy *, const term_index_ctx srcTCTX) override final;
 
-
-				range32_t append_index_chunk(const Trinity::Codecs::AccessProxy *, const term_index_ctx srcTCTX) override final;
-
-                        	void merge(merge_participant *, const uint16_t, Trinity::Codecs::Encoder *) override final;
-			};
-
+                                void merge(merge_participant *, const uint16_t, Trinity::Codecs::Encoder *) override final;
+                        };
 
                         class Encoder final
                             : public Trinity::Codecs::Encoder
@@ -46,7 +43,7 @@ namespace Trinity
 
                               private:
                                 IOBuffer block, hitsData;
-                                uint32_t prevBlockLastDocumentID{0}, curDocID{0}, lastDocID;
+                                uint32_t prevBlockLastDocumentID{0}, curDocID{0}, lastCommitedDocID;
                                 uint8_t curBlockSize;
                                 uint32_t lastPos;
                                 uint32_t docDeltas[N];
@@ -59,11 +56,10 @@ namespace Trinity
                                 void commit_block();
 
                               public:
-			      	Encoder(Trinity::Codecs::IndexSession *s)
-					: Trinity::Codecs::Encoder{s}
-				{
-
-				}
+                                Encoder(Trinity::Codecs::IndexSession *s)
+                                    : Trinity::Codecs::Encoder{s}
+                                {
+                                }
 
                                 auto total_documents() const noexcept
                                 {
@@ -72,10 +68,10 @@ namespace Trinity
 
                                 void begin_term() override final
                                 {
-					auto out{&sess->indexOut};
+                                        auto out{&sess->indexOut};
 
                                         curBlockSize = 0;
-                                        lastDocID = 0;
+                                        lastCommitedDocID = 0;
                                         prevBlockLastDocumentID = 0;
                                         hitsData.clear();
                                         termDocuments = 0;
@@ -84,6 +80,12 @@ namespace Trinity
 
                                 void begin_document(const uint32_t documentID, const uint16_t hitsCnt) override final
                                 {
+					if (unlikely(documentID <= lastCommitedDocID))
+					{
+						SLog("Unexpected documentID(", documentID, ") <= lastCommitedDocID(", lastCommitedDocID, ")\n");
+						std::abort();
+					}
+
                                         curDocID = documentID;
                                         lastPos = 0;
                                         blockFreqs[curBlockSize] = 0;
@@ -91,9 +93,13 @@ namespace Trinity
 
                                 void new_hit(const uint32_t pos, const range_base<const uint8_t *, const uint8_t> payload) override final
                                 {
+                                        static constexpr bool trace{false};
                                         const auto delta = pos - lastPos;
 
-                                        SLog("HIT ", pos, " => ", delta, "\n");
+					require(pos >= lastPos);
+
+                                        if (trace)
+                                                SLog("HIT ", pos, " => ", delta, "\n");
 
                                         ++blockFreqs[curBlockSize];
                                         hitsData.encode_varuint32(delta);
@@ -107,47 +113,49 @@ namespace Trinity
 
                                 void end_document() override final
                                 {
-                                        SLog("end document ", curDocID, " ", lastDocID, " ", curBlockSize, "\n");
+                                        static constexpr bool trace{false};
 
-                                        docDeltas[curBlockSize++] = curDocID - lastDocID;
+                                        if (trace)
+                                                SLog("end document ", curDocID, " ", lastCommitedDocID, " ", curBlockSize, "\n");
+
+                                        docDeltas[curBlockSize++] = curDocID - lastCommitedDocID;
                                         if (curBlockSize == N)
                                                 commit_block();
 
-                                        lastDocID = curDocID;
+                                        lastCommitedDocID = curDocID;
                                         ++termDocuments;
                                 }
 
                                 void end_term(term_index_ctx *tctx) override final
                                 {
-					auto out{&sess->indexOut};
+                                        static constexpr bool trace{false};
+                                        auto out{&sess->indexOut};
 
                                         if (curBlockSize)
                                                 commit_block();
 
-                                        SLog("ENDING term ", curTermOffset, "\n");
+                                        if (trace)
+                                                SLog("ENDING term ", curTermOffset, "\n");
 
-					tctx->indexChunk.Set(curTermOffset, out->size() - curTermOffset);
+                                        tctx->indexChunk.Set(curTermOffset, out->size() - curTermOffset);
                                         tctx->documents = termDocuments;
                                 }
-
                         };
 
-
-			struct AccessProxy final
-				: public Trinity::Codecs::AccessProxy
+                        struct AccessProxy final
+                            : public Trinity::Codecs::AccessProxy
                         {
-				AccessProxy(const char *bp, const uint8_t *p)
-					: Trinity::Codecs::AccessProxy{bp, p}
-				{
+                                AccessProxy(const char *bp, const uint8_t *p)
+                                    : Trinity::Codecs::AccessProxy{bp, p}
+                                {
+                                }
 
-				}
+                                strwlen8_t codec_identifier() override final
+                                {
+                                        return "GOOGLE"_s8;
+                                }
 
-				strwlen8_t codec_identifier() override final
-				{
-					return "GOOGLE"_s8;
-				}
-
-                                Trinity::Codecs::Decoder *new_decoder(const term_index_ctx &tctx,  Trinity::Codecs::AccessProxy *access) override final;
+                                Trinity::Codecs::Decoder *new_decoder(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access) override final;
                         };
 
                         // We used to keep track of remDocsInBlocks
@@ -163,7 +171,7 @@ namespace Trinity
                         // Tracking the postings chunk size solves all those problems, and the cost is 4 bytes to track that (we could use varints)
                         // size in the terms dictionary. Sounds like a good compromise (for 1 million terms, we need 4 extra MBs)
                         class Decoder final
-				: public Trinity::Codecs::Decoder
+                            : public Trinity::Codecs::Decoder
                         {
                                 uint32_t documents[N];
                                 const uint8_t *p, *chunkEnd;
@@ -225,9 +233,9 @@ namespace Trinity
 
                                 bool seek(const uint32_t target) override final;
 
-                        	void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) override final;
+                                void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) override final;
 
-				void init(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access) override final;
+                                void init(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access) override final;
                         };
                 }
         }

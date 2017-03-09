@@ -150,6 +150,7 @@ namespace // static/local this module
                 // This is from the lead tokens
                 // We expect all token and phrases opcodes to check against this document
                 uint32_t curDocID;
+		// See docwordspace.h
 		uint16_t curDocSeq;
 
 
@@ -223,9 +224,10 @@ namespace // static/local this module
                         {
                                 decode_ctx.decoders[termID] = idxsrc->new_postings_decoder(term_ctx(termID));
                                 decode_ctx.termHits[termID] = new term_hits();
+
+                                SLog("Initialized decoder for ", termID, "\n");
                         }
 
-                        SLog("Initialized decoder for ", termID, "\n");
                         require(decode_ctx.decoders[termID]);
                 }
 
@@ -331,7 +333,7 @@ namespace // static/local this module
                                                 ptr->docSeq = 0;
                                 }
 
-				curDocSeq = 1; 	// importany; set to 1 not 0
+				curDocSeq = 1; 	// important; set to 1 not 0
 			}
 			else
 			{
@@ -376,6 +378,9 @@ namespace // static/local this module
                 simple_allocator allocator;
         };
 }
+
+
+
 
 #pragma mark OPTIMIZER
 static uint32_t optimize_binops_impl(ast_node *const n, bool &updates, runtime_ctx &rctx)

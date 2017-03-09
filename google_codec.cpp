@@ -375,7 +375,8 @@ void Trinity::Codecs::Google::Decoder::unpack_block(const uint32_t thisBlockLast
         auto id{blockLastDocID};
 
         if (trace)
-                SLog("Now unpacking block contents, n = ", n, ", blockLastDocID = ", blockLastDocID, "\n");
+                SLog("Now unpacking block contents, n = ", n, ", blockLastDocID = ", blockLastDocID, ", thisBlockLastDocID = ", thisBlockLastDocID, "\n");
+	require(n <= N);
 
         for (uint8_t i{0}; i != k; ++i)
         {
@@ -385,6 +386,8 @@ void Trinity::Codecs::Google::Decoder::unpack_block(const uint32_t thisBlockLast
                         SLog("<< ", id, "\n");
 
                 documents[i] = id;
+
+		require(id < thisBlockLastDocID);
         }
 
         for (uint32_t i{0}; i != n; ++i)
@@ -470,7 +473,7 @@ void Trinity::Codecs::Google::Decoder::skip_remaining_block_documents()
         static constexpr bool trace{false};
 
         if (trace)
-                SLog("Skipping current block\n");
+                SLog("Skipping current block (blockLastDocID = ", blockLastDocID, ")\n");
 
         for (;;)
         {
@@ -481,8 +484,8 @@ void Trinity::Codecs::Google::Decoder::skip_remaining_block_documents()
 
                 while (freq)
                 {
-                        Compression::decode_varuint32(p);
                         --freq;
+                        Compression::decode_varuint32(p);
                 }
 
                 if (documents[blockDocIdx] == blockLastDocID)
@@ -518,7 +521,7 @@ bool Trinity::Codecs::Google::Decoder::next()
         static constexpr bool trace{false};
 
         if (trace)
-                SLog("NEXT\n");
+                SLog("NEXT blockDocIdx = ", blockDocIdx, " [", documents[blockDocIdx], "] blockLastDocID = ", blockLastDocID, "]\n");
 
         if (documents[blockDocIdx] == blockLastDocID)
         {
@@ -563,7 +566,7 @@ bool Trinity::Codecs::Google::Decoder::seek(const uint32_t target)
         static constexpr bool trace{false};
 
         if (trace)
-                SLog(ansifmt::bold, ansifmt::color_green, "SKIPPING to ", target, ansifmt::reset, "\n");
+                SLog(ansifmt::bold, ansifmt::color_green, "SKIPPING to ", target, ansifmt::reset, ", currently at ", documents[blockDocIdx], ", blockLastDocID = ", blockLastDocID, "\n");
 
         if (target > blockLastDocID)
         {

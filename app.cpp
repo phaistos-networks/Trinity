@@ -11,7 +11,97 @@
 
 using namespace Trinity;
 
+
 #if 1
+int main(int argc, char *argv[])
+{
+	if (argc == 1)
+        {
+                int fd = open("/home/system/Data/BestPrice/SERVICE/clusters.data", O_RDONLY | O_LARGEFILE);
+
+                require(fd != -1);
+
+                const auto fileSize = lseek64(fd, 0, SEEK_END);
+                auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
+                simple_allocator a;
+                SegmentIndexSession indexSess;
+
+                close(fd);
+                require(fileData != MAP_FAILED);
+
+                for (const auto *p = static_cast<const uint8_t *>(fileData), *const e = p + fileSize; p != e;)
+                {
+                        p += sizeof(uint16_t);
+                        const auto chunkSize = *(uint32_t *)p;
+
+                        p += sizeof(uint32_t);
+
+                        for (const auto chunkEnd = p + chunkSize; p != chunkEnd;)
+                        {
+                                const auto id = *(uint32_t *)p;
+                                p += sizeof(uint32_t);
+                                strwlen8_t title((char *)p + 1, *p);
+                                p += title.size() + sizeof(uint8_t);
+                                ++p;
+                                const auto n = *(uint16_t *)p;
+                                p += sizeof(uint16_t);
+
+                                p += n * sizeof(uint32_t);
+
+                                title.p = a.CopyOf(title.data(), title.size());
+
+                                auto d = indexSess.begin(id);
+                                uint16_t pos{1};
+
+                                for (const auto *p = title.p, *const e = p + title.size(); p != e;)
+                                {
+                                        if (const auto len = Text::TermLengthWithEnd(p, e))
+                                        {
+                                                auto mtp = (char *)p;
+
+                                                for (uint32_t i{0}; i != len; ++i)
+                                                        mtp[i] = Buffer::UppercaseISO88597(p[i]);
+
+                                                const strwlen8_t term(p, len);
+
+                                                d.insert(term, pos);
+                                                ++pos;
+
+                                                p += len;
+                                        }
+                                        else
+                                        {
+                                                if (!isspace(*p))
+                                                        pos += 2;
+                                                ++p;
+                                        }
+                                }
+
+                                indexSess.insert(d);
+                        }
+                }
+                munmap(fileData, fileSize);
+
+                auto is = new Trinity::Codecs::Google::IndexSession("/tmp/TSEGMENTS/100");
+
+                indexSess.commit(is);
+                delete is;
+        }
+	else
+	{
+		auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/100");
+		auto rr = masked_documents_registry::make(nullptr, 0);
+		
+		exec_query(strwlen32_t(argv[1]), ss, rr.get());
+		ss->Release();
+	}
+
+        return 0;
+}
+#endif
+
+
+#if 0
 int main(int argc, char *argv[])
 {
 	{

@@ -250,11 +250,15 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                         } while (--termsCnt);
                 }
 
-                std::sort(all.begin(), all.end(), [](const auto &a, const auto &b) { return a.termID < b.termID; });
+                std::sort(all.begin(), all.end(), [](const auto &a, const auto &b) noexcept {
+                        return a.termID < b.termID || (a.termID == b.termID && a.documentID < b.documentID);
+                });
+
 
                 for (const auto *it = all.data(), *const e = it + all.size(); it != e;)
                 {
                         const auto term = it->termID;
+			uint32_t prevDID{0};
 
                         enc->begin_term();
 
@@ -264,6 +268,8 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                                 const auto hitsCnt = it->hitsCnt;
                                 const auto *p = data + it->hitsOffset;
                                 uint32_t pos{0};
+
+				require(documentID > prevDID);
 
                                 enc->begin_document(documentID, hitsCnt);
                                 for (uint32_t i{0}; i != hitsCnt; ++i)
@@ -281,6 +287,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                                 }
                                 enc->end_document();
 
+				prevDID = documentID;
                         } while (++it != e && it->termID == term);
 
                         enc->end_term(&tctx);

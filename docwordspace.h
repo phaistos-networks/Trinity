@@ -20,7 +20,7 @@ namespace Trinity
                 position *const positions;
 		// TODO: We could track the maximum seen position in a segment/index source and use that to create the DocWordsSpace
                 const uint32_t maxPos;
-                uint16_t curSeq{0};
+                uint16_t curSeq{1};	 // always start with 1
 
               public:
 		// allocating max + Trinity::Limits::MaxPhraseSize, because that is the theoritical maximum phrase size
