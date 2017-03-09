@@ -23,13 +23,13 @@ static constexpr uint8_t OpPrio(const Operator op) noexcept
         }
 }
 
-static term parse_term(parse_ctx &ctx)
+static strwlen32_t parse_term(parse_ctx &ctx)
 {
         // TODO:what about unexpected characters e.g ',./+><' etc?
         // this breaks our parser
-        if (const auto len = Text::TermLength(ctx.content.p, ctx.content.end()))
+        if (const auto len = ctx.token_parser(ctx.content.p, ctx.content.end()))
         {
-                const term res{{ctx.content.p, len}};
+		const strwlen32_t res(ctx.content.p, len);
 
                 ctx.content.strip_prefix(len);
                 return res;
@@ -52,15 +52,20 @@ static ast_node *parse_phrase_or_token(parse_ctx &ctx)
                         if (!ctx.content || ctx.content.StripPrefix(_S("\"")))
                                 break;
 
-                        if (const auto t = parse_term(ctx); t.token)
+                        if (const auto token = parse_term(ctx))
                         {
-				if (unlikely(t.token.size() > Limits::MaxTermLength))
+				if (unlikely(token.size() > Limits::MaxTermLength))
 					return ctx.alloc_node(ast_node::Type::ConstFalse);
+				
+				term t;
+
+				t.token.Set(token.data(), uint8_t(token.size()));
 
                                 if (n != sizeof_array(terms))
                                 {
                                         // silently ignore the rest
                                         // Not sure this is ideal though
+					ctx.track_term(t);
                                         terms[n++] = t;
                                 }
                         }
@@ -83,13 +88,19 @@ static ast_node *parse_phrase_or_token(parse_ctx &ctx)
                         return node;
                 }
         }
-        else if (const auto t = parse_term(ctx); t.token)
+        else if (const auto token = parse_term(ctx))
         {
-                if (unlikely(t.token.size() > Limits::MaxTermLength))
+                if (unlikely(token.size() > Limits::MaxTermLength))
                         return ctx.alloc_node(ast_node::Type::ConstFalse);
+
+                term t;
+
+		t.token.Set(token.data(), uint8_t(token.size()));
 
                 auto node = ctx.alloc_node(ast_node::Type::Token);
                 auto p = (phrase *)ctx.allocator.Alloc(sizeof(phrase) + sizeof(term));
+
+		ctx.track_term(t);
 
                 p->size = 1;
                 p->terms[0] = t;
@@ -348,6 +359,20 @@ ast_node *parse_expr(parse_ctx &ctx)
         return parse_subexpr(ctx, UnaryOperatorPrio);
 }
 
+void parse_ctx::track_term(term &t)
+{
+	for (const auto &it : distinctTokens)
+	{
+		if (it == t.token)
+		{
+			t.token = it;
+			return;
+		}
+	}
+
+	t.token.p = allocator.CopyOf(t.token.data(), t.token.size());
+	distinctTokens.push_back(t.token);
+}
 
 ast_node *parse_ctx::parse()
 {
@@ -901,9 +926,9 @@ Switch::vector<ast_node *> &query::nodes(ast_node *root, Switch::vector<ast_node
         return *res;
 }
 
-bool query::parse(const strwlen32_t in)
+bool query::parse(const strwlen32_t in, uint32_t(*tp)(const char *, const char *))
 {
-        parse_ctx ctx{in, allocator};
+        parse_ctx ctx{in, allocator, tp};
 
         root = parse_expr(ctx);
         if (!root)

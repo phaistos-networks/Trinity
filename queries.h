@@ -97,6 +97,7 @@ namespace Trinity
 
         struct term final
         {
+		// for now, just the token but maybe in the future we 'll want to extend to support flags etc
                 strwlen8_t token;
         };
 
@@ -107,14 +108,16 @@ namespace Trinity
                 strwlen32_t content;
                 simple_allocator &allocator;
                 term terms[Trinity::Limits::MaxPhraseSize];
+		uint32_t(*token_parser)(const char*, const char *);
+		std::vector<strwlen8_t> distinctTokens;
 
                 auto *alloc_node(const ast_node::Type t)
                 {
                         return ast_node::make(allocator, t);
                 }
 
-                parse_ctx(const strwlen32_t input, simple_allocator &a)
-                    : content{input}, allocator{a}
+                parse_ctx(const strwlen32_t input, simple_allocator &a, uint32_t(*p)(const char*, const char *) = Text::TermLengthWithEnd)
+                    : content{input}, allocator{a}, token_parser{p}
                 {
                 }
 
@@ -131,6 +134,8 @@ namespace Trinity
                         // because we really can't fail (not strict)
                         return alloc_node(ast_node::Type::Dummy);
                 }
+
+		void track_term(term &t);
         };
 
         struct phrase final
@@ -167,7 +172,7 @@ namespace Trinity
         struct query final
         { 
                 ast_node *root;
-                simple_allocator allocator;
+                simple_allocator allocator{512};
 
                 bool normalize();
 
@@ -187,7 +192,7 @@ namespace Trinity
 	*/
                 void leader_nodes(std::vector<ast_node *> *const out);
 
-                bool parse(const strwlen32_t in);
+                bool parse(const strwlen32_t in, uint32_t(*tp)(const char *, const char *) = Text::TermLengthWithEnd);
 
                 query() = default;
 
@@ -196,9 +201,9 @@ namespace Trinity
 			return root;
 		}
 
-                query(const strwlen32_t in)
+                query(const strwlen32_t in, uint32_t(*tp)(const char *, const char *) = Text::TermLengthWithEnd)
                 {
-                        if (!parse(in))
+                        if (!parse(in, tp))
                                 throw Switch::data_error("Failed to parse query");
                 }
 
