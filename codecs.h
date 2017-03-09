@@ -199,9 +199,9 @@ namespace Trinity
                         virtual bool seek(const uint32_t target) = 0;
 
 			// returns UINT32_MAX if no more documents left
-			virtual uint32_t cur_doc_id() = 0;
+			[[deprecated("use this->curDocument.id please")]] virtual uint32_t cur_doc_id() = 0;
 
-			virtual uint16_t cur_doc_freq() = 0;
+			[[deprecated("use this->curDocument.freq please")]] virtual uint16_t cur_doc_freq() = 0;
 
 			// Materialises hits for the _current_ document
 			//

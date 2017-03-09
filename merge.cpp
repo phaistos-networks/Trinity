@@ -138,8 +138,8 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 
 				do
 				{
-					const auto freq = dec->cur_doc_freq();
-					const auto docID = dec->cur_doc_id();
+					const auto docID = dec->curDocument.id;
+					const auto freq = dec->curDocument.freq;
 
 					if (!maskedDocsReg->test(docID))
                                         {
@@ -228,12 +228,12 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 				for (;;)
 				{
 					uint16_t toAdvanceCnt{1};
-					uint32_t lowestDID = decoders[0].first->cur_doc_id();
+					uint32_t lowestDID = decoders[0].first->curDocument.id;
 
 					toAdvance[0] = 0;
 					for (uint16_t i{1}; i != rem; ++i)
 					{
-						const auto id = decoders[i].first->cur_doc_id();
+						const auto id = decoders[i].first->curDocument.id;
 
 						if (id < lowestDID)
 						{
@@ -250,7 +250,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 					if (!decoders[toAdvance[0]].second->test(lowestDID))
                                         {
                                                 auto dec = decoders[toAdvance[0]].first;
-                                                const auto freq = dec->cur_doc_freq();
+                                                const auto freq = dec->curDocument.freq;
 
                                                 if (freq > termHitsCapacity)
                                                 {
