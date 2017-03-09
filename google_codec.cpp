@@ -42,8 +42,8 @@ void Trinity::Codecs::Google::Encoder::commit_block()
 	require(curBlockSize);
         out->pack(curBlockSize);              // one byte will suffice
 
-        out->Serialize(block.data(), block.size());
-        out->Serialize(hitsData.data(), hitsData.size());
+        out->serialize(block.data(), block.size());
+        out->serialize(hitsData.data(), hitsData.size());
         hitsData.clear();
 
         prevBlockLastDocumentID = curDocID;

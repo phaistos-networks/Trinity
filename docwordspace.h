@@ -28,7 +28,7 @@ namespace Trinity
 		// make sure we won't read outside positions. 
 		// The extra positions will be always initialized to 0 and we won't need to reset those in reset()
                 DocWordsSpace(const uint32_t max)
-			: positions((position *)calloc(sizeof(position), max + Trinity::Limits::MaxPhraseSize)), maxPos{max} 
+			: positions((position *)calloc(sizeof(position), max + 1 + Trinity::Limits::MaxPhraseSize)), maxPos{max} 
 		{
 
 		}
@@ -49,8 +49,8 @@ namespace Trinity
                         {
 				// we reset every 65k documents
 				// this is preferrable to using uint32_t to encode the actual document in position{}
-                                curSeq = 0;
-                                memset(positions, 0, sizeof(position) * maxPos);
+                                memset(positions, 0, sizeof(position) * (maxPos + 1));
+                                curSeq = 1; 	// important; set to 1 not 0
                         }
                         else
                                 ++curSeq;

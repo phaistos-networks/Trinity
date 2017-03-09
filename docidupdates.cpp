@@ -40,7 +40,7 @@ void Trinity::pack_updates(std::vector<uint32_t> &updatedDocumentIDs, IOBuffer *
                 }
 
                 buf->pack(uint8_t(log2(BANK_SIZE)));                     // 1 byte will suffice
-                buf->Serialize(skiplist.data(), skiplist.size());        // skiplist
+                buf->serialize(skiplist.data(), skiplist.size());        // skiplist
                 buf->pack(uint32_t(skiplist.size() / sizeof(uint32_t))); // TODO: use varint encoding here
 
         }

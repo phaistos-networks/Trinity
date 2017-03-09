@@ -196,7 +196,7 @@ static void print_token(Buffer &b, const phrase *const p)
         b.append('[', p->index, ']');
 }
 
-static void PrintImpl(Buffer &b, const ast_node &n)
+void PrintImpl(Buffer &b, const Trinity::ast_node &n)
 {
         switch (n.type)
         {

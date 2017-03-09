@@ -37,7 +37,7 @@ l100:
         const auto &it = skipList[top];
         const auto o = it.blockOffset;
         auto prev = it.term;
-	char termStorage[256];
+	char termStorage[Limits::MaxTermLength];
 
         memcpy(termStorage, prev.data(), prev.size());
 

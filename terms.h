@@ -65,7 +65,7 @@ namespace Trinity
 
                       public:
                         const uint8_t *p;
-                        char termStorage[256];
+                        char termStorage[Limits::MaxTermLength];
                         struct
                         {
                                 strwlen8_t term;

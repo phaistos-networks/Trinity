@@ -66,64 +66,76 @@ namespace // static/local this module
                         uint8_t size;            // total in termIDs
                 };
 
+
+		auto materialize_term_hits_impl(const exec_term_id_t termID)
+		{
+                        auto th = decode_ctx.termHits[termID];
+			auto dec = decode_ctx.decoders[termID];
+			const auto docHits = dec->cur_doc_freq();
+
+			th->docSeq = curDocSeq;
+			th->set_freq(docHits);
+			dec->materialize_hits(termID, &docWordsSpace, th->all);
+		}
+
                 auto materialize_term_hits(const exec_term_id_t termID)
                 {
                         auto th = decode_ctx.termHits[termID];
 
                         require(th);
-
-                        if (th->docID != curDocID)
+                        if (th->docSeq != curDocSeq)
                         {
                                 // Not already materialized
-                                auto dec = decode_ctx.decoders[termID];
-                                const auto docHits = dec->cur_doc_freq();
-
-                                th->docID = curDocID;
-                                th->set_freq(docHits);
-                                dec->materialize_hits(termID, &docWordsSpace, th->all);
+                                materialize_term_hits_impl(termID);
                         }
 
                         return th;
                 }
 
-#if 0
-	bool materialize_term_hits_with_phrase_prevterm_check(const exec_term_id_t termID, const exec_term_id_t phrasePrevTermID, const uint16_t phraseIdx /* second phrase index=1, etc */)
-        {
-                auto th = decode_ctx.termHits[termID];
+                void capture_matched_term(const exec_term_id_t termID)
+		{
+			if (const auto qti = originalQueryTermInstances[termID])
+			{
+				// if this not nullptr, it means this was not in a NOT branch so we should account for it
+				// we exclude all tokens in NOT branches when we collect the original query tokens
+				if (curDocQueryTokensCaptured[termID] != curDocSeq)
+				{
+					// not captured already for this document
+					auto p = matchedDocument.matchedTerms + matchedDocument.matchedTermsCnt++;
+					auto th = decode_ctx.termHits[termID];
 
-                require(th);
+					curDocQueryTokensCaptured[termID] = curDocSeq;
+					p->queryTermInstances = qti;
 
-                if (th->docID != curDocID)
-                {
-                        auto dec = decode_ctx.decoders[termID];
-                        const auto docHits = dec->cur_doc_freq();
+					if (th->docSeq == curDocSeq)
+					{
+						// already materialised
+					}
+					else
+					{
+						// track it so that we can materialise it before we score the document
+						// don't matrerialise just yet because it's possible the query predicate won't match the document
+						// e.g [foo bar] if only foo matches but not bar we don't want to materialise foo term hits anyway
+						// TODO: we will not track it for now, but maybe we should for performance reasons so
+						// that we won't have to iterater across all matchedDocument.matchedTerms and attempt to materialise
+					}
 
-                        th->docID = curDocID;
-                        th->set_freq(docHits);
-                        return dec->materialize_hits_with_phrase_prevterm_check(&docWordsSpace, th->all, phrasePrevTermID);
-                }
-                else
-                {
-                        const auto freq = th->freq;
-                        const auto all = th->all;
+					p->hits = th;
+				}
+			}
+			else
+			{
+				// This token was found only in a NOT branch
+			}
+		}
 
-                        for (uint32_t i{0}; i != freq; ++i)
-                        {
-                                if (const auto pos = all[i].pos; pos > phraseIdx)
-                                {
-                                        if (docWordsSpace.test(phrasePrevTermID, pos - phraseIdx))
-                                                return true;
-                                }
-                        }
 
-                        return false;
-                }
-        }
-#endif
 
                 // This is from the lead tokens
                 // We expect all token and phrases opcodes to check against this document
                 uint32_t curDocID;
+		uint16_t curDocSeq;
+
 
                 struct
                 {
@@ -170,6 +182,10 @@ namespace // static/local this module
                                         std::free(termHits);
                         }
                 } decode_ctx;
+
+		// indexed by termID
+		query_term_instances **originalQueryTermInstances;
+
 
                 void setup_evalnode_contexts()
                 {
@@ -285,6 +301,26 @@ namespace // static/local this module
                 {
                         curDocID = did;
                         docWordsSpace.reset(did);
+			matchedDocument.matchedTermsCnt = 0;
+
+			// see docwordspace.h
+			if (unlikely(curDocSeq == UINT16_MAX))
+			{
+				const auto maxQueryTermIDPlus1 = termsDict.size() + 1;
+
+				memset(curDocQueryTokensCaptured, 0, sizeof(uint16_t) * maxQueryTermIDPlus1);
+				for (uint32_t i{0}; i < decode_ctx.capacity; ++i)
+				{
+					if (auto ptr = decode_ctx.termHits[i])
+                                                ptr->docSeq = 0;
+                                }
+
+				curDocSeq = 1; 	// importany; set to 1 not 0
+			}
+			else
+			{
+				++curDocSeq;
+			}
                 }
 
                 // used during compilation
@@ -318,6 +354,8 @@ namespace // static/local this module
                 Switch::unordered_map<strwlen8_t, exec_term_id_t> termsDict;
                 Switch::unordered_map<exec_term_id_t, uint32_t> toIndexSrcSpace; // translation between runtime_ctx and segment term IDs spaces
                 Switch::unordered_map<exec_term_id_t, strwlen8_t> idToTerm;      // maybe useful for tracing by the score functions
+		uint16_t *curDocQueryTokensCaptured;
+		matched_document matchedDocument;
 
                 simple_allocator allocator;
         };
@@ -531,54 +569,17 @@ static inline uint8_t matchtoken_impl(const exec_node self, runtime_ctx &rctx)
 {
         //return rctx.decode_ctx.decoders[rctx.evalnode_ctx.tokens[self.nodeCtxIdx].termID]->seek(rctx.curDocID);
         auto t = rctx.evalnode_ctx.tokens + self.nodeCtxIdx;
-        auto decoder = rctx.decode_ctx.decoders[t->termID];
+	const auto termID = t->termID;
+        auto decoder = rctx.decode_ctx.decoders[termID];
         const auto res = decoder->seek(rctx.curDocID);
 
         if (res)
-        {
-                // include in the list of tokens found
-                // we will materialize only if needed
-        }
+		rctx.capture_matched_term(termID);
+
 
         SLog(ansifmt::color_green, "Attempting to match token against ", rctx.curDocID, ansifmt::reset, " => ", res, "\n");
         return res;
 }
-
-#if 0
-static inline uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
-{
-	auto p = rctx.evalnode_ctx.phrases + self.nodeCtxIdx;
-	const auto firstTermID = p->termIDs[0];
-	auto decoder = rctx.decode_ctx.decoders[firstTermID];
-	const auto did = rctx.curDocID;
-
-	if (!decoder->seek(did))
-		return 0;
-
-	auto th = rctx.materialize_term_hits(firstTermID);
-	const auto n = p->size;
-	exec_term_id_t phrasePrevTermID{firstTermID};
-
-	for (uint32_t i{1}; i < n; ++i)
-	{
-		const auto termID = p->termIDs[i];
-		auto decoder = rctx.decode_ctx.decoders[termID];
-
-		if (!decoder->seek(did))
-			return 0;
-
-		auto res = rctx.materialize_term_hits_with_phrase_prevterm_check(termID, phrasePrevTermID);
-
-		if (!res.second)
-			return 0;
-
-		phrasePrevTermID = termID;
-	}
-
-
-	return 1;
-}
-#endif
 
 static uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
 {
@@ -635,6 +636,8 @@ static uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
                                 if (k == n)
                                 {
                                         // matched seq
+					for (uint16_t i{0}; i != n; ++i)
+						rctx.capture_matched_term(p->termIDs[i]);
                                         return true;
                                 }
 
@@ -648,6 +651,43 @@ static uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
 
         return false;
 }
+
+#if 0
+static inline uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
+{
+	auto p = rctx.evalnode_ctx.phrases + self.nodeCtxIdx;
+	const auto firstTermID = p->termIDs[0];
+	auto decoder = rctx.decode_ctx.decoders[firstTermID];
+	const auto did = rctx.curDocID;
+
+	if (!decoder->seek(did))
+		return 0;
+
+	auto th = rctx.materialize_term_hits(firstTermID);
+	const auto n = p->size;
+	exec_term_id_t phrasePrevTermID{firstTermID};
+
+	for (uint32_t i{1}; i < n; ++i)
+	{
+		const auto termID = p->termIDs[i];
+		auto decoder = rctx.decode_ctx.decoders[termID];
+
+		if (!decoder->seek(did))
+			return 0;
+
+		auto res = rctx.materialize_term_hits_with_phrase_prevterm_check(termID, phrasePrevTermID);
+
+		if (!res.second)
+			return 0;
+
+		phrasePrevTermID = termID;
+	}
+
+
+	return 1;
+}
+#endif
+
 
 static inline uint8_t logicaland_impl(const exec_node self, runtime_ctx &rctx)
 {
@@ -778,6 +818,13 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
 // It is also very cheap to construct those.
 bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_registry *const maskedDocumentsRegistry)
 {
+        struct query_term_instance
+        {
+                strwlen8_t token;
+                uint16_t index;
+                uint8_t rep;
+        };
+
         if (!in)
         {
                 SLog("No root node\n");
@@ -795,6 +842,56 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                 return false;
         }
 
+
+	// We need to collect all term instances in the query
+	// so that we the score function will be able to take that into account to e.g  consider
+	// We only need to do this for specific AST branches and node types
+	//
+	// This must be performed before any query optimizations, for otherwise because optimizations will most definitely rearrange the query, doing it after
+	// the optimization passes will not capture the original, input query tokens instances information.
+        std::vector<query_term_instance> originalQueryTokenInstances;
+
+        {
+                std::vector<ast_node *> stack{q.root}; 	// use a stack because we don't care about the evaluation order
+                std::vector<phrase *> collected;
+
+                do
+                {
+                        auto n = stack.back();
+
+                        stack.pop_back();
+                        switch (n->type)
+                        {
+                                case ast_node::Type::Token:
+				case ast_node::Type::Phrase:
+                                        collected.push_back(n->p);
+                                        break;
+
+                                case ast_node::Type::BinOp:
+                                        if (n->binop.op == Operator::AND || n->binop.op == Operator::STRICT_AND || n->binop.op == Operator::OR)
+                                        {
+                                                stack.push_back(n->binop.lhs);
+                                                stack.push_back(n->binop.rhs);
+                                        }
+					else if (n->binop.op == Operator::NOT)
+                                                stack.push_back(n->binop.lhs);
+                                        break;
+
+				default:
+					break;
+                        }
+                } while (stack.size());
+
+		for (const auto it : collected)
+		{
+			const uint8_t rep = it->size == 1 ? it->rep : 1;
+
+			for (uint16_t pos{it->index}, i{0}; i != it->size; ++i, ++pos)
+				originalQueryTokenInstances.push_back({it->terms[i].token, pos, rep});
+		}
+        }
+
+
         runtime_ctx rctx(idxsrc);
 
         // Optimizations we shouldn't perform on the parsed query because
@@ -805,6 +902,10 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                 SLog("No root node after optimizations\n");
                 return false;
         }
+
+
+
+
 
         SLog("Compiling\n");
         // Need to compile before we access the leader nodes
@@ -884,12 +985,79 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
         require(leaderTokensDecoders.size());
         auto leaderDecoders = leaderTokensDecoders.data();
         uint32_t leaderDecodersCnt = leaderTokensDecoders.size();
-	matched_document matchedDocument;
+	const auto maxQueryTermIDPlus1 = rctx.termsDict.size() + 1;
+
+
+
+
+
+        {
+                std::vector<std::pair<uint16_t, uint16_t>> collected;
+
+                // Build rctx.originalQueryTermInstances
+                // It is important to only do this after we have optimised the copied original query, just as it is important
+                // to capture the original query instances before we optimise
+		//
+		// We need access to that information for scoring documents
+                rctx.originalQueryTermInstances = (query_term_instances **)rctx.allocator.Alloc(sizeof(query_term_instances *) * maxQueryTermIDPlus1);
+
+		memset(rctx.originalQueryTermInstances, 0, sizeof(query_term_instances *) * maxQueryTermIDPlus1);
+                std::sort(originalQueryTokenInstances.begin(), originalQueryTokenInstances.end(), [](const auto &a, const auto &b) { return Text::StrnncasecmpISO88597(a.token.data(), a.token.size(), b.token.data(), b.token.size()) < 0; });
+                for (const auto *p = originalQueryTokenInstances.data(), *const e = p + originalQueryTokenInstances.size(); p != e;)
+                {
+                        const auto token = p->token;
+
+			SLog("token [", token, "]\n");
+
+                        if (const auto termID = rctx.termsDict[token]) // only if this token has actually been used in the compiled query
+                        {
+                                collected.clear();
+                                do
+                                {
+                                        collected.push_back({p->index, p->rep});
+                                } while (++p != e && p->token == token);
+
+                                const auto cnt = collected.size();
+                                auto p = (query_term_instances *)rctx.allocator.Alloc(sizeof(query_term_instances) + cnt * sizeof(query_term_instances::instance_struct));
+
+                                p->cnt = cnt;
+                                p->term.id = termID;
+                                p->term.token = token;
+
+                                SLog("cnt = ", cnt, "\n");
+                                std::sort(collected.begin(), collected.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+                                for (size_t i{0}; i != collected.size(); ++i)
+                                {
+                                        p->instances[i].index = collected[i].first;
+                                        p->instances[i].rep = collected[i].second;
+                                }
+
+                                rctx.originalQueryTermInstances[termID] = p;
+                        }
+                        else
+                        {
+				SLog("Ignoring ", token, "\n");
+                                // this original query token is not used in the optimised query
+                                do
+                                {
+                                        ++p;
+                                } while (++p != e && p->token == token);
+                        }
+                }
+        }
+
+        rctx.setup_evalnode_contexts();
+	rctx.curDocQueryTokensCaptured = (uint16_t *)rctx.allocator.Alloc(sizeof(uint16_t) * maxQueryTermIDPlus1);
+	rctx.matchedDocument.matchedTerms = (matched_query_term *)rctx.allocator.Alloc(sizeof(matched_query_term) * maxQueryTermIDPlus1);
+	rctx.curDocSeq = UINT16_MAX;
+
+
+
+
 
         SLog("RUNNING\n");
 
-	matchedDocument.idToTerm = &rctx.idToTerm;
-        rctx.setup_evalnode_contexts();
+
 
 
         // TODO: if (q.root->type == ast_node::Type::Token) {}
@@ -927,13 +1095,23 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                         // and it it returns true, compute the document's score
                         rctx.reset(docID);
 
-                        const auto res = eval(rootExecNode, rctx);
-
-                        if (res)
+                        if (eval(rootExecNode, rctx))
 			{
+				const auto n = rctx.matchedDocument.matchedTermsCnt;
+				auto allMatchedTerms = rctx.matchedDocument.matchedTerms;
+
                                 SLog(ansifmt::bold, ansifmt::color_blue, "MATCHED ", docID, ansifmt::reset, "\n");
 
-				matchedDocument.id = docID;
+				rctx.matchedDocument.id = docID;
+
+				// See runtime_ctx::capture_matched_term() comments
+				for (uint16_t i{0}; i != n; ++i)
+				{
+					const auto termID = allMatchedTerms[i].queryTermInstances->term.id;
+
+					rctx.materialize_term_hits(termID);
+				}
+
                         	// TODO: score it and consider for top-k matches using matchedDocument
 			}
                 }

@@ -1,6 +1,7 @@
 #pragma once
 #include "docwordspace.h"
 #include "docidupdates.h"
+#include "runtime.h"
 
 namespace Trinity
 {
@@ -54,14 +55,6 @@ namespace Trinity
 		}
 
 		term_index_ctx()= default;
-        };
- 
-	// a materialized document term hit
-	struct term_hit final
-        {
-                uint64_t payload;
-                uint16_t pos;
-                uint8_t payloadLen;
         };
 
         namespace Codecs

@@ -341,4 +341,7 @@ namespace Trinity
                         }
                 }
         };
+
 }
+
+void PrintImpl(Buffer &b, const Trinity::ast_node &n);

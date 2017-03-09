@@ -14,7 +14,7 @@ void SegmentIndexSession::document_proxy::insert(const uint32_t termID, const ui
                 const auto l = hitsBuf.size();
 
                 Drequire(size <= sizeof(uint64_t));
-                hitsBuf.Serialize(payload.start(), size);
+                hitsBuf.serialize(payload.start(), size);
                 hits.push_back({termID, {position, {l, size}}});
         }
         else
@@ -75,7 +75,7 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
                         }
 
                         if (payloadSize)
-                                b.Serialize(all_hits + it.second.start(), payloadSize);
+                                b.serialize(all_hits + it.second.start(), payloadSize);
 
                         ++termHits;
                 } while (++p != e && p->first == term);
