@@ -83,6 +83,7 @@ namespace Trinity
 
 	// A simple IndexSource that only masks documents
 	// You may want to use it to quickly mask documents without having to index any documents
+	// Create one with an updated_documents and insert it into an IndexSourcesCollection and you are done
 	class TrivialMaskedDocumentsIndexSource
 		: public IndexSource
 	{
@@ -136,6 +137,9 @@ namespace Trinity
         // It also retains all sources.
 	// See Trinity::exec_query(const query&, IndexSourcesCollection *) for how to do this in sequence, but you can and should do
 	// this in paralle using multple threads and collecting the top-k results from every exec() and then use merge/reduce to come up with the final set of top-k results
+	//
+	// A great use case would be to have one IndexSourcesCollection which retains many sources and whenever you want to reload segments/sources etc, create
+	// a new IndexSourcesCollection for them and atomically exchange pointers (old, new IndexSourcesCollection)
         class IndexSourcesCollection final
         {
               private:
