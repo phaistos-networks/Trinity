@@ -95,7 +95,7 @@ namespace Trinity
                                 else if (it->drained())
 				{
                                         new (it) updated_documents_scanner(scanners[--rem]);
-					require(*it == scanners[rem + 1]);
+					require(*it == scanners[rem]);
 				}	
                                 else
                                         ++i;

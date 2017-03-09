@@ -89,11 +89,27 @@ int main(int argc, char *argv[])
         }
 	else
 	{
+		std::vector<uint32_t> maskedProducts{6908848};
+		IOBuffer maskedProductsBuf;
+
+		pack_updates(maskedProducts, &maskedProductsBuf);
+		auto updates = unpack_updates({(uint8_t *)maskedProductsBuf.data(), maskedProductsBuf.size()});
+		auto maskedDocsSrc = new TrivialMaskedDocumentsIndexSource(updates);
 		auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/100");
 		auto rr = masked_documents_registry::make(nullptr, 0);
-		
-		exec_query(strwlen32_t(argv[1]), ss, rr.get());
+		IndexSourcesCollection sources;
+
+		sources.insert(ss);
+		sources.insert(maskedDocsSrc);
 		ss->Release();
+		maskedDocsSrc->Release();
+
+		sources.commit();
+
+
+		
+		exec_query(strwlen32_t(argv[1]), &sources);
+		//exec_query(strwlen32_t(argv[1]), ss, rr.get());
 	}
 
         return 0;

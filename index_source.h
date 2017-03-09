@@ -81,6 +81,39 @@ namespace Trinity
                 }
         };
 
+	// A simple IndexSource that only masks documents
+	// You may want to use it to quickly mask documents without having to index any documents
+	class TrivialMaskedDocumentsIndexSource
+		: public IndexSource
+	{
+		private:
+			const updated_documents maskedDocuments;
+
+		public:
+		TrivialMaskedDocumentsIndexSource(const updated_documents ud)
+			: maskedDocuments{ud}
+		{
+			gen = Timings::Microseconds::SysTime();
+		}
+
+                term_index_ctx resolve_term_ctx(const strwlen8_t term) override final
+		{
+			// fails for every term because we are only blocking here
+			return {};
+		}
+
+                Trinity::Codecs::Decoder *new_postings_decoder(const term_index_ctx ctx) override final
+		{
+			return nullptr;
+		}
+
+                updated_documents masked_documents() override final
+		{
+			return maskedDocuments;
+		}
+	};
+
+
 
         // A collection of IndexSource; an index of segments or other sources
         // Each index source is identified by a generation, and no two sources can share the same generation
