@@ -94,6 +94,11 @@ namespace // static/local this module
 
                 void capture_matched_term(const exec_term_id_t termID)
 		{
+			static constexpr bool trace{true};
+
+			if (trace)
+				SLog("Capturing matched term ", termID, "\n");
+
 			if (const auto qti = originalQueryTermInstances[termID])
 			{
 				// if this not nullptr, it means this was not in a NOT branch so we should account for it
@@ -104,12 +109,17 @@ namespace // static/local this module
 					auto p = matchedDocument.matchedTerms + matchedDocument.matchedTermsCnt++;
 					auto th = decode_ctx.termHits[termID];
 
+					if (trace)
+						SLog("Not captured yet, capturing now [", qti->term.token, "]\n");
+
 					curDocQueryTokensCaptured[termID] = curDocSeq;
 					p->queryTermInstances = qti;
 
 					if (th->docSeq == curDocSeq)
 					{
 						// already materialised
+						if (trace)
+							SLog("Already materialized\n");
 					}
 					else
 					{
@@ -118,14 +128,20 @@ namespace // static/local this module
 						// e.g [foo bar] if only foo matches but not bar we don't want to materialise foo term hits anyway
 						// TODO: we will not track it for now, but maybe we should for performance reasons so
 						// that we won't have to iterater across all matchedDocument.matchedTerms and attempt to materialise
+						if (trace)
+							SLog("Not materialised yet\n");
 					}
 
 					p->hits = th;
 				}
+				else if (trace)
+					SLog("Already captured\n");
 			}
 			else
 			{
 				// This token was found only in a NOT branch
+				if (trace)
+					SLog("Term found in a NOT branch\n");
 			}
 		}
 
@@ -1100,8 +1116,6 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
 				const auto n = rctx.matchedDocument.matchedTermsCnt;
 				auto allMatchedTerms = rctx.matchedDocument.matchedTerms;
 
-                                SLog(ansifmt::bold, ansifmt::color_blue, "MATCHED ", docID, ansifmt::reset, "\n");
-
 				rctx.matchedDocument.id = docID;
 
 				// See runtime_ctx::capture_matched_term() comments
@@ -1112,7 +1126,19 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
 					rctx.materialize_term_hits(termID);
 				}
 
+
+
                         	// TODO: score it and consider for top-k matches using matchedDocument
+                                SLog(ansifmt::bold, ansifmt::color_blue, "MATCHED ", docID, ansifmt::reset, "\n");
+				for (uint16_t i{0}; i != n; ++i)
+				{
+					auto mt = allMatchedTerms + i;
+					
+					SLog("MATCHED TERM [", mt->queryTermInstances->term.token, "]\n");
+
+				}
+
+
 			}
                 }
 
