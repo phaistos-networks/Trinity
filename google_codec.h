@@ -10,7 +10,8 @@ namespace Trinity
                 {
 			static constexpr bool TRACK_PAYLOADS{true};
                         static constexpr size_t N{32};             // block size (Google's block size is 32)
-                        static constexpr size_t SKIPLIST_STEP{512}; // generate a new skiplist entry every that many blocks
+                        static constexpr size_t SKIPLIST_STEP{512/N}; // generate a new skiplist entry every that many blocks
+			static constexpr bool CONSTRUCT_SKIPLIST{true};
 
                         struct IndexSession final
                             : public Trinity::Codecs::IndexSession
@@ -67,98 +68,20 @@ namespace Trinity
                                         return termDocuments;
                                 }
 
-                                void begin_term() override final
-                                {
-                                        auto out{&sess->indexOut};
+                                void begin_term() override final;
 
-                                        curBlockSize = 0;
-                                        lastCommitedDocID = 0;
-                                        prevBlockLastDocumentID = 0;
-                                        hitsData.clear();
-                                        termDocuments = 0;
-                                        curTermOffset = out->size();
-                                }
+                                void begin_document(const uint32_t documentID, const uint16_t hitsCnt) override final;
 
-                                void begin_document(const uint32_t documentID, const uint16_t hitsCnt) override final
-                                {
-					if (unlikely(documentID <= lastCommitedDocID))
-					{
-						SLog("Unexpected documentID(", documentID, ") <= lastCommitedDocID(", lastCommitedDocID, ")\n");
-						std::abort();
-					}
-
-                                        curDocID = documentID;
-                                        lastPos = 0;
-					curPayloadSize = 0;
-                                        blockFreqs[curBlockSize] = 0;
-                                }
-
-                                void new_hit(const uint32_t pos, const range_base<const uint8_t *, const uint8_t> payload) override final
-                                {
-                                        static constexpr bool trace{false};
-                                        const auto delta = pos - lastPos;
-					const uint8_t payloadSize = payload.size();
-
-					require(pos >= lastPos);
-
-                                        if (trace)
-                                                SLog("HIT ", pos, " => ", delta, "\n");
-
-                                        ++blockFreqs[curBlockSize];
-
-					if (TRACK_PAYLOADS)
-                                        {
-                                                if (payloadSize != curPayloadSize)
-                                                {
-                                                        hitsData.encode_varuint32((delta << 1) | 1);
-                                                        hitsData.Serialize(payloadSize);
-                                                        curPayloadSize = payloadSize;
-                                                }
-                                                else
-                                                        hitsData.encode_varuint32(delta << 1);
-                                                if (payloadSize)
-                                                        hitsData.serialize(payload.offset, payloadSize);
-                                        }
-                                        else
-                                                hitsData.encode_varuint32(delta);
-
-                                        lastPos = pos;
-                                }
-
+                                void new_hit(const uint32_t pos, const range_base<const uint8_t *, const uint8_t> payload) override final;
+                                
                                 inline void new_position(const uint32_t pos)
                                 {
                                         new_hit(pos, {});
                                 }
 
-                                void end_document() override final
-                                {
-                                        static constexpr bool trace{false};
+                                void end_document() override final;
 
-                                        if (trace)
-                                                SLog("end document ", curDocID, " ", lastCommitedDocID, " ", curBlockSize, "\n");
-
-                                        docDeltas[curBlockSize++] = curDocID - lastCommitedDocID;
-                                        if (curBlockSize == N)
-                                                commit_block();
-
-                                        lastCommitedDocID = curDocID;
-                                        ++termDocuments;
-                                }
-
-                                void end_term(term_index_ctx *tctx) override final
-                                {
-                                        static constexpr bool trace{false};
-                                        auto out{&sess->indexOut};
-
-                                        if (curBlockSize)
-                                                commit_block();
-
-                                        if (trace)
-                                                SLog("ENDING term ", curTermOffset, "\n");
-
-                                        tctx->indexChunk.Set(curTermOffset, out->size() - curTermOffset);
-                                        tctx->documents = termDocuments;
-                                }
+                                void end_term(term_index_ctx *tctx) override final;
                         };
 
                         struct AccessProxy final

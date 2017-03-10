@@ -137,8 +137,8 @@ int main(int argc, char *argv[])
 		};
 
 		
-		//exec_query<MatchedIndexDocumentsFilter>(strwlen32_t(argv[1]), &sources);
-		auto res = exec_query<BPFilter>(strwlen32_t(argv[1]), &sources);
+		exec_query<MatchedIndexDocumentsFilter>(strwlen32_t(argv[1]), &sources);
+		//auto res = exec_query<BPFilter>(strwlen32_t(argv[1]), &sources);
 		//exec_query(strwlen32_t(argv[1]), ss, rr.get());
 	}
 
@@ -176,6 +176,7 @@ int main(int argc, char *argv[])
                         auto doc = sess.begin(1);
 
 			index_document(doc, "world of warcraft mists of pandaria is the most successful MMORPG ever created"_s32);
+			//index_document(doc, "the"_s32);
                         sess.update(doc);
                 }
 
@@ -183,6 +184,7 @@ int main(int argc, char *argv[])
                         auto doc = sess.begin(2);
 
 			index_document(doc, "lord of the rings the return of the king. an incredible film about hobits, rings and powerful wizards in the mythical middle earth"_s32);
+			//index_document(doc, "the"_s32);
                         sess.update(doc);
                 }
 
@@ -216,7 +218,7 @@ int main(int argc, char *argv[])
 	
 		bpIndex.commit();
 
-		exec_query(q, &bpIndex);
+		exec_query<MatchedIndexDocumentsFilter>(q, &bpIndex);
 	}
 #endif
 
