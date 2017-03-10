@@ -63,8 +63,9 @@ int main(int argc, char *argv[])
                                                         mtp[i] = Buffer::UppercaseISO88597(p[i]);
 
                                                 const strwlen8_t term(p, len);
+						uint32_t hit{25121561};
 
-                                                d.insert(term, pos);
+                                                d.insert(term, pos, {(uint8_t *)&hit, sizeof(uint32_t)});
                                                 ++pos;
 
                                                 p += len;
@@ -110,8 +111,34 @@ int main(int argc, char *argv[])
 
 		auto filter = std::make_unique<MatchedIndexDocumentsFilter>();
 
+
+		struct BPFilter final
+			: public MatchedIndexDocumentsFilter
+		{
+			void consider(const matched_document &doc) override final
+			{
+				const auto n = doc.matchedTermsCnt;
+
+				SLog("MATCHED ", doc.id, " https://www.bestprice.gr/item/", doc.id|(1<<31), "\n");
+				for (uint32_t i{0}; i != n; ++i)
+				{
+					const auto t = doc.matchedTerms + i;
+
+					Print("Matched term ", t->queryTermInstances->term.id, " ", t->queryTermInstances->term.token, " ", t->hits->freq, " freq\n");
+
+					for (uint32_t i{0}; i != t->hits->freq; ++i)
+					{
+						const auto &hit = t->hits->all[i];
+
+						Print(">> ", hit.pos, " ", hit.payloadLen, " => ", *(uint32_t *)&hit.payload, "\n");
+					}
+				}
+			}
+		};
+
 		
-		exec_query<MatchedIndexDocumentsFilter>(strwlen32_t(argv[1]), &sources);
+		//exec_query<MatchedIndexDocumentsFilter>(strwlen32_t(argv[1]), &sources);
+		auto res = exec_query<BPFilter>(strwlen32_t(argv[1]), &sources);
 		//exec_query(strwlen32_t(argv[1]), ss, rr.get());
 	}
 

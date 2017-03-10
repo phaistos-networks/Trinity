@@ -8,6 +8,7 @@ namespace Trinity
         {
                 namespace Google
                 {
+			static constexpr bool TRACK_PAYLOADS{true};
                         static constexpr size_t N{32};             // block size (Google's block size is 32)
                         static constexpr size_t SKIPLIST_STEP{512}; // generate a new skiplist entry every that many blocks
 
@@ -44,7 +45,7 @@ namespace Trinity
                               private:
                                 IOBuffer block, hitsData;
                                 uint32_t prevBlockLastDocumentID{0}, curDocID{0}, lastCommitedDocID;
-                                uint8_t curBlockSize;
+                                uint8_t curBlockSize, curPayloadSize;
                                 uint32_t lastPos;
                                 uint32_t docDeltas[N];
                                 uint32_t blockFreqs[N];
@@ -88,6 +89,7 @@ namespace Trinity
 
                                         curDocID = documentID;
                                         lastPos = 0;
+					curPayloadSize = 0;
                                         blockFreqs[curBlockSize] = 0;
                                 }
 
@@ -95,6 +97,7 @@ namespace Trinity
                                 {
                                         static constexpr bool trace{false};
                                         const auto delta = pos - lastPos;
+					const uint8_t payloadSize = payload.size();
 
 					require(pos >= lastPos);
 
@@ -102,11 +105,27 @@ namespace Trinity
                                                 SLog("HIT ", pos, " => ", delta, "\n");
 
                                         ++blockFreqs[curBlockSize];
-                                        hitsData.encode_varuint32(delta);
+
+					if (TRACK_PAYLOADS)
+                                        {
+                                                if (payloadSize != curPayloadSize)
+                                                {
+                                                        hitsData.encode_varuint32((delta << 1) | 1);
+                                                        hitsData.Serialize(payloadSize);
+                                                        curPayloadSize = payloadSize;
+                                                }
+                                                else
+                                                        hitsData.encode_varuint32(delta << 1);
+                                                if (payloadSize)
+                                                        hitsData.serialize(payload.offset, payloadSize);
+                                        }
+                                        else
+                                                hitsData.encode_varuint32(delta);
+
                                         lastPos = pos;
                                 }
 
-                                void new_position(const uint32_t pos)
+                                inline void new_position(const uint32_t pos)
                                 {
                                         new_hit(pos, {});
                                 }

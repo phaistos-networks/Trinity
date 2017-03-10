@@ -84,7 +84,7 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
         // XXX: need to be provided by more recent to the least recent
         //require(chunksCnt > 1);
 
-        struct chunk
+        struct chunk final
         {
                 const uint8_t *p;
                 const uint8_t *e;
@@ -111,11 +111,11 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
                                 SLog("Skipping current cur_block.idx = ", cur_block.idx, " out of ", cur_block.size, ", freq = ", cur_block.freqs[cur_block.idx], "\n");
 
                         for (auto n = cur_block.freqs[cur_block.idx]; n; --n)
-			{
-				uint32_t dummy;
+                        {
+                                uint32_t dummy;
 
-				varbyte_get32(p, dummy);
-			}
+                                varbyte_get32(p, dummy);
+                        }
 
                         return ++cur_block.idx == cur_block.size;
                 }
@@ -145,13 +145,13 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
         }
 
         const auto refill = [](auto c) {
-		uint32_t _v;
+                uint32_t _v;
                 auto p = c->p;
                 const auto prevBlockLastID = c->cur_block.documents[c->cur_block.size - 1];
-		varbyte_get32(p, _v);
+                varbyte_get32(p, _v);
                 const auto thisBlockLastDocID = prevBlockLastID + _v;
-		uint32_t blockLength;
-		varbyte_get32(p, blockLength);
+                uint32_t blockLength;
+                varbyte_get32(p, blockLength);
                 const auto n = *p++;
                 require(n);
                 auto id{prevBlockLastID};
@@ -162,7 +162,7 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
 
                 for (uint8_t i{0}; i != k; ++i)
                 {
-			varbyte_get32(p, _v);
+                        varbyte_get32(p, _v);
                         id += _v;
 
                         if (trace)
@@ -175,7 +175,7 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
 
                 for (uint8_t i{0}; i != n; ++i)
                 {
-			varbyte_get32(p, _v);
+                        varbyte_get32(p, _v);
                         c->cur_block.freqs[i] = _v;
 
                         if (trace)
@@ -205,9 +205,9 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
 
                 for (uint32_t i{0}, pos{0}; i != freq; ++i)
                 {
-			uint32_t step;
+                        uint32_t step;
 
-			varbyte_get32(p, step);
+                        varbyte_get32(p, step);
                         pos += step;
 
                         if (trace)
@@ -351,13 +351,23 @@ void Trinity::Codecs::Google::Decoder::skip_block_doc()
                 SLog("skipping document index ", blockDocIdx, ", freq = ", freqs[blockDocIdx], "\n");
 
         const auto freq = freqs[blockDocIdx++];
+        uint8_t curPayloadSize{0};
+        uint32_t dummy;
 
         for (uint32_t i{0}; i != freq; ++i)
-	{
-		uint32_t dummy;
+        {
+                varbyte_get32(p, dummy);
 
-		varbyte_get32(p, dummy);
-	}
+		if (TRACK_PAYLOADS)
+                {
+                        if (dummy & 1)
+                        {
+                                // new payload size
+                                curPayloadSize = *p++;
+                        }
+                        p += curPayloadSize;
+                }
+        }
 
         // p now points to the positions/attributes for the current document
         // current document is documents[blockDocIdx]
@@ -370,16 +380,37 @@ void Trinity::Codecs::Google::Decoder::materialize_hits(const exec_term_id_t ter
 {
         const auto freq = freqs[blockDocIdx];
         uint16_t pos{0};
+        uint8_t curPayloadSize{0};
+        uint64_t payload{0};
+        auto *const bytes = (uint8_t *)&payload;
+        uint32_t step;
 
         for (uint16_t i{0}; i != freq; ++i)
         {
-		uint32_t step;
+                varbyte_get32(p, step);
 
-		varbyte_get32(p, step);
-                pos += step;
+		if (TRACK_PAYLOADS)
+                {
+                        if (step & 1)
+                        {
+                                // new payload size
+                                curPayloadSize = *p++;
+                        }
+
+                        pos += step >> 1;
+                        if (curPayloadSize)
+                        {
+                                memcpy(bytes, p, curPayloadSize);
+                                p += curPayloadSize;
+                        }
+                        else
+                                payload = 0;
+                }
+		else
+			pos+=step;
 
                 dwspace->set(termID, pos);
-                out[i] = {0, pos, 0};
+                out[i] = {payload, pos, curPayloadSize};
         }
 
         // reset explicitly
@@ -390,19 +421,19 @@ void Trinity::Codecs::Google::Decoder::materialize_hits(const exec_term_id_t ter
 
 void Trinity::Codecs::Google::Decoder::unpack_block(const uint32_t thisBlockLastDocID, const uint8_t n)
 {
-	static constexpr bool trace{false};
+        static constexpr bool trace{false};
         const auto k{n - 1};
         auto id{blockLastDocID};
 
         if (trace)
                 SLog("Now unpacking block contents, n = ", n, ", blockLastDocID = ", blockLastDocID, ", thisBlockLastDocID = ", thisBlockLastDocID, "\n");
-	require(n <= N);
+        require(n <= N);
 
         for (uint8_t i{0}; i != k; ++i)
         {
-		uint32_t delta;
+                uint32_t delta;
 
-		varbyte_get32(p, delta);
+                varbyte_get32(p, delta);
                 id += delta;
 
                 if (trace)
@@ -410,14 +441,14 @@ void Trinity::Codecs::Google::Decoder::unpack_block(const uint32_t thisBlockLast
 
                 documents[i] = id;
 
-		require(id < thisBlockLastDocID);
+                require(id < thisBlockLastDocID);
         }
 
         for (uint32_t i{0}; i != n; ++i)
         {
-		uint32_t v;
+                uint32_t v;
 
-		varbyte_get32(p, v);
+                varbyte_get32(p, v);
                 freqs[i] = v;
 
                 if (trace)
@@ -441,14 +472,14 @@ void Trinity::Codecs::Google::Decoder::seek_block(const uint32_t target)
 
         for (;;)
         {
-		uint32_t _v;
+                uint32_t _v;
 
-		varbyte_get32(p, _v);
+                varbyte_get32(p, _v);
 
                 const auto thisBlockLastDocID = blockLastDocID + _v;
-		uint32_t blockSize;
+                uint32_t blockSize;
 
-		varbyte_get32(p, blockSize);
+                varbyte_get32(p, blockSize);
 
                 const auto blockDocsCnt = *p++;
 
@@ -491,13 +522,13 @@ void Trinity::Codecs::Google::Decoder::seek_block(const uint32_t target)
 void Trinity::Codecs::Google::Decoder::unpack_next_block()
 {
         static constexpr bool trace{false};
-	uint32_t _v;
+        uint32_t _v;
 
-	varbyte_get32(p, _v);
+        varbyte_get32(p, _v);
         const auto thisBlockLastDocID = blockLastDocID + _v;
-	uint32_t blockSize;
+        uint32_t blockSize;
 
-	varbyte_get32(p, blockSize);
+        varbyte_get32(p, blockSize);
         const auto blockDocsCnt = *p++;
 
         if (trace)
@@ -522,10 +553,10 @@ void Trinity::Codecs::Google::Decoder::skip_remaining_block_documents()
 
                 while (freq)
                 {
-			uint32_t dummy;
+                        uint32_t dummy;
 
                         --freq;
-			varbyte_get32(p, dummy);
+                        varbyte_get32(p, dummy);
                 }
 
                 if (documents[blockDocIdx] == blockLastDocID)
@@ -553,8 +584,8 @@ uint32_t Trinity::Codecs::Google::Decoder::begin()
                 finalize();
         }
 
-	curDocument.id = documents[blockDocIdx];
-	curDocument.freq = freqs[blockDocIdx];
+        curDocument.id = documents[blockDocIdx];
+        curDocument.freq = freqs[blockDocIdx];
 
         return documents[blockDocIdx];
 }
@@ -601,8 +632,8 @@ bool Trinity::Codecs::Google::Decoder::next()
                 skip_block_doc();
         }
 
-	curDocument.id = documents[blockDocIdx];
-	curDocument.freq = freqs[blockDocIdx];
+        curDocument.id = documents[blockDocIdx];
+        curDocument.freq = freqs[blockDocIdx];
 
         return true;
 }
@@ -673,7 +704,7 @@ bool Trinity::Codecs::Google::Decoder::seek(const uint32_t target)
                 {
                         if (trace)
                                 SLog("Not in this block or maybe any block\n");
-			break;
+                        break;
                 }
                 else if (docID == target)
                 {
@@ -691,7 +722,7 @@ bool Trinity::Codecs::Google::Decoder::seek(const uint32_t target)
                         if (trace)
                                 SLog("Exhausted block\n");
 
-			break;
+                        break;
                 }
                 else
                 {
