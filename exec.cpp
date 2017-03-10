@@ -72,6 +72,8 @@ namespace // static/local this module
                         uint8_t size;            // total in termIDs
                 };
 
+
+
 #pragma eval and runtime specific
                 runtime_ctx(IndexSource *src)
                     : idxsrc{src}, docWordsSpace{4096}
@@ -201,6 +203,8 @@ namespace // static/local this module
                         }
                 }
 
+
+
 #pragma mark Compiler / Optimizer specific
                 term_index_ctx term_ctx(const exec_term_id_t termID)
                 {
@@ -301,6 +305,8 @@ namespace // static/local this module
                         return sum;
                 }
 
+
+
 #pragma mark members
                 // This is from the lead tokens
                 // We expect all token and phrases opcodes to check against this document
@@ -310,6 +316,9 @@ namespace // static/local this module
 
                 // indexed by termID
                 query_term_instances **originalQueryTermInstances;
+
+
+
 
                 struct decode_ctx_struct
                 {

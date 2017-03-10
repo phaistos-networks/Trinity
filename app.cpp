@@ -15,6 +15,44 @@ using namespace Trinity;
 #if 1
 int main(int argc, char *argv[])
 {
+	simple_allocator allocator;
+	const strwlen32_t in(argv[1]);
+	Trinity::query q(in);
+
+	q.process_runs(true, true, [&q](auto &v)
+	{
+		for (uint32_t i{0}; i != v.size(); ++i)
+		{
+			const auto it = v[i];
+
+			if (it->p->size == 1 && it->p->terms[0].token.Eq(_S("jump")))
+			{
+				*it = *parse_ctx("(jump OR hop OR leap)"_s32, q.allocator).parse();
+			}
+                        else if (i +3 <= v.size() && it->p->size == 1 && it->p->terms[0].token.Eq(_S("world")) 
+				&& v[i+1]->p->size == 1 && v[i+1]->p->terms[0].token.Eq(_S("of"))
+				&& v[i+2]->p->size == 1 && v[i+2]->p->terms[0].token.Eq(_S("warcraft")))
+			{
+				query::replace_run(v.data() + i, 3, parse_ctx("(wow OR (world of warcraft))"_s32, q.allocator).parse());
+			}
+			else if (it->p->size == 1 && it->p->terms[0].token.Eq(_S("puppy")))
+			{
+				*it = *parse_ctx("puppy OR (kitten OR kittens OR cat OR cats OR puppies OR dogs OR pets)"_s32, q.allocator).parse();
+			}
+		}
+	});
+
+	q.normalize();
+	Print(q, "\n");
+
+	return 0;
+}
+#endif
+
+
+#if 0
+int main(int argc, char *argv[])
+{
 	if (argc == 1)
         {
                 int fd = open("/home/system/Data/BestPrice/SERVICE/clusters.data", O_RDONLY | O_LARGEFILE);

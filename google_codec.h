@@ -10,7 +10,7 @@ namespace Trinity
                 {
 			static constexpr bool TRACK_PAYLOADS{true};
                         static constexpr size_t N{32};             // block size (Google's block size is 32)
-                        static constexpr size_t SKIPLIST_STEP{512/N}; // generate a new skiplist entry every that many blocks
+                        static constexpr size_t SKIPLIST_STEP{256/N}; // generate a new skiplist entry every that many blocks
 			static constexpr bool CONSTRUCT_SKIPLIST{true};
 
                         struct IndexSession final

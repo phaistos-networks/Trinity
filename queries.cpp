@@ -374,19 +374,18 @@ void parse_ctx::track_term(term &t)
 	distinctTokens.push_back(t.token);
 }
 
+ast_node *normalize_root(ast_node *root);
+
 ast_node *parse_ctx::parse()
 {
-        skip_ws();
+        require(distinctTokens.empty()); // in case we invoked parse() earlier
 
-        return parse_subexpr(*this, UnaryOperatorPrio);
-}
+        auto n = parse_expr(*this);
 
-// handy utility function for e.g replacing runs
-static ast_node *parse_expr(const strwlen32_t e, simple_allocator &a)
-{
-        parse_ctx ctx(e, a);
+        if (n)
+                n = normalize_root(n);
 
-        return parse_expr(ctx);
+        return n;
 }
 
 #pragma mark Normalization
@@ -871,6 +870,11 @@ static void capture_leader(ast_node *const n, std::vector<ast_node *> *const out
         }
 }
 
+ast_node *Trinity::normalize_ast(ast_node *n)
+{
+	return normalize_root(n);
+}
+
 bool query::normalize()
 {
         if (root)
@@ -952,66 +956,3 @@ bool query::parse(const strwlen32_t in, uint32_t(*tp)(const char *, const char *
 
         return true;
 }
-
-#if 0
-int main(int argc, char *argv[])
-{
-        query q;
-
-        if (!q.parse(strwlen32_t(argv[1])))
-		return 1;
-
-#if 1
-        q.process_runs(true, true, [&q](auto &v) {
-		Buffer b("RUN:"_s32);
-
-		for(const auto n : v)
-			print_phrase(b, n->p);
-		Print(b, "\n");
-
-		for (uint32_t i{0}; i != v.size(); ++i)
-		{	
-			const auto it = v[i];
-
-			if (it->p->size == 1 && it->p->terms[0].token.Eq(_S("jump")))
-			{
-				*it = *parse_expr("(jump OR hop OR leap)"_s32, q.allocator);
-			}
-                        else if (i +3 <= v.size() && it->p->size == 1 && it->p->terms[0].token.Eq(_S("world")) 
-				&& v[i+1]->p->size == 1 && v[i+1]->p->terms[0].token.Eq(_S("of"))
-				&& v[i+2]->p->size == 1 && v[i+2]->p->terms[0].token.Eq(_S("warcraft")))
-			{
-				query::replace_run(v.data() + i, 3, parse_expr("(wow OR (world of warcraft))"_s32, q.allocator));
-			}
-			else if (it->p->size == 1 && it->p->terms[0].token.Eq(_S("puppy")))
-			{
-				*it = *parse_expr("puppy OR (kitten OR kittens OR cat OR cats OR puppies OR dogs OR pets)"_s32, q.allocator);
-			}
-                }
-        });
-
-	q.normalize();
-	Print("HERE:", *q.root, "\n");
-
-
-	{
-		std::vector<ast_node *> nodes;
-
-		q.leader_nodes(&nodes);
-
-		Print(nodes.size(), " leader nodes\n");
-		for (const auto it : nodes)
-			Print(*it, "\n");
-
-	}
-
-
-
-
-	exec(q);
-
-#endif
-
-        return 0;
-}
-#endif

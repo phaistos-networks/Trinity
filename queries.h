@@ -101,8 +101,18 @@ namespace Trinity
                 strwlen8_t token;
         };
 
-        // TODO: should hold a uint32_t(*)(const char *, const char *) cb
-        // for specifying the parser
+
+	// Encapsulates the input query(text) to be parsed, 
+	// a reference to the allocator to use, and the function to use for parsing tokens from the content
+	//
+	// This is mainly used by struct query to parse its root node, but you can use it for parsing expressions in order to replace runs with them.
+	// See app.cpp for examples.
+	//
+	// A query only holds its root node and its own allocator, and uses a parse_ctx to parse the query input. See query::parse()
+	// 
+	// Keep in mind that you can always copy nodes/asts using ast_node::copy()
+	//
+	// The only real reason why you would use parse_ctx directly would be to parse expressions for runs
         struct parse_ctx final
         {
                 strwlen32_t content;
@@ -121,6 +131,12 @@ namespace Trinity
                 {
                 }
 
+
+		// you may NOT invoke parse() again on this context
+		// because content, allocator, distinctTokens will already be initialized and updated
+		// 
+		// Make sure that the allocate you provide is not deleted or reused before you are done accessing
+		// any query tokens
 		ast_node *parse();
 
                 inline void skip_ws()
@@ -169,11 +185,20 @@ namespace Trinity
         };
 
 
+	// see query::normalize()
+	ast_node *normalize_ast(ast_node *);
+
         struct query final
         { 
                 ast_node *root;
                 simple_allocator allocator{512};
 
+		// Normalize a query.
+		// This is invoked when you initially parse the query, but if you
+		// rewrite it (i.e its AST) by e.g replacing runs or otherwise modifying or deleting ast nodes
+		// you must normalize it to fix any issues etc
+		//
+		// You can also use Trinity::normalize_ast() if you want to do this youserlf
                 bool normalize();
 
                 /*
@@ -350,3 +375,10 @@ namespace Trinity
 }
 
 void PrintImpl(Buffer &b, const Trinity::ast_node &n);
+inline void PrintImpl(Buffer &b, const Trinity::query &q)
+{
+	if (q.root)
+		b.append(*q.root);
+	else
+		b.append("<not initialized>"_s32);
+}
