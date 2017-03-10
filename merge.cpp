@@ -30,7 +30,7 @@ std::unique_ptr<Trinity::masked_documents_registry> Trinity::MergeCandidatesColl
 }
 
 // Make sure you have commited first
-void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is, simple_allocator *allocator, std::vector<std::pair<strwlen8_t, Trinity::term_index_ctx>> *const terms)
+void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is, simple_allocator *allocator, std::vector<std::pair<str8_t, Trinity::term_index_ctx>> *const terms)
 {
 	static constexpr bool trace{true};
 
@@ -113,7 +113,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 		if (trace)
 			SLog("TERM [", selected.first, "], toAdvanceCnt = ", toAdvanceCnt, ", sameCODEC = ", sameCODEC, ", first = ", toAdvance[0], "\n");
 
-		const strwlen8_t outTerm(allocator->CopyOf(selected.first.data(), selected.first.size()), selected.first.size());
+		const str8_t outTerm(allocator->CopyOf(selected.first.data(), selected.first.size()), selected.first.size());
 		[[maybe_unused]] const bool fastPath = sameCODEC && codec == isCODEC;
 
 		if (toAdvanceCnt == 1)

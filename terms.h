@@ -7,7 +7,7 @@
 
 
 // prefic compressed terms dictionary
-// maps from strwlen8_t=>term_index_ctx
+// maps from str8_t=>term_index_ctx
 // Based in part on Lucene's prefix compression scheme
 // https://lucene.apache.org/core/2_9_4/fileformats.html#Term%20Dictionary
 namespace Trinity
@@ -21,7 +21,7 @@ namespace Trinity
 //#define TRINITY_TERMS_FAT_INDEX 
 	struct terms_skiplist_entry
         {
-                strwlen8_t term;
+                str8_t term;
 #ifdef TRINITY_TERMS_FAT_INDEX
                 uint32_t blockOffset; 	// offset in the terms datafile
                 term_index_ctx tctx;	// payload
@@ -30,11 +30,11 @@ namespace Trinity
 #endif
         };
 
-        term_index_ctx lookup_term(range_base<const uint8_t *, uint32_t> termsData, const strwlen8_t term, const Switch::vector<terms_skiplist_entry> &skipList);
+        term_index_ctx lookup_term(range_base<const uint8_t *, uint32_t> termsData, const str8_t term, const Switch::vector<terms_skiplist_entry> &skipList);
 
         void unpack_terms_skiplist(const range_base<const uint8_t *, const uint32_t> termsIndex, Switch::vector<terms_skiplist_entry> *skipList, simple_allocator &allocator);
 
-        void pack_terms(std::vector<std::pair<strwlen8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index);
+        void pack_terms(std::vector<std::pair<str8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index);
 
 	// An abstract index source terms access wrapper
 	// For segments, you will likely use the prefix-compressed terms infra. but you may have
@@ -46,7 +46,7 @@ namespace Trinity
 	// see merge.h
 	struct IndexSourceTermsView
 	{
-		virtual std::pair<strwlen8_t, term_index_ctx> cur() = 0;
+		virtual std::pair<str8_t, term_index_ctx> cur() = 0;
 
 		virtual void next() = 0;
 
@@ -68,7 +68,7 @@ namespace Trinity
                         char termStorage[Limits::MaxTermLength];
                         struct
                         {
-                                strwlen8_t term;
+                                str8_t term;
                                 term_index_ctx tctx;
                         } cur;
 
@@ -88,7 +88,7 @@ namespace Trinity
                                 return p != o.p;
                         }
 
-                        strwlen8_t term() noexcept
+                        str8_t term() noexcept
                         {
                                 decode_cur();
                                 return cur.term;
@@ -106,7 +106,7 @@ namespace Trinity
                                 return *this;
                         }
 
-                        inline std::pair<strwlen8_t, term_index_ctx> operator*() noexcept
+                        inline std::pair<str8_t, term_index_ctx> operator*() noexcept
                         {
                                 decode_cur();
                                 return {cur.term, cur.tctx};
@@ -149,7 +149,7 @@ namespace Trinity
                 {
                 }
 
-                std::pair<strwlen8_t, term_index_ctx> cur() override final
+                std::pair<str8_t, term_index_ctx> cur() override final
                 {
                         return *it;
                 }
@@ -182,7 +182,7 @@ namespace Trinity
                                         munmap(ptr, termsData.size());
 			}
 
-			term_index_ctx lookup(const strwlen8_t term)
+			term_index_ctx lookup(const str8_t term)
 			{
 				return lookup_term(termsData, term, skiplist);
 			}

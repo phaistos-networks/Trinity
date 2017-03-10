@@ -17,9 +17,9 @@ namespace Trinity
 			gen = Timings::Microseconds::SysTime();
                 }
 
-                Switch::unordered_map<strwlen8_t, term_index_ctx> tctxMap; // for debugging
+                Switch::unordered_map<str8_t, term_index_ctx> tctxMap; // for debugging
 
-                term_index_ctx resolve_term_ctx(const strwlen8_t term) override final
+                term_index_ctx resolve_term_ctx(const str8_t term) override final
                 {
                         return tctxMap[term];
                 }

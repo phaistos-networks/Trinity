@@ -70,6 +70,6 @@ namespace Trinity
 		// When merge() returns and you consider all candidates, you should probably consider all other index sources/segments that didn't participate
 		// in the merge session, and if their gen is lower than any other remaining inex source/segment that has any index data(i.e not retained for
 		// its masked products only), then you can wipe that source/segments remaining data as well.
-                void merge(Codecs::IndexSession *outIndexSess, simple_allocator *, std::vector<std::pair<strwlen8_t, term_index_ctx>> *const outTerms);
+                void merge(Codecs::IndexSession *outIndexSess, simple_allocator *, std::vector<std::pair<str8_t, term_index_ctx>> *const outTerms);
         };
 }

@@ -170,8 +170,6 @@ namespace // static/local this module
                         {
                                 decode_ctx.decoders[termID] = idxsrc->new_postings_decoder(term_ctx(termID));
                                 decode_ctx.termHits[termID] = new term_hits();
-
-                                SLog("Initialized decoder for ", termID, "\n");
                         }
 
                         require(decode_ctx.decoders[termID]);
@@ -212,7 +210,7 @@ namespace // static/local this module
                         return idxsrc->term_ctx(toIndexSrcSpace[termID]);
                 }
 
-                exec_term_id_t resolve_term(const strwlen8_t term)
+                exec_term_id_t resolve_term(const str8_t term)
                 {
                         exec_term_id_t *ptr;
 
@@ -248,6 +246,8 @@ namespace // static/local this module
                 {
                         const auto termID = resolve_term(p->terms[0].token);
 
+			SLog("REG [", p->terms[0].token, "] ", termID, "\n");
+
                         prepare_decoder(termID);
                         return termID;
                 }
@@ -272,7 +272,7 @@ namespace // static/local this module
                         return ptr;
                 }
 
-                uint32_t token_eval_cost(const strwlen8_t token)
+                uint32_t token_eval_cost(const str8_t token)
                 {
                         const auto termID = resolve_term(token);
 
@@ -360,9 +360,9 @@ namespace // static/local this module
                 } decode_ctx;
 
                 DocWordsSpace docWordsSpace;
-                Switch::unordered_map<strwlen8_t, exec_term_id_t> termsDict;
+                Switch::unordered_map<str8_t, exec_term_id_t> termsDict;
                 Switch::unordered_map<exec_term_id_t, uint32_t> toIndexSrcSpace; // translation between runtime_ctx and segment term IDs spaces
-                Switch::unordered_map<exec_term_id_t, strwlen8_t> idToTerm;      // maybe useful for tracing by the score functions
+                Switch::unordered_map<exec_term_id_t, str8_t> idToTerm;      // maybe useful for tracing by the score functions
                 uint16_t *curDocQueryTokensCaptured;
                 matched_document matchedDocument;
                 simple_allocator allocator;
@@ -424,6 +424,20 @@ static uint32_t optimize_binops_impl(ast_node *const n, bool &updates, runtime_c
 
                         return lhsCost + rhsCost;
                 }
+
+		case ast_node::Type::ConstTrueExpr:
+                        if (const auto cost = optimize_binops_impl(n->expr, updates, rctx); cost == UINT32_MAX)
+			{
+				n->set_dummy();
+				updates = true;
+				return 0;	// it is important to just return 0 here, not UINT32_MAX
+			}
+			else
+			{
+				// it is also important to return UINT32_MAX - 1 so that
+				// we will not swap a binop's (lhs,rhs) 
+				return UINT32_MAX - 1;
+			}
 
                 case ast_node::Type::UnaryOp:
                         if (const auto cost = optimize_binops_impl(n->unaryop.expr, updates, rctx); cost == UINT32_MAX)
@@ -553,24 +567,13 @@ static bool optimize(Trinity::query &q, runtime_ctx &rctx)
 // to impl. so that can modify themselves if needed
 typedef uint8_t (*node_impl)(exec_node, runtime_ctx &);
 
-enum class OpCodes : uint8_t
-{
-        MatchToken = 0,
-        LogicalAnd,
-        LogicalOr,
-        MatchPhrase,
-        LogicalNot,
-        UnaryAnd,
-        UnaryNot,
-        ConstFalse
-};
-
 #define eval(node, ctx) (node.fp(node, ctx))
 
 static inline bool noop_impl(const exec_node &, runtime_ctx &)
 {
         return false;
 }
+
 
 static inline bool matchtoken_impl(const exec_node &self, runtime_ctx &rctx)
 {
@@ -582,7 +585,7 @@ static inline bool matchtoken_impl(const exec_node &self, runtime_ctx &rctx)
                 rctx.capture_matched_term(termID);
 
         if (traceExec)
-                SLog(ansifmt::color_green, "Attempting to match token against ", rctx.curDocID, ansifmt::reset, " => ", res, "\n");
+                SLog(ansifmt::color_green, "Attempting to match token [", rctx.originalQueryTermInstances[termID]->term.token, "] against ", rctx.curDocID, ansifmt::reset, " => ", res, "\n");
         return res;
 }
 
@@ -671,6 +674,15 @@ static bool matchphrase_impl(const exec_node &self, runtime_ctx &rctx)
         return false;
 }
 
+static inline bool consttrueexpr_impl(const exec_node &self, runtime_ctx &rctx)
+{
+        const auto op = (runtime_ctx::unaryop_ctx *)self.ptr;
+
+	// evaluate but always return true
+	eval(op->expr, rctx);
+	return true;
+}
+
 #if 0
 static inline uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
 {
@@ -728,25 +740,6 @@ static inline bool logicalor_impl(const exec_node &self, runtime_ctx &rctx)
         return eval(opctx->lhs, rctx) || eval(opctx->rhs, rctx);
 }
 
-#if 0
-inline uint8_t eval(const exec_node node, runtime_ctx &ctx)
-{
-        static constexpr node_impl implementations[] =
-            {
-                matchtoken_impl,
-                logicaland_impl,
-                logicalor_impl,
-                matchphrase_impl,
-                logicalnot_impl,
-                noop_impl,
-                noop_impl,
-                noop_impl,
-            };
-
-        return implementations[node.implIdx](node, ctx);
-}
-#endif
-
 #pragma mark COMPILER
 static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
 {
@@ -759,6 +752,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
                         std::abort();
 
                 case ast_node::Type::Token:
+			SLog("Compiling for token [", n->p->terms[0].token, "]\n");
                         res.fp = matchtoken_impl;
                         res.u16 = ctx.register_token(n->p);
                         break;
@@ -803,6 +797,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
                         res.fp = noop_impl;
                         break;
 
+
                 case ast_node::Type::UnaryOp:
                         switch (n->unaryop.op)
                         {
@@ -820,6 +815,14 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
                         }
                         res.ptr = ctx.register_unaryop(compile(n->unaryop.expr, ctx));
                         break;
+
+		case ast_node::Type::ConstTrueExpr:
+			// use register_unaryop() for this as well
+			// no need for another register_x() 
+			SLog("Compiling ConstTrueExpr\n");
+                        res.ptr = ctx.register_unaryop(compile(n->expr, ctx));
+			res.fp = consttrueexpr_impl;
+			break;
         }
 
         return res;
@@ -839,7 +842,7 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
 {
         struct query_term_instance
         {
-                strwlen8_t token;
+                str8_t token;
                 uint16_t index;
                 uint8_t rep;
         };
@@ -886,6 +889,15 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                                         collected.push_back(n->p);
                                         break;
 
+				case ast_node::Type::UnaryOp:
+                                        if (n->unaryop.op != Operator::NOT)
+                                                stack.push_back(n->unaryop.expr);
+                                        break;
+
+				case ast_node::Type::ConstTrueExpr:
+					stack.push_back(n->expr);
+					break;
+
                                 case ast_node::Type::BinOp:
                                         if (n->binop.op == Operator::AND || n->binop.op == Operator::STRICT_AND || n->binop.op == Operator::OR)
                                         {
@@ -924,7 +936,7 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
 
         SLog(duration_repr(Timings::Microseconds::Since(before)), " to optimize\n");
 
-        SLog("Compiling\n");
+        SLog("Compiling:", q, "\n");
         // Need to compile before we access the leader nodes
         const auto rootExecNode = compile(q.root, rctx);
 
@@ -935,7 +947,7 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
         Switch::vector<Trinity::Codecs::Decoder *> leaderTokensDecoders;
 
         {
-                Switch::vector<strwlen8_t> leaderTokensV;
+                Switch::vector<str8_t> leaderTokensV;
 
                 q.leader_nodes(&leaderNodes);
 

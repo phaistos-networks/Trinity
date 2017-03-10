@@ -23,13 +23,13 @@ static constexpr uint8_t OpPrio(const Operator op) noexcept
         }
 }
 
-static strwlen32_t parse_term(parse_ctx &ctx)
+static str32_t parse_term(parse_ctx &ctx)
 {
         // TODO:what about unexpected characters e.g ',./+><' etc?
         // this breaks our parser
         if (const auto len = ctx.token_parser(ctx.content.p, ctx.content.end()))
         {
-		const strwlen32_t res(ctx.content.p, len);
+		const str32_t res(ctx.content.p, len);
 
                 ctx.content.strip_prefix(len);
                 return res;
@@ -216,7 +216,7 @@ void PrintImpl(Buffer &b, const Trinity::ast_node &n)
                         break;
 
                 case ast_node::Type::ConstFalse:
-                        b.append("<NO>"_s8);
+                        b.append("<FALSE>"_s8);
                         break;
 
                 case ast_node::Type::Phrase:
@@ -247,6 +247,12 @@ void PrintImpl(Buffer &b, const Trinity::ast_node &n)
                 }
                 break;
 
+		case ast_node::Type::ConstTrueExpr:
+			b.append('<');
+                        b.append(*n.expr);
+			b.append('>');
+			break;
+
                 case ast_node::Type::UnaryOp:
                         b.append(n.unaryop.op);
                         if (n.unaryop.op != Operator::AND)
@@ -265,6 +271,26 @@ static ast_node *parse_expr(parse_ctx &);
 static ast_node *parse_unary(parse_ctx &ctx)
 {
         ctx.skip_ws();
+
+#if 1
+	// enable this for debugging
+	if (ctx.content.StripPrefix(_S("<")))
+	{
+                auto e = parse_expr(ctx) ?: ctx.parse_failnode();
+
+                ctx.skip_ws();
+                if (!ctx.content.StripPrefix(_S(">")))
+                {
+                        if (e->type != ast_node::Type::Dummy)
+                                e = ctx.parse_failnode();
+                }
+
+		auto res = ctx.alloc_node(ast_node::Type::ConstTrueExpr);
+
+		res->expr = e;
+		return res;
+	}
+#endif
 
         if (ctx.content.StripPrefix(_S("(")))
         {
@@ -682,8 +708,19 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx)
                 n->set_dummy();
                 ++ctx.updates;
         }
+	else if (n->type == ast_node::Type::ConstTrueExpr)
+	{
+		normalize(n->expr, ctx);
+		if (n->expr->is_dummy() || n->expr->is_const_false())
+		{
+			SLog("here\n");
+                        n->set_dummy();
+                        ++ctx.updates;
+		}
+	}
         else if (n->type == ast_node::Type::UnaryOp)
         {
+		normalize(n->unaryop.expr, ctx);
                 if (n->unaryop.expr->is_dummy())
                 {
                         SLog("here\n");
@@ -818,6 +855,10 @@ ast_node *ast_node::copy(simple_allocator *const a)
                         res->p = n->p;
                         break;
 
+		case ast_node::Type::ConstTrueExpr:
+			res->expr = n->expr->copy(a);
+			break;
+
                 case ast_node::Type::UnaryOp:
                         res->unaryop.op = n->unaryop.op;
                         res->unaryop.expr = n->unaryop.expr->copy(a);
@@ -854,7 +895,10 @@ static void capture_leader(ast_node *const n, std::vector<ast_node *> *const out
                         {
                                 // we assume we have reordered and normalized bimops
                                 // and lhs is cheaper to evaluate than rhs
-                                capture_leader(n->binop.lhs, out, threshold);
+                                if (n->binop.lhs->type != ast_node::Type::ConstTrueExpr)
+                                        capture_leader(n->binop.lhs, out, threshold);
+                                else
+                                        capture_leader(n->binop.rhs, out, threshold);
                         }
                         else if (n->binop.op == Operator::NOT && out->size() < threshold)
                                 capture_leader(n->binop.lhs, out, threshold);
@@ -921,6 +965,10 @@ Switch::vector<ast_node *> &query::nodes(ast_node *root, Switch::vector<ast_node
                                         res->push_back(n->unaryop.expr);
                                         break;
 
+				case ast_node::Type::ConstTrueExpr:
+					res->push_back(n->expr);
+					break;
+
                                 default:
                                         break;
                         }
@@ -930,7 +978,7 @@ Switch::vector<ast_node *> &query::nodes(ast_node *root, Switch::vector<ast_node
         return *res;
 }
 
-bool query::parse(const strwlen32_t in, uint32_t(*tp)(const char *, const char *))
+bool query::parse(const str32_t in, uint32_t(*tp)(const char *, const char *))
 {
         parse_ctx ctx{in, allocator, tp};
 

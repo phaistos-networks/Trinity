@@ -94,7 +94,7 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
         }
 }
 
-uint32_t SegmentIndexSession::term_id(const strwlen8_t term)
+uint32_t SegmentIndexSession::term_id(const str8_t term)
 {
 	// indexer words space
 	// Each segment has its own terms and there is no need to maintain a global(index) or local(segment) (term=>id) dictionary
@@ -102,7 +102,7 @@ uint32_t SegmentIndexSession::term_id(const strwlen8_t term)
 	// SegmentIndexSession::commit() will store actual terms, not their transient IDs.
 	// . See IMPL.md
         uint32_t *idp;
-        strwlen8_t *keyptr;
+        str8_t *keyptr;
 
         if (dictionary.AddNeedKey(term, 0, keyptr, &idp))
         {
@@ -304,7 +304,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
 
 
         // Persist terms dictionary
-        std::vector<std::pair<strwlen8_t, term_index_ctx>> v;
+        std::vector<std::pair<str8_t, term_index_ctx>> v;
         IOBuffer data, index;
 
         for (const auto &it : map)

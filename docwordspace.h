@@ -1,5 +1,5 @@
 #pragma once
-#include "limits.h"
+#include "common.h"
 #include "runtime.h"
 
 namespace Trinity

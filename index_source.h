@@ -17,7 +17,7 @@ namespace Trinity
             : public RefCounted<IndexSource>
         {
               protected:
-                Switch::unordered_map<strwlen8_t, uint32_t> termIDsMap;
+                Switch::unordered_map<str8_t, uint32_t> termIDsMap;
                 Switch::unordered_map<uint32_t, term_index_ctx> cache;
                 uint64_t gen{0}; // See IndexSourcesCollection
 
@@ -30,7 +30,7 @@ namespace Trinity
                 // Returns an INDEX SOURCE WORD SPACE integer identifier
                 // You will need to translate to this words space. See exec.cpp
                 // TODO: serialize access
-                uint32_t resolve_term(const strwlen8_t term)
+                uint32_t resolve_term(const str8_t term)
                 {
                         uint32_t *p;
 
@@ -65,7 +65,7 @@ namespace Trinity
 
 
                 // Subclasses only need to implement 3 methods
-                virtual term_index_ctx resolve_term_ctx(const strwlen8_t term) = 0;
+                virtual term_index_ctx resolve_term_ctx(const str8_t term) = 0;
 
                 // factory method
                 virtual Trinity::Codecs::Decoder *new_postings_decoder(const term_index_ctx ctx) = 0;
@@ -97,7 +97,7 @@ namespace Trinity
 			gen = Timings::Microseconds::SysTime();
 		}
 
-                term_index_ctx resolve_term_ctx(const strwlen8_t term) override final
+                term_index_ctx resolve_term_ctx(const str8_t term) override final
 		{
 			// fails for every term because we are only blocking here
 			return {};

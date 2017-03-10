@@ -2,6 +2,7 @@
 #include <switch.h>
 #include <switch_dictionary.h>
 #include "runtime.h"
+#include "docwordspace.h"
 
 namespace Trinity
 {
@@ -48,7 +49,7 @@ namespace Trinity
 		struct 
 		{
 			exec_term_id_t id;
-			strwlen8_t token;
+			str8_t token;
 		} term;
 
                 uint8_t cnt;
@@ -77,6 +78,8 @@ namespace Trinity
                 uint32_t id; // document ID
                 uint16_t matchedTermsCnt;
                 matched_query_term *matchedTerms;
+
+		void sort_by_query_index();
         };
 
 	// You may for example keep the top-K matches, just count the documents, whatever else
@@ -91,6 +94,7 @@ namespace Trinity
 		// If you want to process them in order they appear in the query, for some reason, you should sort them in your implementation
 		// (one reason why you 'd want to do that is to check for adjacent query terms matches and boost score)
 		// There is probably a better way to do this though.
+		// However, see NOTES.md for why and how it may be easy to sort those before passing them to consider().
 		//
 		// Thanks to dws you can effortlessly and cheaply check for adjacenet matches
 		// e.g  dws.test(match.matchedTerms[1].queryTermInstances->term.id, 2);

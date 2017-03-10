@@ -23,8 +23,8 @@ namespace Trinity
                 std::vector<std::pair<uint32_t, std::pair<uint32_t, range_base<uint32_t, uint8_t>>>> hits;
                 std::vector<uint32_t> updatedDocumentIDs;
                 simple_allocator dictionaryAllocator;
-                Switch::unordered_map<strwlen8_t, uint32_t> dictionary;
-		Switch::unordered_map<uint32_t, strwlen8_t> invDict;
+                Switch::unordered_map<str8_t, uint32_t> dictionary;
+		Switch::unordered_map<uint32_t, str8_t> invDict;
 
               public:
                 struct document_proxy final
@@ -34,7 +34,7 @@ namespace Trinity
                         std::vector<std::pair<uint32_t, std::pair<uint32_t, range_base<uint32_t, uint8_t>>>> &hits;
                         IOBuffer &hitsBuf;
 
-                        uint32_t term_id(const strwlen8_t term)
+                        uint32_t term_id(const str8_t term)
                         {
                                 return sess.term_id(term);
                         }
@@ -47,7 +47,7 @@ namespace Trinity
                         void insert(const uint32_t termID, const uint32_t position, range_base<const uint8_t *, const uint8_t> payload);
 
 			// new `term` hit at `position` with `payload`(attrs.)
-                        void insert(const strwlen8_t term, const uint32_t position, range_base<const uint8_t *, const uint8_t> payload)
+                        void insert(const str8_t term, const uint32_t position, range_base<const uint8_t *, const uint8_t> payload)
                         {
                                 insert(term_id(term), position, payload);
                         }
@@ -58,7 +58,7 @@ namespace Trinity
                         }
 
 			// new `term` hit at `position`
-                        void insert(const strwlen8_t term, const uint32_t position)
+                        void insert(const str8_t term, const uint32_t position)
                         {
                                 insert(term_id(term), position, {});
                         }
@@ -70,7 +70,7 @@ namespace Trinity
                         }
 
                         template <typename T>
-                        void insert(const strwlen8_t term, const uint32_t position, const T &v)
+                        void insert(const str8_t term, const uint32_t position, const T &v)
                         {
                                 insert(term_id(term), position, {static_cast<const uint8_t *>(&v), uint32_t(sizeof(T))});
                         }
@@ -80,7 +80,7 @@ namespace Trinity
                 void commit_document_impl(const document_proxy &proxy, const bool isUpdate);
 
               public:
-                uint32_t term_id(const strwlen8_t term);
+                uint32_t term_id(const str8_t term);
 
                 void clear()
                 {

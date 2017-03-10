@@ -140,7 +140,7 @@ int main(int argc, char *argv[])
 		Buffer asuc;
 
 		sources.insert(ss);
-		sources.insert(maskedDocsSrc);
+		//sources.insert(maskedDocsSrc);
 		ss->Release();
 		maskedDocsSrc->Release();
 
@@ -184,7 +184,7 @@ int main(int argc, char *argv[])
 
 		
 		//exec_query<MatchedIndexDocumentsFilter>(asuc.AsS32(), &sources);
-		auto res = exec_query<BPFilter>(strwlen32_t(argv[1]), &sources);
+		auto res = exec_query<BPFilter>(asuc.AsS32(), &sources);
 		//exec_query(strwlen32_t(argv[1]), ss, rr.get());
 	}
 

@@ -3,7 +3,7 @@
 #include <switch_mallocators.h>
 #include <switch_vector.h>
 #include <text.h>
-#include "limits.h"
+#include "common.h"
 
 namespace Trinity
 {
@@ -37,6 +37,7 @@ namespace Trinity
 
                         // for both type::Token and type::Phrase
                         phrase *p;
+			ast_node *expr;
                 };
 
                 enum class Type : uint8_t
@@ -48,8 +49,14 @@ namespace Trinity
                         Token,
                         Phrase,
                         UnaryOp,
-                        Dummy,
-                        ConstFalse
+			Dummy,	 // Also treat as a ConstTrue node (normalize will deal with it)
+			ConstFalse,
+			// Suppose you want to match special tokens FOO|BAR and FANCY|TERM if they are found in the index, i.e treat them as optional. 
+			// That¢s easy. You can get the original query e.g [apple iphone] and transform it like so `(FOO|BAR OR FANCY|TERM) OR (apple iPhone)` and that¢d work great.
+			// However, imagine you want to match FOO|BAR and FANCY|TERM but ONLY IF the original query also matches. You can¢t practically construct that query like the one above. 
+			// This is where you 'd use this node. When evaluated it will always return true after evaluating its expression. 
+			// This allows for this kind of expression and other such use cases.
+			ConstTrueExpr,
                 } type;
 
                 // this is handy if you want to delete a node
@@ -98,7 +105,7 @@ namespace Trinity
         struct term final
         {
 		// for now, just the token but maybe in the future we 'll want to extend to support flags etc
-                strwlen8_t token;
+                str8_t token;
         };
 
 
@@ -115,18 +122,18 @@ namespace Trinity
 	// The only real reason why you would use parse_ctx directly would be to parse expressions for runs
         struct parse_ctx final
         {
-                strwlen32_t content;
+                str32_t content;
                 simple_allocator &allocator;
                 term terms[Trinity::Limits::MaxPhraseSize];
 		uint32_t(*token_parser)(const char*, const char *);
-		std::vector<strwlen8_t> distinctTokens;
+		std::vector<str8_t> distinctTokens;
 
                 auto *alloc_node(const ast_node::Type t)
                 {
                         return ast_node::make(allocator, t);
                 }
 
-                parse_ctx(const strwlen32_t input, simple_allocator &a, uint32_t(*p)(const char*, const char *) = Text::TermLengthWithEnd)
+                parse_ctx(const str32_t input, simple_allocator &a, uint32_t(*p)(const char*, const char *) = Text::TermLengthWithEnd)
                     : content{input}, allocator{a}, token_parser{p}
                 {
                 }
@@ -217,7 +224,7 @@ namespace Trinity
 	*/
                 void leader_nodes(std::vector<ast_node *> *const out);
 
-                bool parse(const strwlen32_t in, uint32_t(*tp)(const char *, const char *) = Text::TermLengthWithEnd);
+                bool parse(const str32_t in, uint32_t(*tp)(const char *, const char *) = Text::TermLengthWithEnd);
 
                 query() = default;
 
@@ -226,7 +233,7 @@ namespace Trinity
 			return root;
 		}
 
-                query(const strwlen32_t in, uint32_t(*tp)(const char *, const char *) = Text::TermLengthWithEnd)
+                query(const str32_t in, uint32_t(*tp)(const char *, const char *) = Text::TermLengthWithEnd)
                 {
                         if (!parse(in, tp))
                                 throw Switch::data_error("Failed to parse query");
@@ -348,6 +355,7 @@ namespace Trinity
 
                                         case ast_node::Type::Dummy:
                                         case ast_node::Type::ConstFalse:
+                                        case ast_node::Type::ConstTrueExpr:
                                                 break;
                                 }
                         } while (stack.size());

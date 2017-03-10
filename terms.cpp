@@ -1,6 +1,6 @@
-#include "terms.h"
 #include <text.h>
 #include <compress.h>
+#include "terms.h"
 
 namespace
 {
@@ -13,11 +13,11 @@ namespace
 		// - Trinity::IndexSource::resolve_term_ctx()
 		// - query and parser_ctx
 		// - exec.cpp caches etc
-		return strwlen32_t(a, aLen).Cmp(b, bLen);
+		return Trinity::str32_t(a, aLen).Cmp(b, bLen);
         }
 }
 
-Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_t> termsData, const strwlen8_t q, const Switch::vector<Trinity::terms_skiplist_entry> &skipList)
+Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_t> termsData, const str8_t q, const Switch::vector<Trinity::terms_skiplist_entry> &skipList)
 {
         int32_t top{int32_t(skipList.size()) - 1};
         const auto skipListData = skipList.data();
@@ -61,7 +61,7 @@ l100:
                 const auto commonPrefixLen = *p++;
                 const auto suffixLen = *p++;
 
-                memcpy(termStorage + commonPrefixLen, p, suffixLen);
+                memcpy(termStorage + commonPrefixLen, p, suffixLen * sizeof(str8_t::value_type));
                 p += suffixLen;
 
                 const auto curTermLen = commonPrefixLen + suffixLen;
@@ -98,8 +98,8 @@ void Trinity::unpack_terms_skiplist(const range_base<const uint8_t *, const uint
 	for (const auto *p = reinterpret_cast<const uint8_t *>(termsIndex.start()), *const e = p + termsIndex.size(); p != e;)
 	{
 		auto t = skipList->PushEmpty();
-		const strwlen8_t term((char *)p + 1, *p);
-		p += term.size() + sizeof(uint8_t);
+		const str8_t term((char *)p + 1, *p);
+		p += (term.size() * sizeof(str8_t::value_type)) + sizeof(uint8_t);
 #ifdef TRINITY_TERMS_FAT_INDEX
 		{
 			t->tctx.documents = Compression::decode_varuint32(p);
@@ -112,12 +112,12 @@ void Trinity::unpack_terms_skiplist(const range_base<const uint8_t *, const uint
 	}
 }
 
-void Trinity::pack_terms(std::vector<std::pair<strwlen8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index)
+void Trinity::pack_terms(std::vector<std::pair<str8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index)
 {
         //static constexpr uint32_t SKIPLIST_INTERVAL{128};	 // 128 or 64 is more than fine
         static constexpr uint32_t SKIPLIST_INTERVAL{2};	 // 128 or 64 is more than fine
         uint32_t nextSkipListEntry{1}; 	// so that we will output for the first term (required)
-        strwlen8_t prev;
+        str8_t prev;
 
         std::sort(terms.begin(), terms.end(), [](const auto &a, const auto &b) {
                 return terms_cmp(a.first.data(), a.first.size(), b.first.data(), b.first.size()) < 0;
@@ -134,7 +134,7 @@ void Trinity::pack_terms(std::vector<std::pair<strwlen8_t, term_index_ctx>> &ter
                         nextSkipListEntry = SKIPLIST_INTERVAL;
 
                         index->pack(uint8_t(cur.size()));
-                        index->serialize(cur.data(), cur.size());
+                        index->serialize(cur.data(), cur.size() * sizeof(str8_t::value_type));
 #ifdef TRINITY_TERMS_FAT_INDEX
                         {
                                 index->encode_varuint32(it.second.documents);
@@ -153,7 +153,7 @@ void Trinity::pack_terms(std::vector<std::pair<strwlen8_t, term_index_ctx>> &ter
                         const auto suffix = cur.SuffixFrom(commonPrefix);
 
                         data->pack(uint8_t(commonPrefix), uint8_t(suffix.size()));
-                        data->serialize(suffix.data(), suffix.size());
+                        data->serialize(suffix.data(), suffix.size() * sizeof(str8_t::value_type));
                         {
                                 data->encode_varuint32(it.second.documents);
                                 data->encode_varuint32(it.second.indexChunk.len);
@@ -205,7 +205,7 @@ void Trinity::terms_data_view::iterator::decode_cur()
 		const auto commonPrefixLen = *p++;
 		const auto suffixLen = *p++;
 
-		memcpy(termStorage + commonPrefixLen, p, suffixLen);
+		memcpy(termStorage + commonPrefixLen, p, suffixLen * sizeof(str8_t::value_type));
 		p += suffixLen;
 
 		cur.term.len = commonPrefixLen + suffixLen;

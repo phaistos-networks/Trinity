@@ -34,7 +34,7 @@ namespace Trinity
               public:
                 SegmentIndexSource(const char *basePath);
 
-                term_index_ctx resolve_term_ctx(const strwlen8_t term) override final
+                term_index_ctx resolve_term_ctx(const str8_t term) override final
                 {
                         return terms->lookup(term);
                 }
