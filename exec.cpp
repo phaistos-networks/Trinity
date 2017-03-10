@@ -1066,6 +1066,7 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
 
         uint32_t matchedDocuments{0};
         const auto start = Timings::Microseconds::Tick();
+	auto &dws = rctx.docWordsSpace;
 
         // TODO: if (q.root->type == ast_node::Type::Token) {}
         // i.e if just a single term was entered, scan that single token's documents  without even having to use a decoder
@@ -1129,7 +1130,7 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                                         }
                                 }
 
-				matchesFilter->consider(rctx.matchedDocument);
+				matchesFilter->consider(rctx.matchedDocument, dws);
                                 ++matchedDocuments;
                         }
                 }

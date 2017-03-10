@@ -556,7 +556,14 @@ void Trinity::Codecs::Google::Decoder::materialize_hits(const exec_term_id_t ter
                 else
                         pos += step;
 
-                dwspace->set(termID, pos);
+		if (pos)
+		{
+	 		// pos == 0  if this not e.g a title or body match but e.g a special token
+			// set during indexing e.g site:www.google.com
+			// you could of course use a different position for that purprose (i.e a very large position, that is guaranteed
+			// to not match any terms in the document), but 0 makes sense
+                	dwspace->set(termID, pos);
+		}
                 out[i] = {payload, pos, curPayloadSize};
         }
 

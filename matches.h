@@ -83,7 +83,18 @@ namespace Trinity
 	// For example, you may want to track the top-K documents and then eventually merge them all together
 	struct MatchedIndexDocumentsFilter
 	{
-		virtual void consider(const matched_document &) 
+		// You may want to use dws to improve score based on how terms document matches proximity relative to their proximity in the query
+		// You can query_term_instances::term.id with dws
+		//
+		// XXX: the order of returned matched terms will most likely not match their order in the query
+		// because we reorder based on total documents in the input source for performance as we evaluate them.
+		// If you want to process them in order they appear in the query, for some reason, you should sort them in your implementation
+		// (one reason why you 'd want to do that is to check for adjacent query terms matches and boost score)
+		// There is probably a better way to do this though.
+		//
+		// Thanks to dws you can effortlessly and cheaply check for adjacenet matches
+		// e.g  dws.test(match.matchedTerms[1].queryTermInstances->term.id, 2);
+		virtual void consider(const matched_document &match, const DocWordsSpace &dws) 
 		{
 		}
 

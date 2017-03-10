@@ -27,7 +27,7 @@ namespace Trinity
 		// and if we are going to test starting from maxPos extending to 10 positions ahead, we want to
 		// make sure we won't read outside positions. 
 		// The extra positions will be always initialized to 0 and we won't need to reset those in reset()
-                DocWordsSpace(const uint32_t max)
+                DocWordsSpace(const uint32_t max = Trinity::Limits::MaxPosition)
 			: positions((position *)calloc(sizeof(position), max + 1 + Trinity::Limits::MaxPhraseSize)), maxPos{max} 
 		{
 
@@ -56,6 +56,7 @@ namespace Trinity
                                 ++curSeq;
 		}
 
+		// XXX: pos must be > 0
 		[[gnu::always_inline]] void set(const exec_term_id_t termID, const uint16_t pos) noexcept
 		{
                         positions[pos] = {curSeq, termID};
@@ -80,6 +81,7 @@ namespace Trinity
 
 		// Turns out with -O1 or higher, this is faster than the alternative impl
 		// based on my folly benchmarks
+		// XXX: pos must be > 0
 		inline bool test(const exec_term_id_t termID, const uint16_t pos) const noexcept
 		{
 			return positions[pos].docSeq == curSeq && positions[pos].termID == termID;

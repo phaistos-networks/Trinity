@@ -105,7 +105,7 @@ namespace Trinity
 	// Encapsulates the input query(text) to be parsed, 
 	// a reference to the allocator to use, and the function to use for parsing tokens from the content
 	//
-	// This is mainly used by struct query to parse its root node, but you can use it for parsing expressions in order to replace runs with them.
+	// This is mainly used by `Trinity::query` to parse its root node, but you can use it for parsing expressions in order to replace runs with them.
 	// See app.cpp for examples.
 	//
 	// A query only holds its root node and its own allocator, and uses a parse_ctx to parse the query input. See query::parse()

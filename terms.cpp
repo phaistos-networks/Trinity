@@ -5,12 +5,15 @@
 namespace
 {
         static inline int32_t terms_cmp(const char *a, const uint8_t aLen, const char *b, const uint8_t bLen)
-        {
-		// For now, we use this existing method, but this not ideal because
-		// we are ignore case, and this may not be the desired behaviour.
-		// If it is, you may want to use a similar implementation for the various query and exec functions that
-		// track(in containers) or compare tokens-terms.
-                return Text::StrnncasecmpISO88597(a, aLen, b, bLen);
+        {		
+		// Your impl. may ignore case completely so that you can
+		// index and query without having to care for distinctions between lower and upper case (e.g use Text::StrnncasecmpISO88597() )
+		// However, if you wwere to do that, you 'd need to account for that wherever in the codebase
+		// you either track strings(tokens) or check for equality, e.g
+		// - Trinity::IndexSource::resolve_term_ctx()
+		// - query and parser_ctx
+		// - exec.cpp caches etc
+		return strwlen32_t(a, aLen).Cmp(b, bLen);
         }
 }
 

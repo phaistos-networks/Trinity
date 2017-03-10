@@ -12,7 +12,7 @@
 using namespace Trinity;
 
 
-#if 1
+#if 0
 int main(int argc, char *argv[])
 {
 	simple_allocator allocator;
@@ -50,7 +50,7 @@ int main(int argc, char *argv[])
 #endif
 
 
-#if 0
+#if 1
 int main(int argc, char *argv[])
 {
 	if (argc == 1)
@@ -137,6 +137,7 @@ int main(int argc, char *argv[])
 		auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/100");
 		auto rr = masked_documents_registry::make(nullptr, 0);
 		IndexSourcesCollection sources;
+		Buffer asuc;
 
 		sources.insert(ss);
 		sources.insert(maskedDocsSrc);
@@ -153,7 +154,7 @@ int main(int argc, char *argv[])
 		struct BPFilter final
 			: public MatchedIndexDocumentsFilter
 		{
-			void consider(const matched_document &doc) override final
+			void consider(const matched_document &doc, const DocWordsSpace &dws) override final
 			{
 				const auto n = doc.matchedTermsCnt;
 
@@ -174,9 +175,16 @@ int main(int argc, char *argv[])
 			}
 		};
 
+		asuc.append(argv[1]);
+
+		for (uint32_t i{0}; i != asuc.size(); ++i)
+			asuc.data()[i] = Buffer::UppercaseISO88597(asuc.data()[i]);
+
+
+
 		
-		exec_query<MatchedIndexDocumentsFilter>(strwlen32_t(argv[1]), &sources);
-		//auto res = exec_query<BPFilter>(strwlen32_t(argv[1]), &sources);
+		//exec_query<MatchedIndexDocumentsFilter>(asuc.AsS32(), &sources);
+		auto res = exec_query<BPFilter>(strwlen32_t(argv[1]), &sources);
 		//exec_query(strwlen32_t(argv[1]), ss, rr.get());
 	}
 
