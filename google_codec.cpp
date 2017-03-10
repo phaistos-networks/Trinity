@@ -21,14 +21,14 @@ void Trinity::Codecs::Google::Encoder::commit_block()
         {
                 if (trace)
                         SLog("<< ", docDeltas[i], "\n");
-                block.encode_varuint32(docDeltas[i]);
+                block.encode_varbyte32(docDeltas[i]);
         }
 
         for (uint32_t i{0}; i != curBlockSize; ++i)
         {
                 if (trace)
                         SLog("<< freq ", blockFreqs[i], "\n");
-                block.encode_varuint32(blockFreqs[i]);
+                block.encode_varbyte32(blockFreqs[i]);
         }
 
         const auto blockLength = block.size() + hitsData.size();
@@ -42,8 +42,8 @@ void Trinity::Codecs::Google::Encoder::commit_block()
                 skiplistEntryCountdown = SKIPLIST_STEP;
         }
 
-        out->encode_varuint32(delta);       // delta to last docID in block from previous block's last document ID
-        out->encode_varuint32(blockLength); // block length in bytes, excluding this header
+        out->encode_varbyte32(delta);       // delta to last docID in block from previous block's last document ID
+        out->encode_varbyte32(blockLength); // block length in bytes, excluding this header
         require(curBlockSize);
         out->pack(curBlockSize); // one byte will suffice
 
@@ -111,7 +111,11 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
                                 SLog("Skipping current cur_block.idx = ", cur_block.idx, " out of ", cur_block.size, ", freq = ", cur_block.freqs[cur_block.idx], "\n");
 
                         for (auto n = cur_block.freqs[cur_block.idx]; n; --n)
-                                Compression::decode_varuint32(p);
+			{
+				uint32_t dummy;
+
+				varbyte_get32(p, dummy);
+			}
 
                         return ++cur_block.idx == cur_block.size;
                 }
@@ -141,10 +145,13 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
         }
 
         const auto refill = [](auto c) {
+		uint32_t _v;
                 auto p = c->p;
                 const auto prevBlockLastID = c->cur_block.documents[c->cur_block.size - 1];
-                const auto thisBlockLastDocID = prevBlockLastID + Compression::decode_varuint32(p);
-                [[maybe_unused]] const auto blockLength = Compression::decode_varuint32(p);
+		varbyte_get32(p, _v);
+                const auto thisBlockLastDocID = prevBlockLastID + _v;
+		uint32_t blockLength;
+		varbyte_get32(p, blockLength);
                 const auto n = *p++;
                 require(n);
                 auto id{prevBlockLastID};
@@ -155,7 +162,8 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
 
                 for (uint8_t i{0}; i != k; ++i)
                 {
-                        id += Compression::decode_varuint32(p);
+			varbyte_get32(p, _v);
+                        id += _v;
 
                         if (trace)
                                 SLog("<< docID ", id, "\n");
@@ -167,7 +175,8 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
 
                 for (uint8_t i{0}; i != n; ++i)
                 {
-                        c->cur_block.freqs[i] = Compression::decode_varuint32(p);
+			varbyte_get32(p, _v);
+                        c->cur_block.freqs[i] = _v;
 
                         if (trace)
                                 SLog("<< freq(", c->cur_block.freqs[i], ")\n");
@@ -196,7 +205,10 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
 
                 for (uint32_t i{0}, pos{0}; i != freq; ++i)
                 {
-                        pos += Compression::decode_varuint32(p);
+			uint32_t step;
+
+			varbyte_get32(p, step);
+                        pos += step;
 
                         if (trace)
                                 SLog("<< ", pos, "\n");
@@ -341,7 +353,11 @@ void Trinity::Codecs::Google::Decoder::skip_block_doc()
         const auto freq = freqs[blockDocIdx++];
 
         for (uint32_t i{0}; i != freq; ++i)
-                Compression::decode_varuint32(p);
+	{
+		uint32_t dummy;
+
+		varbyte_get32(p, dummy);
+	}
 
         // p now points to the positions/attributes for the current document
         // current document is documents[blockDocIdx]
@@ -357,7 +373,11 @@ void Trinity::Codecs::Google::Decoder::materialize_hits(const exec_term_id_t ter
 
         for (uint16_t i{0}; i != freq; ++i)
         {
-                pos += Compression::decode_varuint32(p);
+		uint32_t step;
+
+		varbyte_get32(p, step);
+                pos += step;
+
                 dwspace->set(termID, pos);
                 out[i] = {0, pos, 0};
         }
@@ -380,7 +400,10 @@ void Trinity::Codecs::Google::Decoder::unpack_block(const uint32_t thisBlockLast
 
         for (uint8_t i{0}; i != k; ++i)
         {
-                id += Compression::decode_varuint32(p);
+		uint32_t delta;
+
+		varbyte_get32(p, delta);
+                id += delta;
 
                 if (trace)
                         SLog("<< ", id, "\n");
@@ -392,7 +415,10 @@ void Trinity::Codecs::Google::Decoder::unpack_block(const uint32_t thisBlockLast
 
         for (uint32_t i{0}; i != n; ++i)
         {
-                freqs[i] = Compression::decode_varuint32(p);
+		uint32_t v;
+
+		varbyte_get32(p, v);
+                freqs[i] = v;
 
                 if (trace)
                         SLog("Freq ", i, " ", freqs[i], "\n");
@@ -415,8 +441,15 @@ void Trinity::Codecs::Google::Decoder::seek_block(const uint32_t target)
 
         for (;;)
         {
-                const auto thisBlockLastDocID = blockLastDocID + Compression::decode_varuint32(p);
-                const auto blockSize = Compression::decode_varuint32(p);
+		uint32_t _v;
+
+		varbyte_get32(p, _v);
+
+                const auto thisBlockLastDocID = blockLastDocID + _v;
+		uint32_t blockSize;
+
+		varbyte_get32(p, blockSize);
+
                 const auto blockDocsCnt = *p++;
 
                 if (false)
@@ -458,8 +491,13 @@ void Trinity::Codecs::Google::Decoder::seek_block(const uint32_t target)
 void Trinity::Codecs::Google::Decoder::unpack_next_block()
 {
         static constexpr bool trace{false};
-        const auto thisBlockLastDocID = blockLastDocID + Compression::decode_varuint32(p);
-        const auto blockSize = Compression::decode_varuint32(p);
+	uint32_t _v;
+
+	varbyte_get32(p, _v);
+        const auto thisBlockLastDocID = blockLastDocID + _v;
+	uint32_t blockSize;
+
+	varbyte_get32(p, blockSize);
         const auto blockDocsCnt = *p++;
 
         if (trace)
@@ -484,8 +522,10 @@ void Trinity::Codecs::Google::Decoder::skip_remaining_block_documents()
 
                 while (freq)
                 {
+			uint32_t dummy;
+
                         --freq;
-                        Compression::decode_varuint32(p);
+			varbyte_get32(p, dummy);
                 }
 
                 if (documents[blockDocIdx] == blockLastDocID)
