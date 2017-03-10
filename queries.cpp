@@ -254,9 +254,10 @@ void PrintImpl(Buffer &b, const Trinity::ast_node &n)
 			break;
 
                 case ast_node::Type::UnaryOp:
-                        b.append(n.unaryop.op);
-                        if (n.unaryop.op != Operator::AND)
-                                b.append(' ');
+                        if (n.unaryop.op == Operator::AND || n.unaryop.op == Operator::STRICT_AND)
+                                b.append('+');
+                        else if (n.unaryop.op == Operator::NOT)
+                                b.append('-');
                         b.append(*n.unaryop.expr);
                         break;
 
@@ -905,7 +906,7 @@ static void capture_leader(ast_node *const n, std::vector<ast_node *> *const out
                         break;
 
                 case ast_node::Type::UnaryOp:
-                        if (n->unaryop.op == Operator::AND)
+                        if (n->unaryop.op == Operator::AND || n->unaryop.op == Operator::STRICT_AND)
                                 out->push_back(n->unaryop.expr);
                         break;
 
