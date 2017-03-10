@@ -59,6 +59,17 @@ namespace Trinity
                 // You may want to use
                 // - Trinity::pack_terms() to build the terms files and then persist them
                 // - Trinity::persist_segment() to persist the actual index
+		//
+		// IMPORTANT:
+		// You will need to consider all candidates after merge() has returned.
+		// If a source's `gen` is higher than 1+ other index sources that are NOT included in this merge session as a candidate
+		// 	then you may delete the candidate's index and other files/data but you MUST retain its masked documents, because
+		// 	there are more sources, not included in this merge session, with lower gen that we will need to mask documents from them that
+		// 	have potentially been updated/deleted/masked by the source.
+		// Otherwise, you may safely wipe all data related to that merge candidate.
+		// When merge() returns and you consider all candidates, you should probably consider all other index sources/segments that didn't participate
+		// in the merge session, and if their gen is lower than any other remaining inex source/segment that has any index data(i.e not retained for
+		// its masked products only), then you can wipe that source/segments remaining data as well.
                 void merge(Codecs::IndexSession *outIndexSess, simple_allocator *, std::vector<std::pair<strwlen8_t, term_index_ctx>> *const outTerms);
         };
 }

@@ -126,7 +126,7 @@ namespace Trinity
         //
         // Each source is also associated with an `updated_documents` instance which tracked all documents updated or deleted when the source was created.
         // This is not used directly by the source itself, but when executing a query on a source(see exec_query() API), we need to consider the source's generation
-        // and for any other sources that will be involved in the search session that have generation HIGHER than the source's generation, we need to check that
+        // and, for any other sources that will be involved in the search session that have generation HIGHER than the source's generation, we need to check that
         // a document is not set in any of their `updated_documents` instances (because that would mean that there is more recent information about that document
         // in another source that will be considered in this search session).
         //
@@ -140,6 +140,8 @@ namespace Trinity
 	//
 	// A great use case would be to have one IndexSourcesCollection which retains many sources and whenever you want to reload segments/sources etc, create
 	// a new IndexSourcesCollection for them and atomically exchange pointers (old, new IndexSourcesCollection)
+	//
+	// it is very important you don't forget to invoke commit() otherwise updated/masked documents state will not be built
         class IndexSourcesCollection final
         {
               private:

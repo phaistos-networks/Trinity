@@ -6,7 +6,7 @@ using namespace Trinity;
 
 namespace // static/local this module
 {
-	static constexpr bool traceExec{false};
+        static constexpr bool traceExec{false};
 
         // tightly packed node (4 bytes)
         // It's possible that we can use 12 bits for the operand(nodeCtxIdx) and the remaining 4 for the opcode
@@ -16,34 +16,32 @@ namespace // static/local this module
         //
         // We could also include a weight here -- so that if e.g a phrase or a complex expression matched we'd boost the score
         // by some factor/coefficient(this would have been provided by the input query)
-	//
-	// TODO: consider an alternative exec_node which holds the funcptr and a pointer to e.g runtime_ctx token or whatever else
-	// in order to avoid dereferencing even if sizeof(exec_node) will be 16 instead of 4
-	// it may be worth it
-	struct runtime_ctx;
+        //
+        // TODO: consider an alternative exec_node which holds the funcptr and a pointer to e.g runtime_ctx token or whatever else
+        // in order to avoid dereferencing even if sizeof(exec_node) will be 16 instead of 4
+        // it may be worth it
+        struct runtime_ctx;
 
-        struct exec_node
+        struct exec_node 	// 64bytes alignement seems to yield good results, but crashes if optimizer is enabled (i.e struct alignas(64) exec_node {})
         {
-		// we are now embedding the fp directly into exec_node
-		// because unlike a previous design(see git repo history) where
-		// we would dereference an eval() local array of pointers and would
-		// hold here an index to that array, this is faster
-		bool(*fp)(const exec_node &, runtime_ctx &);
+                // we are now embedding the fp directly into exec_node
+                // because unlike a previous design(see git repo history) where
+                // we would dereference an eval() local array of pointers and would
+                // hold here an index to that array, this is faster
+                bool (*fp)(const exec_node &, runtime_ctx &);
 
                 // instead of using unions here
                 // we will have a node/impl specific context allocated elsewhere with the appropriate size
                 // so that the implementaiton can refer to it
-		// maybe we should really embed the pointer here though because sizeof(exec_node) is going to be 16 anyway so we may as well
-		// use that space to embed the pointer - and we really don't care for flags
-		// turns out, this is faster than dereferencing in runtime_ctx
-		union
-		{
-			void *ptr;
-			uint32_t u32;
-			uint16_t u16;
-		};
+                // maybe we should really embed the pointer here though because sizeof(exec_node) is going to be 16 anyway so we may as well
+                // use that space to embed the pointer - and we really don't care for flags
+                // turns out, this is faster than dereferencing in runtime_ctx
+                union {
+                        void *ptr;
+                        uint32_t u32;
+                        uint16_t u16;
+                };
         };
-
 
         // This is initialized by the compiler
         // and used by the VM
@@ -74,23 +72,22 @@ namespace // static/local this module
                         uint8_t size;            // total in termIDs
                 };
 
-
 #pragma eval and runtime specific
                 runtime_ctx(IndexSource *src)
                     : idxsrc{src}, docWordsSpace{4096}
                 {
                 }
 
-		auto materialize_term_hits_impl(const exec_term_id_t termID)
-		{
+                auto materialize_term_hits_impl(const exec_term_id_t termID)
+                {
                         auto th = decode_ctx.termHits[termID];
-			auto dec = decode_ctx.decoders[termID];
-			const auto docHits = dec->curDocument.freq; 	// see Codecs::Decoder::curDocument comments
+                        auto dec = decode_ctx.decoders[termID];
+                        const auto docHits = dec->curDocument.freq; // see Codecs::Decoder::curDocument comments
 
-			th->docSeq = curDocSeq;
-			th->set_freq(docHits);
-			dec->materialize_hits(termID, &docWordsSpace, th->all);
-		}
+                        th->docSeq = curDocSeq;
+                        th->set_freq(docHits);
+                        dec->materialize_hits(termID, &docWordsSpace, th->all);
+                }
 
                 auto materialize_term_hits(const exec_term_id_t termID)
                 {
@@ -107,58 +104,57 @@ namespace // static/local this module
                 }
 
                 void capture_matched_term(const exec_term_id_t termID)
-		{
-			static constexpr bool trace{false};
+                {
+                        static constexpr bool trace{false};
 
-			if (trace)
-				SLog("Capturing matched term ", termID, "\n");
+                        if (trace)
+                                SLog("Capturing matched term ", termID, "\n");
 
-			if (const auto qti = originalQueryTermInstances[termID])
-			{
-				// if this not nullptr, it means this was not in a NOT branch so we should account for it
-				// we exclude all tokens in NOT branches when we collect the original query tokens
-				if (curDocQueryTokensCaptured[termID] != curDocSeq)
-				{
-					// not captured already for this document
-					auto p = matchedDocument.matchedTerms + matchedDocument.matchedTermsCnt++;
-					auto th = decode_ctx.termHits[termID];
+                        if (const auto qti = originalQueryTermInstances[termID])
+                        {
+                                // if this not nullptr, it means this was not in a NOT branch so we should account for it
+                                // we exclude all tokens in NOT branches when we collect the original query tokens
+                                if (curDocQueryTokensCaptured[termID] != curDocSeq)
+                                {
+                                        // not captured already for this document
+                                        auto p = matchedDocument.matchedTerms + matchedDocument.matchedTermsCnt++;
+                                        auto th = decode_ctx.termHits[termID];
 
-					if (trace)
-						SLog("Not captured yet, capturing now [", qti->term.token, "]\n");
+                                        if (trace)
+                                                SLog("Not captured yet, capturing now [", qti->term.token, "]\n");
 
-					curDocQueryTokensCaptured[termID] = curDocSeq;
-					p->queryTermInstances = qti;
+                                        curDocQueryTokensCaptured[termID] = curDocSeq;
+                                        p->queryTermInstances = qti;
 
-					if (th->docSeq == curDocSeq)
-					{
-						// already materialised
-						if (trace)
-							SLog("Already materialized\n");
-					}
-					else
-					{
-						// track it so that we can materialise it before we score the document
-						// don't matrerialise just yet because it's possible the query predicate won't match the document
-						// e.g [foo bar] if only foo matches but not bar we don't want to materialise foo term hits anyway
-						// TODO: we will not track it for now, but maybe we should for performance reasons so
-						// that we won't have to iterater across all matchedDocument.matchedTerms and attempt to materialise
-						if (trace)
-							SLog("Not materialised yet\n");
-					}
+                                        if (th->docSeq == curDocSeq)
+                                        {
+                                                // already materialised
+                                                if (trace)
+                                                        SLog("Already materialized\n");
+                                        }
+                                        else
+                                        {
+                                                // track it so that we can materialise it before we score the document
+                                                // don't matrerialise just yet because it's possible the query predicate won't match the document
+                                                // e.g [foo bar] if only foo matches but not bar we don't want to materialise foo term hits anyway
+                                                // TODO: we will not track it for now, but maybe we should for performance reasons so
+                                                // that we won't have to iterater across all matchedDocument.matchedTerms and attempt to materialise
+                                                if (trace)
+                                                        SLog("Not materialised yet\n");
+                                        }
 
-					p->hits = th;
-				}
-				else if (trace)
-					SLog("Already captured\n");
-			}
-			else
-			{
-				// This token was found only in a NOT branch
-				if (trace)
-					SLog("Term found in a NOT branch\n");
-			}
-		}
-
+                                        p->hits = th;
+                                }
+                                else if (trace)
+                                        SLog("Already captured\n");
+                        }
+                        else
+                        {
+                                // This token was found only in a NOT branch
+                                if (trace)
+                                        SLog("Term found in a NOT branch\n");
+                        }
+                }
 
                 // for simplicity's sake, we are just going to map exec_term_id_t => decoders[] without
                 // indirection. For each distict/resolved term, we have a decoder and term_hits in decode_ctx.decoders[] and decode_ctx.termHits[]
@@ -183,26 +179,26 @@ namespace // static/local this module
                 {
                         curDocID = did;
                         docWordsSpace.reset(did);
-			matchedDocument.matchedTermsCnt = 0;
+                        matchedDocument.matchedTermsCnt = 0;
 
-			// see docwordspace.h
-			if (unlikely(curDocSeq == UINT16_MAX))
-			{
-				const auto maxQueryTermIDPlus1 = termsDict.size() + 1;
+                        // see docwordspace.h
+                        if (unlikely(curDocSeq == UINT16_MAX))
+                        {
+                                const auto maxQueryTermIDPlus1 = termsDict.size() + 1;
 
-				memset(curDocQueryTokensCaptured, 0, sizeof(uint16_t) * maxQueryTermIDPlus1);
-				for (uint32_t i{0}; i < decode_ctx.capacity; ++i)
-				{
-					if (auto ptr = decode_ctx.termHits[i])
+                                memset(curDocQueryTokensCaptured, 0, sizeof(uint16_t) * maxQueryTermIDPlus1);
+                                for (uint32_t i{0}; i < decode_ctx.capacity; ++i)
+                                {
+                                        if (auto ptr = decode_ctx.termHits[i])
                                                 ptr->docSeq = 0;
                                 }
 
-				curDocSeq = 1; 	// important; set to 1 not 0
-			}
-			else
-			{
-				++curDocSeq;
-			}
+                                curDocSeq = 1; // important; set to 1 not 0
+                        }
+                        else
+                        {
+                                ++curDocSeq;
+                        }
                 }
 
 #pragma mark Compiler / Optimizer specific
@@ -229,19 +225,19 @@ namespace // static/local this module
 
                 void *register_binop(const exec_node lhs, const exec_node rhs)
                 {
-			auto ptr = allocator.New<binop_ctx>();
+                        auto ptr = allocator.New<binop_ctx>();
 
-			ptr->lhs = lhs;
-			ptr->rhs = rhs;
-			return ptr;
+                        ptr->lhs = lhs;
+                        ptr->rhs = rhs;
+                        return ptr;
                 }
 
                 void *register_unaryop(const exec_node expr)
                 {
-			auto ptr = allocator.New<unaryop_ctx>();
+                        auto ptr = allocator.New<unaryop_ctx>();
 
-			ptr->expr = expr;
-			return ptr;
+                        ptr->expr = expr;
+                        return ptr;
                 }
 
                 uint16_t register_token(const Trinity::phrase *p)
@@ -254,7 +250,7 @@ namespace // static/local this module
 
                 void *register_phrase(const Trinity::phrase *p)
                 {
-			auto ptr = allocator.New<phrase>();
+                        auto ptr = allocator.New<phrase>();
 
                         ptr->rep = p->rep;
                         ptr->index = p->index;
@@ -305,21 +301,19 @@ namespace // static/local this module
                         return sum;
                 }
 
-
-
 #pragma mark members
                 // This is from the lead tokens
                 // We expect all token and phrases opcodes to check against this document
                 uint32_t curDocID;
-		// See docwordspace.h
-		uint16_t curDocSeq;
+                // See docwordspace.h
+                uint16_t curDocSeq;
 
-		// indexed by termID
-		query_term_instances **originalQueryTermInstances;
+                // indexed by termID
+                query_term_instances **originalQueryTermInstances;
 
                 struct decode_ctx_struct
                 {
-			// decoders[] and termHits[] are indexed by termID
+                        // decoders[] and termHits[] are indexed by termID
                         Trinity::Codecs::Decoder **decoders{nullptr};
                         term_hits **termHits{nullptr};
                         uint16_t capacity{0};
@@ -360,14 +354,11 @@ namespace // static/local this module
                 Switch::unordered_map<strwlen8_t, exec_term_id_t> termsDict;
                 Switch::unordered_map<exec_term_id_t, uint32_t> toIndexSrcSpace; // translation between runtime_ctx and segment term IDs spaces
                 Switch::unordered_map<exec_term_id_t, strwlen8_t> idToTerm;      // maybe useful for tracing by the score functions
-		uint16_t *curDocQueryTokensCaptured;
-		matched_document matchedDocument;
+                uint16_t *curDocQueryTokensCaptured;
+                matched_document matchedDocument;
                 simple_allocator allocator;
         };
 }
-
-
-
 
 #pragma mark OPTIMIZER
 static uint32_t optimize_binops_impl(ast_node *const n, bool &updates, runtime_ctx &rctx)
@@ -548,8 +539,6 @@ static bool optimize(Trinity::query &q, runtime_ctx &rctx)
         return q.root;
 }
 
-
-
 #pragma mark INTERPRETER
 // TODO: consider passing exec_node& instead of exec_node
 // to impl. so that can modify themselves if needed
@@ -569,44 +558,43 @@ enum class OpCodes : uint8_t
 
 #define eval(node, ctx) (node.fp(node, ctx))
 
-static inline bool noop_impl(const exec_node&, runtime_ctx &)
+static inline bool noop_impl(const exec_node &, runtime_ctx &)
 {
         return false;
 }
 
 static inline bool matchtoken_impl(const exec_node &self, runtime_ctx &rctx)
 {
-	const auto termID = exec_term_id_t(self.u16);
-	auto decoder = rctx.decode_ctx.decoders[termID];
-	const auto res = decoder->seek(rctx.curDocID);
+        const auto termID = exec_term_id_t(self.u16);
+        auto decoder = rctx.decode_ctx.decoders[termID];
+        const auto res = decoder->seek(rctx.curDocID);
 
-	if (res)
-		rctx.capture_matched_term(termID);
+        if (res)
+                rctx.capture_matched_term(termID);
 
-
-	if (traceExec)
-		SLog(ansifmt::color_green, "Attempting to match token against ", rctx.curDocID, ansifmt::reset, " => ", res, "\n");
-	return res;
+        if (traceExec)
+                SLog(ansifmt::color_green, "Attempting to match token against ", rctx.curDocID, ansifmt::reset, " => ", res, "\n");
+        return res;
 }
 
 static bool unaryand_impl(const exec_node &self, runtime_ctx &rctx)
 {
-	const auto op = (runtime_ctx::unaryop_ctx *)self.ptr;
+        const auto op = (runtime_ctx::unaryop_ctx *)self.ptr;
 
-	return eval(op->expr, rctx);
+        return eval(op->expr, rctx);
 }
 
 static bool unarynot_impl(const exec_node &self, runtime_ctx &rctx)
 {
-	const auto op = (runtime_ctx::unaryop_ctx *)self.ptr;
+        const auto op = (runtime_ctx::unaryop_ctx *)self.ptr;
 
-	return !eval(op->expr, rctx);
+        return !eval(op->expr, rctx);
 }
 
 static bool matchphrase_impl(const exec_node &self, runtime_ctx &rctx)
 {
         static constexpr bool trace{false};
-	const auto p = (runtime_ctx::phrase *)self.ptr;
+        const auto p = (runtime_ctx::phrase *)self.ptr;
         const auto firstTermID = p->termIDs[0];
         auto decoder = rctx.decode_ctx.decoders[firstTermID];
         const auto did = rctx.curDocID;
@@ -658,8 +646,8 @@ static bool matchphrase_impl(const exec_node &self, runtime_ctx &rctx)
                                 if (k == n)
                                 {
                                         // matched seq
-					for (uint16_t i{0}; i != n; ++i)
-						rctx.capture_matched_term(p->termIDs[i]);
+                                        for (uint16_t i{0}; i != n; ++i)
+                                                rctx.capture_matched_term(p->termIDs[i]);
                                         return true;
                                 }
 
@@ -710,24 +698,23 @@ static inline uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
 }
 #endif
 
-
 static inline bool logicaland_impl(const exec_node &self, runtime_ctx &rctx)
 {
-	const auto opctx = (runtime_ctx::binop_ctx *)self.ptr;
+        const auto opctx = (runtime_ctx::binop_ctx *)self.ptr;
 
         return eval(opctx->lhs, rctx) && eval(opctx->rhs, rctx);
 }
 
 static inline bool logicalnot_impl(const exec_node &self, runtime_ctx &rctx)
 {
-	const auto opctx = (runtime_ctx::binop_ctx *)self.ptr;
+        const auto opctx = (runtime_ctx::binop_ctx *)self.ptr;
 
         return eval(opctx->lhs, rctx) && !eval(opctx->rhs, rctx);
 }
 
 static inline bool logicalor_impl(const exec_node &self, runtime_ctx &rctx)
 {
-	const auto opctx = (runtime_ctx::binop_ctx *)self.ptr;
+        const auto opctx = (runtime_ctx::binop_ctx *)self.ptr;
 
         return eval(opctx->lhs, rctx) || eval(opctx->rhs, rctx);
 }
@@ -750,9 +737,6 @@ inline uint8_t eval(const exec_node node, runtime_ctx &ctx)
         return implementations[node.implIdx](node, ctx);
 }
 #endif
-
-
-
 
 #pragma mark COMPILER
 static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
@@ -842,7 +826,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
 // We can't reuse the same compiled bytecode/runtime_ctx to run the same query across multiple index sources, because
 // we optimize based on the index source structure and terms involved in the query
 // It is also very cheap to construct those.
-bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_registry *const maskedDocumentsRegistry)
+void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_registry *const maskedDocumentsRegistry, MatchedIndexDocumentsFilter *__restrict__ const matchesFilter)
 {
         struct query_term_instance
         {
@@ -854,7 +838,7 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
         if (!in)
         {
                 SLog("No root node\n");
-                return false;
+                return;
         }
 
         // we need a copy of that query here
@@ -865,21 +849,20 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
         if (!q.normalize())
         {
                 SLog("No root node after normalization\n");
-                return false;
+                return;
         }
 
-
-	// We need to collect all term instances in the query
-	// so that we the score function will be able to take that into account to e.g  consider
-	// We only need to do this for specific AST branches and node types
-	//
-	// This must be performed before any query optimizations, for otherwise because the optimiser will most definitely rearrange the query, doing it after
-	// the optimization passes will not capture the original, input query tokens instances information.
+        // We need to collect all term instances in the query
+        // so that we the score function will be able to take that into account to e.g  consider
+        // We only need to do this for specific AST branches and node types
+        //
+        // This must be performed before any query optimizations, for otherwise because the optimiser will most definitely rearrange the query, doing it after
+        // the optimization passes will not capture the original, input query tokens instances information.
         std::vector<query_term_instance> originalQueryTokenInstances;
-	uint64_t before;
+        uint64_t before;
 
         {
-                std::vector<ast_node *> stack{q.root}; 	// use a stack because we don't care about the evaluation order
+                std::vector<ast_node *> stack{q.root}; // use a stack because we don't care about the evaluation order
                 std::vector<phrase *> collected;
 
                 do
@@ -890,7 +873,7 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                         switch (n->type)
                         {
                                 case ast_node::Type::Token:
-				case ast_node::Type::Phrase:
+                                case ast_node::Type::Phrase:
                                         collected.push_back(n->p);
                                         break;
 
@@ -900,41 +883,37 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                                                 stack.push_back(n->binop.lhs);
                                                 stack.push_back(n->binop.rhs);
                                         }
-					else if (n->binop.op == Operator::NOT)
+                                        else if (n->binop.op == Operator::NOT)
                                                 stack.push_back(n->binop.lhs);
                                         break;
 
-				default:
-					break;
+                                default:
+                                        break;
                         }
                 } while (stack.size());
 
-		for (const auto it : collected)
-		{
-			const uint8_t rep = it->size == 1 ? it->rep : 1;
+                for (const auto it : collected)
+                {
+                        const uint8_t rep = it->size == 1 ? it->rep : 1;
 
-			for (uint16_t pos{it->index}, i{0}; i != it->size; ++i, ++pos)
-				originalQueryTokenInstances.push_back({it->terms[i].token, pos, rep});
-		}
+                        for (uint16_t pos{it->index}, i{0}; i != it->size; ++i, ++pos)
+                                originalQueryTokenInstances.push_back({it->terms[i].token, pos, rep});
+                }
         }
-
 
         runtime_ctx rctx(idxsrc);
 
         // Optimizations we shouldn't perform on the parsed query because
         // the rewrite it by potentially moving nodes around or dropping nodes
-	before = Timings::Microseconds::Tick();
+        before = Timings::Microseconds::Tick();
         if (!optimize(q, rctx))
         {
                 // After optimizations nothing's left
                 SLog("No root node after optimizations\n");
-                return false;
+                return;
         }
 
-	SLog(duration_repr(Timings::Microseconds::Since(before)), " to optimize\n");
-
-
-
+        SLog(duration_repr(Timings::Microseconds::Since(before)), " to optimize\n");
 
         SLog("Compiling\n");
         // Need to compile before we access the leader nodes
@@ -1014,11 +993,7 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
         require(leaderTokensDecoders.size());
         auto leaderDecoders = leaderTokensDecoders.data();
         uint32_t leaderDecodersCnt = leaderTokensDecoders.size();
-	const auto maxQueryTermIDPlus1 = rctx.termsDict.size() + 1;
-
-
-
-
+        const auto maxQueryTermIDPlus1 = rctx.termsDict.size() + 1;
 
         {
                 std::vector<std::pair<uint16_t, uint16_t>> collected;
@@ -1026,17 +1001,17 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                 // Build rctx.originalQueryTermInstances
                 // It is important to only do this after we have optimised the copied original query, just as it is important
                 // to capture the original query instances before we optimise
-		//
-		// We need access to that information for scoring documents
+                //
+                // We need access to that information for scoring documents
                 rctx.originalQueryTermInstances = (query_term_instances **)rctx.allocator.Alloc(sizeof(query_term_instances *) * maxQueryTermIDPlus1);
 
-		memset(rctx.originalQueryTermInstances, 0, sizeof(query_term_instances *) * maxQueryTermIDPlus1);
+                memset(rctx.originalQueryTermInstances, 0, sizeof(query_term_instances *) * maxQueryTermIDPlus1);
                 std::sort(originalQueryTokenInstances.begin(), originalQueryTokenInstances.end(), [](const auto &a, const auto &b) { return Text::StrnncasecmpISO88597(a.token.data(), a.token.size(), b.token.data(), b.token.size()) < 0; });
                 for (const auto *p = originalQueryTokenInstances.data(), *const e = p + originalQueryTokenInstances.size(); p != e;)
                 {
                         const auto token = p->token;
 
-			SLog("token [", token, "]\n");
+                        SLog("token [", token, "]\n");
 
                         if (const auto termID = rctx.termsDict[token]) // only if this token has actually been used in the compiled query
                         {
@@ -1064,7 +1039,7 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                         }
                         else
                         {
-				SLog("Ignoring ", token, "\n");
+                                SLog("Ignoring ", token, "\n");
                                 // this original query token is not used in the optimised query
                                 do
                                 {
@@ -1074,23 +1049,14 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                 }
         }
 
-	rctx.curDocQueryTokensCaptured = (uint16_t *)rctx.allocator.Alloc(sizeof(uint16_t) * maxQueryTermIDPlus1);
-	rctx.matchedDocument.matchedTerms = (matched_query_term *)rctx.allocator.Alloc(sizeof(matched_query_term) * maxQueryTermIDPlus1);
-	rctx.curDocSeq = UINT16_MAX;
-
-
-
-
+        rctx.curDocQueryTokensCaptured = (uint16_t *)rctx.allocator.Alloc(sizeof(uint16_t) * maxQueryTermIDPlus1);
+        rctx.matchedDocument.matchedTerms = (matched_query_term *)rctx.allocator.Alloc(sizeof(matched_query_term) * maxQueryTermIDPlus1);
+        rctx.curDocSeq = UINT16_MAX;
 
         SLog("RUNNING\n");
 
-	uint32_t matchedDocuments{0};
-	const auto start = Timings::Microseconds::Tick();
-
-
-
-
-
+        uint32_t matchedDocuments{0};
+        const auto start = Timings::Microseconds::Tick();
 
         // TODO: if (q.root->type == ast_node::Type::Token) {}
         // i.e if just a single term was entered, scan that single token's documents  without even having to use a decoder
@@ -1098,7 +1064,7 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
         for (;;)
         {
                 // Select document from the leader tokens/decoders
-                uint32_t docID = leaderDecoders[0]->curDocument.id; 	// // see Codecs::Decoder::curDocument comments
+                uint32_t docID = leaderDecoders[0]->curDocument.id; // // see Codecs::Decoder::curDocument comments
                 uint8_t toAdvanceCnt{1};
 
                 toAdvance[0] = 0;
@@ -1106,7 +1072,7 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                 for (uint32_t i{1}; i < leaderDecodersCnt; ++i)
                 {
                         const auto decoder = leaderDecoders[i];
-                        const auto did = decoder->curDocument.id; 	// see Codecs::Decoder::curDocument comments
+                        const auto did = decoder->curDocument.id; // see Codecs::Decoder::curDocument comments
 
                         if (did < docID)
                         {
@@ -1118,9 +1084,8 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                                 toAdvance[toAdvanceCnt++] = i;
                 }
 
-
-		if (traceExec)
-	                SLog("DOCUMENT ", docID, "\n");
+                if (traceExec)
+                        SLog("DOCUMENT ", docID, "\n");
 
                 if (!maskedDocumentsRegistry->test(docID))
                 {
@@ -1129,24 +1094,22 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                         rctx.reset(docID);
 
                         if (eval(rootExecNode, rctx))
-			{
-				const auto n = rctx.matchedDocument.matchedTermsCnt;
-				auto allMatchedTerms = rctx.matchedDocument.matchedTerms;
+                        {
+                                const auto n = rctx.matchedDocument.matchedTermsCnt;
+                                auto allMatchedTerms = rctx.matchedDocument.matchedTerms;
 
-				rctx.matchedDocument.id = docID;
+                                rctx.matchedDocument.id = docID;
 
-				// See runtime_ctx::capture_matched_term() comments
-				for (uint16_t i{0}; i != n; ++i)
-				{
-					const auto termID = allMatchedTerms[i].queryTermInstances->term.id;
+                                // See runtime_ctx::capture_matched_term() comments
+                                for (uint16_t i{0}; i != n; ++i)
+                                {
+                                        const auto termID = allMatchedTerms[i].queryTermInstances->term.id;
 
-					rctx.materialize_term_hits(termID);
-				}
+                                        rctx.materialize_term_hits(termID);
+                                }
 
-
-
-                        	// TODO: score it and consider for top-k matches using matchedDocument
-				if (traceExec)
+                                // TODO: score it and consider for top-k matches using matchedDocument
+                                if (traceExec)
                                 {
                                         SLog(ansifmt::bold, ansifmt::color_blue, "MATCHED ", docID, ansifmt::reset, "\n");
                                         for (uint16_t i{0}; i != n; ++i)
@@ -1156,11 +1119,11 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                                                 SLog("MATCHED TERM [", mt->queryTermInstances->term.token, "]\n");
                                         }
                                 }
-				++matchedDocuments;
+
+				matchesFilter->consider(rctx.matchedDocument);
+                                ++matchedDocuments;
                         }
                 }
-
-
 
                 // Advance leader tokens/decoders
                 do
@@ -1182,23 +1145,7 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
 
 l1:;
 
-	const auto duration = Timings::Microseconds::Since(start);
+        const auto duration = Timings::Microseconds::Since(start);
 
-	SLog(dotnotation_repr(matchedDocuments), " matched in ", duration_repr(duration), "\n");
-        return true;
-}
-
-bool Trinity::exec_query(const query &q, IndexSourcesCollection *const collection)
-{
-        const auto n = collection->sources.size();
-
-        for (uint32_t i{0}; i != n; ++i)
-        {
-                auto source = collection->sources[i];
-                auto scanner = collection->scanner_registry_for(i);
-
-                exec_query(q, source, scanner.get());
-        }
-
-        return true;
+        SLog(dotnotation_repr(matchedDocuments), " matched in ", duration_repr(duration), "\n");
 }

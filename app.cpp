@@ -104,11 +104,14 @@ int main(int argc, char *argv[])
 		ss->Release();
 		maskedDocsSrc->Release();
 
+
 		sources.commit();
 
 
+		auto filter = std::make_unique<MatchedIndexDocumentsFilter>();
+
 		
-		exec_query(strwlen32_t(argv[1]), &sources);
+		exec_query<MatchedIndexDocumentsFilter>(strwlen32_t(argv[1]), &sources);
 		//exec_query(strwlen32_t(argv[1]), ss, rr.get());
 	}
 

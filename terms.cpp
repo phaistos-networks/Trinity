@@ -2,6 +2,18 @@
 #include <text.h>
 #include <compress.h>
 
+namespace
+{
+        static inline int32_t terms_cmp(const char *a, const uint8_t aLen, const char *b, const uint8_t bLen)
+        {
+		// For now, we use this existing method, but this not ideal because
+		// we are ignore case, and this may not be the desired behaviour.
+		// If it is, you may want to use a similar implementation for the various query and exec functions that
+		// track(in containers) or compare tokens-terms.
+                return Text::StrnncasecmpISO88597(a, aLen, b, bLen);
+        }
+}
+
 Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_t> termsData, const strwlen8_t q, const Switch::vector<Trinity::terms_skiplist_entry> &skipList)
 {
         int32_t top{int32_t(skipList.size()) - 1};
@@ -24,7 +36,7 @@ Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_
 			goto l100;
 #endif
                 }
-                else if (Text::StrnncasecmpISO88597(q.data(), q.size(), t->term.data(), t->term.size()) < 0)
+                else if (terms_cmp(q.data(), q.size(), t->term.data(), t->term.size()) < 0)
                         top = mid - 1;
                 else
                         btm = mid + 1;
@@ -50,7 +62,7 @@ l100:
                 p += suffixLen;
 
                 const auto curTermLen = commonPrefixLen + suffixLen;
-                const auto r = Text::StrnncasecmpISO88597(q.data(), q.size(), termStorage, curTermLen);
+                const auto r = terms_cmp(q.data(), q.size(), termStorage, curTermLen);
 
                 if (r < 0)
                 {
@@ -105,7 +117,7 @@ void Trinity::pack_terms(std::vector<std::pair<strwlen8_t, term_index_ctx>> &ter
         strwlen8_t prev;
 
         std::sort(terms.begin(), terms.end(), [](const auto &a, const auto &b) {
-                return Text::StrnncasecmpISO88597(a.first.data(), a.first.size(), b.first.data(), b.first.size()) < 0;
+                return terms_cmp(a.first.data(), a.first.size(), b.first.data(), b.first.size()) < 0;
         });
 
 	for (const auto &it : terms)
