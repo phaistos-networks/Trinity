@@ -220,16 +220,6 @@ namespace Trinity
                                         return documents[blockDocIdx];
                                 }
 
-                                [[gnu::always_inline]] uint32_t cur_doc_id() override final
-                                {
-                                        return documents[blockDocIdx];
-                                }
-
-                                [[gnu::always_inline]] uint16_t cur_doc_freq() override final
-                                {
-                                        return freqs[blockDocIdx];
-                                }
-
                                 // XXX: make sure you check if (cur_document() != UINT32_MAX)
                                 bool next() override final;
 

@@ -175,6 +175,9 @@ namespace Trinity
 			// 
 			// Using `dec->curDocument` instea of dec->cur_doc_id() and dec->cur_doc_freq()
 			// results in a drop from 0.238s to 0.222s for a very fancy query
+			//
+			// UPDATE: now no longer expose cur_doc_id() and cur_doc_freq() which saves us 2*sizeof(void*) bytes from the vtable
+			// which is potentially great
 			struct
 			{
 				uint32_t id;
@@ -197,11 +200,6 @@ namespace Trinity
 
 			// (Remeber to update curDocument)
                         virtual bool seek(const uint32_t target) = 0;
-
-			// returns UINT32_MAX if no more documents left
-			[[deprecated("use this->curDocument.id please")]] virtual uint32_t cur_doc_id() = 0;
-
-			[[deprecated("use this->curDocument.freq please")]] virtual uint16_t cur_doc_freq() = 0;
 
 			// Materialises hits for the _current_ document
 			//

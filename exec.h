@@ -2,6 +2,7 @@
 #include "queries.h"
 #include "docidupdates.h"
 #include "index_source.h"
+#include "matches.h"
 
 namespace Trinity
 {

@@ -20,21 +20,30 @@ namespace // static/local this module
 	// TODO: consider an alternative exec_node which holds the funcptr and a pointer to e.g runtime_ctx token or whatever else
 	// in order to avoid dereferencing even if sizeof(exec_node) will be 16 instead of 4
 	// it may be worth it
+	struct runtime_ctx;
+
         struct exec_node
         {
-                // dereference implementation in an array of void(*)(void)
-                // so that we won't have to use 8 bytes for the pointer
-                uint8_t implIdx;
-
-                uint8_t flags;
+		// we are now embedding the fp directly into exec_node
+		// because unlike a previous design(see git repo history) where
+		// we would dereference an eval() local array of pointers and would
+		// hold here an index to that array, this is faster
+		bool(*fp)(const exec_node &, runtime_ctx &);
 
                 // instead of using unions here
-                // we will have a node/impl specific context allocated elsehwere with the appropriate size
+                // we will have a node/impl specific context allocated elsewhere with the appropriate size
                 // so that the implementaiton can refer to it
-                uint16_t nodeCtxIdx;
+		// maybe we should really embed the pointer here though because sizeof(exec_node) is going to be 16 anyway so we may as well
+		// use that space to embed the pointer - and we really don't care for flags
+		// turns out, this is faster than dereferencing in runtime_ctx
+		union
+		{
+			void *ptr;
+			uint32_t u32;
+			uint16_t u16;
+		};
         };
 
-        static_assert(sizeof(exec_node) == sizeof(uint32_t), "Unexpected sizeof(exec_node)");
 
         // This is initialized by the compiler
         // and used by the VM
@@ -54,14 +63,6 @@ namespace // static/local this module
                 struct unaryop_ctx
                 {
                         exec_node expr;
-                };
-
-                // See compile() and OpCodes::MatchToken
-                struct token
-                {
-                        uint8_t rep;           // see phrase::rep
-                        uint8_t index;         // see phrase::index
-                        exec_term_id_t termID; // via resolve_term()
                 };
 
                 // See compile() and OpCodes::MatchPhrase
@@ -158,13 +159,6 @@ namespace // static/local this module
 			}
 		}
 
-                void setup_evalnode_contexts()
-                {
-                        evalnode_ctx.binaryOps = binOpContexts.data();
-                        evalnode_ctx.unaryOps = unaryOpContexts.data();
-                        evalnode_ctx.tokens = registeredTokens.data();
-                        evalnode_ctx.phrases = registeredPhrases.data();
-                };
 
                 // for simplicity's sake, we are just going to map exec_term_id_t => decoders[] without
                 // indirection. For each distict/resolved term, we have a decoder and term_hits in decode_ctx.decoders[] and decode_ctx.termHits[]
@@ -233,33 +227,34 @@ namespace // static/local this module
                         return *ptr;
                 }
 
-                uint16_t register_binop(const exec_node lhs, const exec_node rhs)
+                void *register_binop(const exec_node lhs, const exec_node rhs)
                 {
-                        binOpContexts.push_back({lhs, rhs});
-                        return binOpContexts.size() - 1;
+			auto ptr = allocator.New<binop_ctx>();
+
+			ptr->lhs = lhs;
+			ptr->rhs = rhs;
+			return ptr;
                 }
 
-                uint16_t register_unaryop(const exec_node expr)
+                void *register_unaryop(const exec_node expr)
                 {
-                        unaryOpContexts.push_back({expr});
-                        return unaryOpContexts.size() - 1;
+			auto ptr = allocator.New<unaryop_ctx>();
+
+			ptr->expr = expr;
+			return ptr;
                 }
 
                 uint16_t register_token(const Trinity::phrase *p)
                 {
-                        auto t = registeredTokens.PushEmpty();
+                        const auto termID = resolve_term(p->terms[0].token);
 
-                        t->rep = p->rep;
-                        t->index = p->index;
-                        t->termID = resolve_term(p->terms[0].token);
-
-                        prepare_decoder(t->termID);
-                        return registeredTokens.size() - 1;
+                        prepare_decoder(termID);
+                        return termID;
                 }
 
-                uint16_t register_phrase(const Trinity::phrase *p)
+                void *register_phrase(const Trinity::phrase *p)
                 {
-                        auto ptr = registeredPhrases.PushEmpty();
+			auto ptr = allocator.New<phrase>();
 
                         ptr->rep = p->rep;
                         ptr->index = p->index;
@@ -274,7 +269,7 @@ namespace // static/local this module
                                 ptr->termIDs[i] = id;
                         }
 
-                        return registeredPhrases.size() - 1;
+                        return ptr;
                 }
 
                 uint32_t token_eval_cost(const strwlen8_t token)
@@ -322,14 +317,6 @@ namespace // static/local this module
 		// indexed by termID
 		query_term_instances **originalQueryTermInstances;
 
-                struct
-                {
-                        binop_ctx *binaryOps;
-                        unaryop_ctx *unaryOps;
-                        token *tokens;
-                        phrase *phrases;
-                } evalnode_ctx;
-
                 struct decode_ctx_struct
                 {
 			// decoders[] and termHits[] are indexed by termID
@@ -370,10 +357,6 @@ namespace // static/local this module
                 } decode_ctx;
 
                 DocWordsSpace docWordsSpace;
-                Switch::vector<token> registeredTokens;
-                Switch::vector<phrase> registeredPhrases;
-                std::vector<binop_ctx> binOpContexts;
-                std::vector<unaryop_ctx> unaryOpContexts;
                 Switch::unordered_map<strwlen8_t, exec_term_id_t> termsDict;
                 Switch::unordered_map<exec_term_id_t, uint32_t> toIndexSrcSpace; // translation between runtime_ctx and segment term IDs spaces
                 Switch::unordered_map<exec_term_id_t, strwlen8_t> idToTerm;      // maybe useful for tracing by the score functions
@@ -584,17 +567,16 @@ enum class OpCodes : uint8_t
         ConstFalse
 };
 
-static inline uint8_t eval(const exec_node node, runtime_ctx &ctx);
+#define eval(node, ctx) (node.fp(node, ctx))
 
-static inline uint8_t noop_impl(const exec_node, runtime_ctx &)
+static inline bool noop_impl(const exec_node&, runtime_ctx &)
 {
-        return 0;
+        return false;
 }
 
-static inline uint8_t matchtoken_impl(const exec_node self, runtime_ctx &rctx)
+static inline bool matchtoken_impl(const exec_node &self, runtime_ctx &rctx)
 {
-	const auto t = rctx.evalnode_ctx.tokens + self.nodeCtxIdx;
-	const auto termID = t->termID;
+	const auto termID = exec_term_id_t(self.u16);
 	auto decoder = rctx.decode_ctx.decoders[termID];
 	const auto res = decoder->seek(rctx.curDocID);
 
@@ -607,10 +589,24 @@ static inline uint8_t matchtoken_impl(const exec_node self, runtime_ctx &rctx)
 	return res;
 }
 
-static uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
+static bool unaryand_impl(const exec_node &self, runtime_ctx &rctx)
+{
+	const auto op = (runtime_ctx::unaryop_ctx *)self.ptr;
+
+	return eval(op->expr, rctx);
+}
+
+static bool unarynot_impl(const exec_node &self, runtime_ctx &rctx)
+{
+	const auto op = (runtime_ctx::unaryop_ctx *)self.ptr;
+
+	return !eval(op->expr, rctx);
+}
+
+static bool matchphrase_impl(const exec_node &self, runtime_ctx &rctx)
 {
         static constexpr bool trace{false};
-        auto p = rctx.evalnode_ctx.phrases + self.nodeCtxIdx;
+	const auto p = (runtime_ctx::phrase *)self.ptr;
         const auto firstTermID = p->termIDs[0];
         auto decoder = rctx.decode_ctx.decoders[firstTermID];
         const auto did = rctx.curDocID;
@@ -715,27 +711,28 @@ static inline uint8_t matchphrase_impl(const exec_node self, runtime_ctx &rctx)
 #endif
 
 
-static inline uint8_t logicaland_impl(const exec_node self, runtime_ctx &rctx)
+static inline bool logicaland_impl(const exec_node &self, runtime_ctx &rctx)
 {
-        const auto opctx = rctx.evalnode_ctx.binaryOps + self.nodeCtxIdx;
+	const auto opctx = (runtime_ctx::binop_ctx *)self.ptr;
 
         return eval(opctx->lhs, rctx) && eval(opctx->rhs, rctx);
 }
 
-static inline uint8_t logicalnot_impl(const exec_node self, runtime_ctx &rctx)
+static inline bool logicalnot_impl(const exec_node &self, runtime_ctx &rctx)
 {
-        const auto opctx = rctx.evalnode_ctx.binaryOps + self.nodeCtxIdx;
+	const auto opctx = (runtime_ctx::binop_ctx *)self.ptr;
 
         return eval(opctx->lhs, rctx) && !eval(opctx->rhs, rctx);
 }
 
-static inline uint8_t logicalor_impl(const exec_node self, runtime_ctx &rctx)
+static inline bool logicalor_impl(const exec_node &self, runtime_ctx &rctx)
 {
-        const auto opctx = rctx.evalnode_ctx.binaryOps + self.nodeCtxIdx;
+	const auto opctx = (runtime_ctx::binop_ctx *)self.ptr;
 
         return eval(opctx->lhs, rctx) || eval(opctx->rhs, rctx);
 }
 
+#if 0
 inline uint8_t eval(const exec_node node, runtime_ctx &ctx)
 {
         static constexpr node_impl implementations[] =
@@ -752,6 +749,7 @@ inline uint8_t eval(const exec_node node, runtime_ctx &ctx)
 
         return implementations[node.implIdx](node, ctx);
 }
+#endif
 
 
 
@@ -761,7 +759,6 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
 {
         exec_node res;
 
-        res.flags = 0;
         require(n);
         switch (n->type)
         {
@@ -769,20 +766,20 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
                         std::abort();
 
                 case ast_node::Type::Token:
-                        res.implIdx = (unsigned)OpCodes::MatchToken;
-                        res.nodeCtxIdx = ctx.register_token(n->p);
+                        res.fp = matchtoken_impl;
+                        res.u16 = ctx.register_token(n->p);
                         break;
 
                 case ast_node::Type::Phrase:
                         if (n->p->size == 1)
                         {
-                                res.implIdx = (unsigned)OpCodes::MatchToken;
-                                res.nodeCtxIdx = ctx.register_token(n->p);
+                                res.fp = matchtoken_impl;
+                                res.u16 = ctx.register_token(n->p);
                         }
                         else
                         {
-                                res.implIdx = (unsigned)OpCodes::MatchPhrase;
-                                res.nodeCtxIdx = ctx.register_phrase(n->p);
+                                res.fp = matchphrase_impl;
+                                res.ptr = ctx.register_phrase(n->p);
                         }
                         break;
 
@@ -791,26 +788,26 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
                         {
                                 case Operator::AND:
                                 case Operator::STRICT_AND:
-                                        res.implIdx = (unsigned)OpCodes::LogicalAnd;
+                                        res.fp = logicaland_impl;
                                         break;
 
                                 case Operator::OR:
-                                        res.implIdx = (unsigned)OpCodes::LogicalOr;
+                                        res.fp = logicalor_impl;
                                         break;
 
                                 case Operator::NOT:
-                                        res.implIdx = (unsigned)OpCodes::LogicalNot;
+                                        res.fp = logicalnot_impl;
                                         break;
 
                                 case Operator::NONE:
                                         std::abort();
                                         break;
                         }
-                        res.nodeCtxIdx = ctx.register_binop(compile(n->binop.lhs, ctx), compile(n->binop.rhs, ctx));
+                        res.ptr = ctx.register_binop(compile(n->binop.lhs, ctx), compile(n->binop.rhs, ctx));
                         break;
 
                 case ast_node::Type::ConstFalse:
-                        res.implIdx = (unsigned)OpCodes::ConstFalse;
+                        res.fp = noop_impl;
                         break;
 
                 case ast_node::Type::UnaryOp:
@@ -818,17 +815,17 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
                         {
                                 case Operator::AND:
                                 case Operator::STRICT_AND:
-                                        res.implIdx = (unsigned)OpCodes::UnaryAnd;
+                                        res.fp = unaryand_impl;
                                         break;
 
                                 case Operator::NOT:
-                                        res.implIdx = (unsigned)OpCodes::UnaryNot;
+                                        res.fp = unarynot_impl;
                                         break;
 
                                 default:
                                         std::abort();
                         }
-                        res.nodeCtxIdx = ctx.register_unaryop(compile(n->unaryop.expr, ctx));
+                        res.ptr = ctx.register_unaryop(compile(n->unaryop.expr, ctx));
                         break;
         }
 
@@ -1077,7 +1074,6 @@ bool Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                 }
         }
 
-        rctx.setup_evalnode_contexts();
 	rctx.curDocQueryTokensCaptured = (uint16_t *)rctx.allocator.Alloc(sizeof(uint16_t) * maxQueryTermIDPlus1);
 	rctx.matchedDocument.matchedTerms = (matched_query_term *)rctx.allocator.Alloc(sizeof(matched_query_term) * maxQueryTermIDPlus1);
 	rctx.curDocSeq = UINT16_MAX;
