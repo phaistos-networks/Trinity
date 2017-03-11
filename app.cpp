@@ -154,7 +154,7 @@ int main(int argc, char *argv[])
 		struct BPFilter final
 			: public MatchedIndexDocumentsFilter
 		{
-			void consider(const matched_document &doc, const DocWordsSpace &dws) override final
+			 ConsiderResponse consider(const matched_document &doc, const DocWordsSpace &dws) override final
 			{
 				const auto n = doc.matchedTermsCnt;
 
@@ -172,6 +172,8 @@ int main(int argc, char *argv[])
 						Print(">> ", hit.pos, " ", hit.payloadLen, " => ", *(uint32_t *)&hit.payload, "\n");
 					}
 				}
+
+				return ConsiderResponse::Continue;
 			}
 		};
 

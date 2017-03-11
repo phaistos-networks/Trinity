@@ -30,7 +30,7 @@ namespace Trinity
                 DocWordsSpace(const uint32_t max = Trinity::Limits::MaxPosition)
 			: positions((position *)calloc(sizeof(position), max + 1 + Trinity::Limits::MaxPhraseSize)), maxPos{max} 
 		{
-
+			require(max && max <= Trinity::Limits::MaxPosition);
 		}
 
 		~DocWordsSpace()

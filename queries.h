@@ -197,6 +197,9 @@ namespace Trinity
 	// see query::normalize()
 	ast_node *normalize_ast(ast_node *);
 
+	// this is really just a container for an ast root node and the allocator
+	// used to allocate the AST from.
+	// It also provides a few useful methods that operate on the root and may make use of the allocator
         struct query final
         { 
                 ast_node *root;

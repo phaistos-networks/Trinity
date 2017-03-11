@@ -65,6 +65,9 @@ namespace Trinity
 		// represents a new indexer session
 		// all indexer sessions have an indexOut that holds the index(posts)
 		// but other codecs may e.g open/track more files or buffers
+		//
+		// The base path makes sense for disk based storage, but some codecs may only operate on in-memory
+		// data so it may not be used in those designs.
 		struct IndexSession
                 {
                         IOBuffer indexOut;

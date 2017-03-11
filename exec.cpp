@@ -76,7 +76,7 @@ namespace // static/local this module
 
 #pragma eval and runtime specific
                 runtime_ctx(IndexSource *src)
-                    : idxsrc{src}, docWordsSpace{4096}
+                    : idxsrc{src}, docWordsSpace{src->max_indexed_position()}
                 {
                 }
 
@@ -1151,7 +1151,12 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                                         }
                                 }
 
-				matchesFilter->consider(rctx.matchedDocument, dws);
+				if (unlikely(matchesFilter->consider(rctx.matchedDocument, dws) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
+				{
+					// Eearly abort
+					// Maybe the filter has collected as many documents as it needs
+					// See https://blog.twitter.com/2010/twitters-new-search-architecture "efficient early query termination"
+				}
                                 ++matchedDocuments;
                         }
                 }

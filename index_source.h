@@ -76,6 +76,19 @@ namespace Trinity
                         return {};
                 }
 
+		// returns the maximum position expected
+		// you may want to override to provide a better more accurate value
+		// this is used by the execution engine when created a new DocWordsSpace
+		// It cannot be higher than Limits::MaxPosition and lower than 1
+		// 
+		// For example, if you are only indexing titles, you should probably override this method
+		// in your IndexSource variant to return a low max indexed position (e.g 100) because you likely don't
+		// have any title term indexed at a higher position.
+		virtual uint32_t max_indexed_position() const
+		{
+			return 8192;
+		}
+
                 virtual ~IndexSource()
                 {
                 }

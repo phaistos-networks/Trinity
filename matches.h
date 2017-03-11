@@ -86,6 +86,18 @@ namespace Trinity
 	// For example, you may want to track the top-K documents and then eventually merge them all together
 	struct MatchedIndexDocumentsFilter
 	{
+		enum class ConsiderResponse : uint8_t
+		{
+			Continue = 0,
+			// If you return Abort, then the execution engine will stop immediately.
+			// You should probably never to do that, but if you do, because for example you
+			// are only interested in the first few documents matched regardless of their scores
+			// (see for example:https://blog.twitter.com/2010/twitters-new-search-architecture "efficient early query termination")
+			// then you can return Abort to return immediately from the execution to the callee
+			Abort,
+		};
+
+
 		// You may want to use dws to improve score based on how terms document matches proximity relative to their proximity in the query
 		// You can query_term_instances::term.id with dws
 		//
@@ -98,8 +110,9 @@ namespace Trinity
 		//
 		// Thanks to dws you can effortlessly and cheaply check for adjacenet matches
 		// e.g  dws.test(match.matchedTerms[1].queryTermInstances->term.id, 2);
-		virtual void consider(const matched_document &match, const DocWordsSpace &dws) 
+		virtual ConsiderResponse consider(const matched_document &match, const DocWordsSpace &dws) 
 		{
+			return ConsiderResponse::Continue;
 		}
 
 		virtual ~MatchedIndexDocumentsFilter()
