@@ -67,9 +67,10 @@ namespace // static/local this module
                 struct phrase
                 {
                         exec_term_id_t *termIDs; // via resolve_term()
+                        uint8_t size;            // total in termIDs
                         uint8_t rep;             // phrase::rep
                         uint16_t index;          // phrase::index
-                        uint8_t size;            // total in termIDs
+                        uint8_t flags;           // phrase::flags
                 };
 
 
@@ -259,6 +260,7 @@ namespace // static/local this module
                         ptr->rep = p->rep;
                         ptr->index = p->index;
                         ptr->size = p->size;
+			ptr->flags = p->flags;
                         ptr->termIDs = (exec_term_id_t *)allocator.Alloc(sizeof(exec_term_id_t) * p->size);
 
                         for (uint32_t i{0}; i != p->size; ++i)
@@ -843,8 +845,10 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
         struct query_term_instance
         {
                 str8_t token;
+		// see Trinity::phrase
                 uint16_t index;
                 uint8_t rep;
+		uint8_t flags;
         };
 
         if (!in)
@@ -865,7 +869,7 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
         }
 
         // We need to collect all term instances in the query
-        // so that we the score function will be able to take that into account to e.g  consider
+        // so that we the score function will be able to take that into account (See matched_document::queryTermInstances)
         // We only need to do this for specific AST branches and node types
         //
         // This must be performed before any query optimizations, for otherwise because the optimiser will most definitely rearrange the query, doing it after
@@ -916,11 +920,14 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                 for (const auto it : collected)
                 {
                         const uint8_t rep = it->size == 1 ? it->rep : 1;
+                        const auto flags = it->flags;
 
                         for (uint16_t pos{it->index}, i{0}; i != it->size; ++i, ++pos)
-                                originalQueryTokenInstances.push_back({it->terms[i].token, pos, rep});
+                                originalQueryTokenInstances.push_back({it->terms[i].token, pos, rep, flags});
                 }
         }
+
+
 
         runtime_ctx rctx(idxsrc);
 
@@ -1000,7 +1007,7 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                 Dexpect(leaderTokensV.size() < sizeof_array(toAdvance));
 
                 std::sort(leaderTokensV.begin(), leaderTokensV.end(), [](const auto &a, const auto &b) {
-                        return Text::StrnncasecmpISO88597(a.data(), a.size(), b.data(), b.size()) < 0;
+                        return terms_cmp(a.data(), a.size(), b.data(), b.size()) < 0;
                 });
 
                 leaderTokensV.resize(std::unique(leaderTokensV.begin(), leaderTokensV.end()) - leaderTokensV.begin());
@@ -1026,17 +1033,17 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
         const auto maxQueryTermIDPlus1 = rctx.termsDict.size() + 1;
 
         {
-                std::vector<std::pair<uint16_t, uint16_t>> collected;
+                std::vector<const query_term_instance *> collected;
 
                 // Build rctx.originalQueryTermInstances
                 // It is important to only do this after we have optimised the copied original query, just as it is important
                 // to capture the original query instances before we optimise
                 //
-                // We need access to that information for scoring documents
+                // We need access to that information for scoring documents -- see matches.h
                 rctx.originalQueryTermInstances = (query_term_instances **)rctx.allocator.Alloc(sizeof(query_term_instances *) * maxQueryTermIDPlus1);
 
                 memset(rctx.originalQueryTermInstances, 0, sizeof(query_term_instances *) * maxQueryTermIDPlus1);
-                std::sort(originalQueryTokenInstances.begin(), originalQueryTokenInstances.end(), [](const auto &a, const auto &b) { return Text::StrnncasecmpISO88597(a.token.data(), a.token.size(), b.token.data(), b.token.size()) < 0; });
+                std::sort(originalQueryTokenInstances.begin(), originalQueryTokenInstances.end(), [](const auto &a, const auto &b) { return terms_cmp(a.token.data(), a.token.size(), b.token.data(), b.token.size()) < 0; });
                 for (const auto *p = originalQueryTokenInstances.data(), *const e = p + originalQueryTokenInstances.size(); p != e;)
                 {
                         const auto token = p->token;
@@ -1048,7 +1055,7 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                                 collected.clear();
                                 do
                                 {
-                                        collected.push_back({p->index, p->rep});
+					collected.push_back(p);
                                 } while (++p != e && p->token == token);
 
                                 const auto cnt = collected.size();
@@ -1058,19 +1065,24 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                                 p->term.id = termID;
                                 p->term.token = token;
 
-                                std::sort(collected.begin(), collected.end(), [](const auto &a, const auto &b) { return a.first < b.first; });
+                                std::sort(collected.begin(), collected.end(), [](const auto &a, const auto &b) { return a->index < b->index; });
                                 for (size_t i{0}; i != collected.size(); ++i)
                                 {
-                                        p->instances[i].index = collected[i].first;
-                                        p->instances[i].rep = collected[i].second;
+					auto it = collected[i];
+
+                                        p->instances[i].index = it->index;
+                                        p->instances[i].rep = it->rep;
+                                        p->instances[i].flags = it->flags;
                                 }
 
                                 rctx.originalQueryTermInstances[termID] = p;
                         }
                         else
                         {
-                                SLog("Ignoring ", token, "\n");
                                 // this original query token is not used in the optimised query
+
+                                SLog("Ignoring ", token, "\n");
+
                                 do
                                 {
                                         ++p;

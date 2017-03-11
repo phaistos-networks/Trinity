@@ -55,9 +55,9 @@ namespace Trinity
                 uint8_t cnt;
                 struct instance_struct
                 {
-                        // TODO: flags?
-                        uint8_t index;
+                        uint16_t index;
                         uint8_t rep;
+			uint8_t flags;
                 } instances[0];
         };
 

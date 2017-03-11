@@ -105,6 +105,7 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                 p->size = 1;
                 p->terms[0] = t;
                 p->rep = 1;
+		p->flags = 0;
                 node->p = p;
                 return node;
         }
@@ -982,6 +983,33 @@ bool query::normalize()
         }
         else
                 return false;
+}
+
+void ast_node::set_alltokens_flags(const uint8_t flags)
+{
+        switch (type)
+        {
+                case Type::Token:
+                case Type::Phrase:
+                        p->flags = flags;
+                        break;
+
+                case Type::BinOp:
+                        binop.lhs->set_alltokens_flags(flags);
+                        binop.rhs->set_alltokens_flags(flags);
+                        break;
+
+                case Type::UnaryOp:
+                        unaryop.expr->set_alltokens_flags(flags);
+                        break;
+
+                case Type::ConstTrueExpr:
+                        expr->set_alltokens_flags(flags);
+                        break;
+
+                default:
+                        break;
+        }
 }
 
 bool ast_node::any_leader_tokens() const

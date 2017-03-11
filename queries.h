@@ -97,6 +97,13 @@ namespace Trinity
 		ast_node *copy(simple_allocator *const a);
 
 		bool any_leader_tokens() const;
+
+		// Recusrively sets p->flags to `flags` to all nodes of this branch
+		//
+		// This is helpful when you for example rewrite an original query to incorporate synonyms etc
+		// and you want to know in your MatchedIndexDocumentsFilter::consume() impl if the term hit is for a token from
+		// any of the tokens added to the query after the rewrite.
+		void set_alltokens_flags(const uint8_t flags);
         };
 
         static constexpr auto unary_same_type(const ast_node *a, const ast_node *b) noexcept
@@ -165,16 +172,23 @@ namespace Trinity
 
         struct phrase final
         {
+		// total terms (1 for a single token)
                 uint8_t size;
+
                 // repetition; e.g for [APPLE APPLE APPLE APPLE] repetition is 5
                 // This is important; we need to capture e.g tom tom (the manufucacturer) and boing boing
                 // but we don't want to capture the same phrase/word twice if in order
                 uint8_t rep;
+
                 // index in the query
-                uint8_t index;
+                uint16_t index;
+
                 // flags. Usually 0, but e.g if you are rewritting a [wow] to [wow OR "world of warcraft"] you
                 // maybe want "world of warcraft" flags to be 1 (i.e derived)
+		//
+		// See ast_node::set_alltokens_flags()
                 uint8_t flags;
+
                 term terms[0];
 
                 bool operator==(const phrase &o) const noexcept
@@ -324,6 +338,8 @@ namespace Trinity
                 // when we rewrite queries, what phase index do we assign to all new nodes?
                 /// TODO: for e.g [amiga NOT (video game)] we probably don't care for
                 // (video game) because its in a NOT block. True for OR groups as well
+		//
+		// See also ast_node::set_alltokens_flags()
                 template <typename L>
                 void process_runs(const bool includePhrases, const bool andOnly, L &&cb)
                 {

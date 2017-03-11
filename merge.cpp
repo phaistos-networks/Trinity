@@ -86,7 +86,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                 for (uint16_t i{1}; i != rem; ++i)
                 {
                         const auto pair = all[i].candidate.terms->cur();
-                        const auto r = Text::StrnncasecmpISO88597(pair.first.data(), pair.first.size(), selected.first.data(), selected.first.size());
+                        const auto r = terms_cmp(pair.first.data(), pair.first.size(), selected.first.data(), selected.first.size());
 
                         if (r < 0)
                         {

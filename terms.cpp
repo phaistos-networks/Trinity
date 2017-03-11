@@ -2,21 +2,6 @@
 #include <compress.h>
 #include "terms.h"
 
-namespace
-{
-        static inline int32_t terms_cmp(const char *a, const uint8_t aLen, const char *b, const uint8_t bLen)
-        {		
-		// Your impl. may ignore case completely so that you can
-		// index and query without having to care for distinctions between lower and upper case (e.g use Text::StrnncasecmpISO88597() )
-		// However, if you wwere to do that, you 'd need to account for that wherever in the codebase
-		// you either track strings(tokens) or check for equality, e.g
-		// - Trinity::IndexSource::resolve_term_ctx()
-		// - query and parser_ctx
-		// - exec.cpp caches etc
-		return Trinity::str32_t(a, aLen).Cmp(b, bLen);
-        }
-}
-
 Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_t> termsData, const str8_t q, const Switch::vector<Trinity::terms_skiplist_entry> &skipList)
 {
         int32_t top{int32_t(skipList.size()) - 1};

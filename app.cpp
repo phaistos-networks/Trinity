@@ -171,6 +171,13 @@ int main(int argc, char *argv[])
 
 						Print(">> ", hit.pos, " ", hit.payloadLen, " => ", *(uint32_t *)&hit.payload, "\n");
 					}
+
+					for (uint32_t i{0}; i != t->queryTermInstances->cnt; ++i)
+					{
+						const auto &it = t->queryTermInstances->instances[i];
+
+						Print("INSTANCE ", it.index, ", ", it.rep, ", ", it.flags, "\n");
+					}
 				}
 
 				return ConsiderResponse::Continue;
@@ -182,11 +189,28 @@ int main(int argc, char *argv[])
 		for (uint32_t i{0}; i != asuc.size(); ++i)
 			asuc.data()[i] = Buffer::UppercaseISO88597(asuc.data()[i]);
 
+		query q(asuc.AsS32());
+
+		auto node = ast_node::make(q.allocator, ast_node::Type::BinOp);
+		auto specialTokensNode = ast_node::make(q.allocator, ast_node::Type::ConstTrueExpr);
+
+		specialTokensNode->expr = ast_parser("(LEGEND OR WIIU)"_s32, q.allocator).parse();
+		specialTokensNode->set_alltokens_flags(1);
+
+		node->binop.rhs = q.root;
+		node->binop.lhs = specialTokensNode;
+		node->binop.op = Operator::AND;
+
+		q.root = node;
+
+
+
+		
 
 
 		
 		//exec_query<MatchedIndexDocumentsFilter>(asuc.AsS32(), &sources);
-		auto res = exec_query<BPFilter>(asuc.AsS32(), &sources);
+		auto res = exec_query<BPFilter>(q, &sources);
 		//exec_query(strwlen32_t(argv[1]), ss, rr.get());
 	}
 
