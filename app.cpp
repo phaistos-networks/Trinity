@@ -27,17 +27,17 @@ int main(int argc, char *argv[])
 
 			if (it->p->size == 1 && it->p->terms[0].token.Eq(_S("jump")))
 			{
-				*it = *parse_ctx("(jump OR hop OR leap)"_s32, q.allocator).parse();
+				*it = *ast_parser("(jump OR hop OR leap)"_s32, q.allocator).parse();
 			}
                         else if (i +3 <= v.size() && it->p->size == 1 && it->p->terms[0].token.Eq(_S("world")) 
 				&& v[i+1]->p->size == 1 && v[i+1]->p->terms[0].token.Eq(_S("of"))
 				&& v[i+2]->p->size == 1 && v[i+2]->p->terms[0].token.Eq(_S("warcraft")))
 			{
-				query::replace_run(v.data() + i, 3, parse_ctx("(wow OR (world of warcraft))"_s32, q.allocator).parse());
+				query::replace_run(v.data() + i, 3, ast_parser("(wow OR (world of warcraft))"_s32, q.allocator).parse());
 			}
 			else if (it->p->size == 1 && it->p->terms[0].token.Eq(_S("puppy")))
 			{
-				*it = *parse_ctx("puppy OR (kitten OR kittens OR cat OR cats OR puppies OR dogs OR pets)"_s32, q.allocator).parse();
+				*it = *ast_parser("puppy OR (kitten OR kittens OR cat OR cats OR puppies OR dogs OR pets)"_s32, q.allocator).parse();
 			}
 		}
 	});

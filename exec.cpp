@@ -951,6 +951,15 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
 
                 q.leader_nodes(&leaderNodes);
 
+		if (leaderNodes.empty())
+		{
+			// Can't process this query; we deal with those
+			// cases in normalize() but just to be on the safe side, check again here and bail 
+			// see normalize_root() implementation
+			SLog("No Leader Nodes\n");
+			return;
+		}
+
                 SLog("leaderNodes.size = ", leaderNodes.size(), "\n");
 
                 for (const auto n : leaderNodes)

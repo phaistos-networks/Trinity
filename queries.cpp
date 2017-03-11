@@ -23,7 +23,7 @@ static constexpr uint8_t OpPrio(const Operator op) noexcept
         }
 }
 
-static str32_t parse_term(parse_ctx &ctx)
+static str32_t parse_term(ast_parser &ctx)
 {
         // TODO:what about unexpected characters e.g ',./+><' etc?
         // this breaks our parser
@@ -38,7 +38,7 @@ static str32_t parse_term(parse_ctx &ctx)
                 return {};
 }
 
-static ast_node *parse_phrase_or_token(parse_ctx &ctx)
+static ast_node *parse_phrase_or_token(ast_parser &ctx)
 {
         ctx.skip_ws();
         if (ctx.content && ctx.content.StripPrefix(_S("\"")))
@@ -112,7 +112,7 @@ static ast_node *parse_phrase_or_token(parse_ctx &ctx)
                 return nullptr;
 }
 
-static std::pair<Operator, uint8_t> parse_operator_impl(parse_ctx &ctx)
+static std::pair<Operator, uint8_t> parse_operator_impl(ast_parser &ctx)
 {
         auto s = ctx.content;
         Operator res;
@@ -152,7 +152,7 @@ static std::pair<Operator, uint8_t> parse_operator_impl(parse_ctx &ctx)
         return {Operator::NONE, 0};
 }
 
-static auto parse_operator(parse_ctx &ctx)
+static auto parse_operator(ast_parser &ctx)
 {
         ctx.skip_ws();
         return parse_operator_impl(ctx);
@@ -267,9 +267,9 @@ void PrintImpl(Buffer &b, const Trinity::ast_node &n)
         }
 }
 
-static ast_node *parse_expr(parse_ctx &);
+static ast_node *parse_expr(ast_parser &);
 
-static ast_node *parse_unary(parse_ctx &ctx)
+static ast_node *parse_unary(ast_parser &ctx)
 {
         ctx.skip_ws();
 
@@ -329,7 +329,7 @@ static ast_node *parse_unary(parse_ctx &ctx)
         }
 }
 
-static ast_node *parse_subexpr(parse_ctx &ctx, const uint16_t limit)
+static ast_node *parse_subexpr(ast_parser &ctx, const uint16_t limit)
 {
         uint8_t prio;
         auto cur = parse_unary(ctx);
@@ -379,14 +379,14 @@ static ast_node *parse_subexpr(parse_ctx &ctx, const uint16_t limit)
         return cur;
 }
 
-ast_node *parse_expr(parse_ctx &ctx)
+ast_node *parse_expr(ast_parser &ctx)
 {
         ctx.skip_ws();
 
         return parse_subexpr(ctx, UnaryOperatorPrio);
 }
 
-void parse_ctx::track_term(term &t)
+void ast_parser::track_term(term &t)
 {
 	for (const auto &it : distinctTokens)
 	{
@@ -403,7 +403,7 @@ void parse_ctx::track_term(term &t)
 
 ast_node *normalize_root(ast_node *root);
 
-ast_node *parse_ctx::parse()
+ast_node *ast_parser::parse()
 {
         require(distinctTokens.empty()); // in case we invoked parse() earlier
 
@@ -545,6 +545,37 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                 }
         }
 
+	if (rhs->type == ast_node::Type::UnaryOp)
+	{
+		if ((rhs->unaryop.op == Operator::AND || rhs->unaryop.op == Operator::STRICT_AND) && lhs->is_unary() && unary_same_type(lhs, rhs->unaryop.expr) && *lhs->p == *rhs->unaryop.expr->p)
+		{
+			if (n->binop.op == Operator::NOT)
+                        {
+				// [APPLE NOT +APPLE]
+                                SLog("here\n");
+                                n->set_const_false();
+                                ++ctx.updates;
+                                return;
+                        }
+			else if (n->binop.op == Operator::OR)
+			{
+				// [APPLE OR +APPLE]
+				SLog("here\n");
+				*n = *rhs;
+				++ctx.updates;
+				return;
+			}
+			else 
+			{
+				// [APPLE AND +APPLE]
+				SLog("here\n");
+				*n = *rhs;
+				++ctx.updates;
+				return;
+			}
+                }
+	}
+
         if (lhs->type == ast_node::Type::UnaryOp)
         {
                 if (rhs->type == ast_node::Type::UnaryOp && lhs->unaryop.op == rhs->unaryop.op && lhs->unaryop.op == n->binop.op && unary_same_type(lhs->unaryop.expr, rhs->unaryop.expr) && *lhs->unaryop.expr->p == *rhs->unaryop.expr->p)
@@ -556,17 +587,33 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                         ++ctx.updates;
                         return;
                 }
-#if 0 // What's this? doesn't make any sense
-                else if (rhs->type == ast_node::Type::Unary && lhs->unaryop.expr->type == ast_node::Type::Unary && rhs->unaryop.expr->type == ast_node::Type::Unary && *lhs->unaryop.expr->p == *rhs->p)
-                {
-                        SLog("here\n");
-                        n->type = ast_node::Type::UnaryOp;
-                        n->unaryop.op = n->binop.op;
-                        n->unaryop.expr = lhs->unaryop.expr;
-                        ++ctx.updates;
-                        return;
+		else if ((lhs->unaryop.op == Operator::AND || lhs->unaryop.op == Operator::STRICT_AND) && rhs->is_unary() && unary_same_type(rhs, lhs->unaryop.expr) && *rhs->p == *lhs->unaryop.expr->p)
+		{
+			if (n->binop.op == Operator::NOT)
+                        {
+				// [+APPLE NOT APPLE]
+                                SLog("here\n");
+                                n->set_const_false();
+                                ++ctx.updates;
+                                return;
+                        }
+			else if (n->binop.op == Operator::OR)
+			{
+				// [+APPLE OR APPLE]
+				SLog("here\n");
+				*n = *lhs;
+				++ctx.updates;
+				return;
+			}
+			else 
+			{
+				// [+APPLE AND APPLE]
+				SLog("here\n");
+				*n = *lhs;
+				++ctx.updates;
+				return;
+			}
                 }
-#endif
         }
 
         if (n->binop.op == Operator::NOT)
@@ -824,6 +871,12 @@ ast_node *normalize_root(ast_node *root)
                         *root = *root->unaryop.expr;
                 }
         }
+	else if (!root->any_leader_tokens())
+	{
+		// e.g [  -foo ( -bar -hello)  ] 
+		Print("No Leader Tokens\n");
+		root = nullptr;
+	}
 
         if (root)
         {
@@ -931,6 +984,45 @@ bool query::normalize()
                 return false;
 }
 
+bool ast_node::any_leader_tokens() const
+{
+        std::vector<const ast_node *> stack;
+
+        stack.push_back(this);
+        do
+        {
+                auto n = stack.back();
+
+                stack.pop_back();
+                switch (n->type)
+                {
+                        case ast_node::Type::Token:
+                        case ast_node::Type::Phrase:
+                                return true;
+
+                        case ast_node::Type::BinOp:
+                                if (n->binop.op == Operator::NOT)
+                                        stack.push_back(n->binop.lhs);
+                                else
+                                {
+                                        stack.push_back(n->binop.lhs);
+                                        stack.push_back(n->binop.rhs);
+                                }
+                                break;
+
+                        case ast_node::Type::UnaryOp:
+                                if (n->unaryop.op == Operator::AND || n->unaryop.op == Operator::STRICT_AND)
+                                        stack.push_back(n->unaryop.expr);
+                                break;
+
+                        default:
+                                break;
+                }
+
+        } while (stack.size());
+        return false;
+}
+
 void query::leader_nodes(std::vector<ast_node *> *const out)
 {
         // This is a proof of concept
@@ -981,7 +1073,7 @@ Switch::vector<ast_node *> &query::nodes(ast_node *root, Switch::vector<ast_node
 
 bool query::parse(const str32_t in, uint32_t(*tp)(const char *, const char *))
 {
-        parse_ctx ctx{in, allocator, tp};
+        ast_parser ctx{in, allocator, tp};
 
         root = parse_expr(ctx);
         if (!root)

@@ -95,6 +95,8 @@ namespace Trinity
                 }
 
 		ast_node *copy(simple_allocator *const a);
+
+		bool any_leader_tokens() const;
         };
 
         static constexpr auto unary_same_type(const ast_node *a, const ast_node *b) noexcept
@@ -109,18 +111,18 @@ namespace Trinity
         };
 
 
+	// This is an AST parser
+	//
 	// Encapsulates the input query(text) to be parsed, 
 	// a reference to the allocator to use, and the function to use for parsing tokens from the content
 	//
 	// This is mainly used by `Trinity::query` to parse its root node, but you can use it for parsing expressions in order to replace runs with them.
 	// See app.cpp for examples.
 	//
-	// A query only holds its root node and its own allocator, and uses a parse_ctx to parse the query input. See query::parse()
+	// A query only holds its root node and its own allocator, and uses a ast_parser to parse the query input. See query::parse()
 	// 
 	// Keep in mind that you can always copy nodes/asts using ast_node::copy()
-	//
-	// The only real reason why you would use parse_ctx directly would be to parse expressions for runs
-        struct parse_ctx final
+        struct ast_parser final
         {
                 str32_t content;
                 simple_allocator &allocator;
@@ -133,7 +135,7 @@ namespace Trinity
                         return ast_node::make(allocator, t);
                 }
 
-                parse_ctx(const str32_t input, simple_allocator &a, uint32_t(*p)(const char*, const char *) = Text::TermLengthWithEnd)
+                ast_parser(const str32_t input, simple_allocator &a, uint32_t(*p)(const char*, const char *) = Text::TermLengthWithEnd)
                     : content{input}, allocator{a}, token_parser{p}
                 {
                 }
