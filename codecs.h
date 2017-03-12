@@ -154,6 +154,10 @@ namespace Trinity
 
                         virtual void begin_document(const uint32_t documentID, const uint16_t totalHits) = 0;
 
+			// If you want to register a hit for a special token (e.g site:foo.com) where position makes no sense, you should
+			// use position 0(or a very high position, but 0 is preferrable)
+			// You will likely only need to set payload for special terms (e.g site:foo.com). Payload can be upto 8 byte sin size(sizeof(uint64_t)). You
+			// should try to keep that as low as possible.
                         virtual void new_hit(const uint32_t position, const range_base<const uint8_t *, const uint8_t> payload) = 0;
 
                         virtual void end_document() = 0;
