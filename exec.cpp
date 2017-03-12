@@ -15,9 +15,9 @@
 // I need ned to figure out why this is happening
 // UPDATE: logicalor_impl() would not evaluate the rhs branch if lhs was true which is wrong (see logicalor_impl comments)
 // with that fixed, now it takes 0.386 with optimizer disablef for COMPILER_MATCHRUNS_SUPPORT defined and 0.282 otherwise
-// So, that's quite an improvement indeed
-// Without COMPILER_MATCHRUNS_SUPPORT(-O3): 0.138s
-// WITH COMPILER_MATCHRUNS_SUPPORT(-O3): 0.108s
+// So, that's quite an improvement indeed!
+// Without COMPILER_MATCHRUNS_SUPPORT(-O3): 	0.138s
+// WITH COMPILER_MATCHRUNS_SUPPORT(-O3): 	0.108s
 #define COMPILER_MATCHRUNS_SUPPORT 1
 
 using namespace Trinity;

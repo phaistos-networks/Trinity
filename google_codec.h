@@ -151,17 +151,6 @@ namespace Trinity
                               public:
                                 uint32_t begin() override final;
 
-                                Decoder &operator++()
-                                {
-                                        next();
-                                        return *this;
-                                }
-
-                                [[gnu::always_inline]] auto operator*() const noexcept
-                                {
-                                        return documents[blockDocIdx];
-                                }
-
                                 // XXX: make sure you check if (cur_document() != UINT32_MAX)
                                 bool next() override final;
 

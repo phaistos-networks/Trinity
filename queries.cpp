@@ -45,6 +45,7 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
         {
                 auto &terms = ctx.terms;
                 uint8_t n{0};
+                term t;
 
                 for (;;)
                 {
@@ -57,8 +58,6 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
 				if (unlikely(token.size() > Limits::MaxTermLength))
 					return ctx.alloc_node(ast_node::Type::ConstFalse);
 				
-				term t;
-
 				t.token.Set(token.data(), uint8_t(token.size()));
 
                                 if (n != sizeof_array(terms))
@@ -349,10 +348,6 @@ static ast_node *parse_subexpr(ast_parser &ctx, const uint16_t limit)
                         // the optimizer will deal with it
                         v = ctx.parse_failnode();
                 }
-
-                SLog("lhs = ", *cur, "\n");
-                SLog(op.first, "\n");
-                SLog("rhs = ", *v, "\n");
 
                 if (op.first == Operator::AND && unary_same_type(cur, v) && *cur->p == *v->p)
                 {
