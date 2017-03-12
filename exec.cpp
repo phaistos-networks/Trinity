@@ -1342,7 +1342,6 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                                         rctx.materialize_term_hits(termID);
                                 }
 
-                                // TODO: score it and consider for top-k matches using matchedDocument
                                 if (traceExec)
                                 {
                                         SLog(ansifmt::bold, ansifmt::color_blue, "MATCHED ", docID, ansifmt::reset, "\n");
@@ -1360,6 +1359,7 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
 					// Maybe the filter has collected as many documents as it needs
 					// See https://blog.twitter.com/2010/twitters-new-search-architecture "efficient early query termination"
 				}
+
                                 ++matchedDocuments;
                         }
                 }

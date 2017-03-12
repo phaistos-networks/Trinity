@@ -79,7 +79,13 @@ namespace Trinity
                 uint16_t matchedTermsCnt;
                 matched_query_term *matchedTerms;
 
-		void sort_by_query_index();
+		// matchedTerms[] are in no particularl order when passed to consider()
+		// and so you almost never get them in order they appear in the original query
+		// this handy utility method will sort them so that they are in order they appear in the query
+		// which makes trivial to perform proximity checks (e.g dws.test(nextWordInQuery, pos+1))
+		// It is optimised to take as little time as possible, using sort networks, insertion sort and std::sort depending on the
+		// value of matchedTermsCnt
+		void sort_matched_terms_by_query_index();
         };
 
 	// You may for example keep the top-K matches, just count the documents, whatever else
@@ -100,17 +106,8 @@ namespace Trinity
 
 		// You may want to use dws to improve score based on how terms document matches proximity relative to their proximity in the query
 		// You can query_term_instances::term.id with dws
-		//
-		// XXX: the order of returned matched terms will most likely not match their order in the query
-		// because we reorder based on total documents in the input source for performance as we evaluate them.
-		// If you want to process them in order they appear in the query, for some reason, you should sort them in your implementation
-		// (one reason why you 'd want to do that is to check for adjacent query terms matches and boost score)
-		// There is probably a better way to do this though.
-		// However, see NOTES.md for why and how it may be easy to sort those before passing them to consider().
-		//
-		// Thanks to dws you can effortlessly and cheaply check for adjacenet matches
-		// e.g  dws.test(match.matchedTerms[1].queryTermInstances->term.id, 2);
-		virtual ConsiderResponse consider(const matched_document &match, const DocWordsSpace &dws) 
+		// `match` is not const because you may want to match.sort_matched_terms_by_query_index()
+		virtual ConsiderResponse consider(matched_document &match, const DocWordsSpace &dws) 
 		{
 			return ConsiderResponse::Continue;
 		}

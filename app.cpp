@@ -13,6 +13,54 @@ using namespace Trinity;
 
 
 #if 0
+int main()
+{
+	matched_document document;
+	auto qt = [](const uint16_t pos)
+	{
+		auto mqt = new matched_query_term();
+		auto ptr = (query_term_instances *)malloc(sizeof(query_term_instances) + sizeof(query_term_instances::instance_struct));
+
+		ptr->instances[0].index = pos;
+		mqt->queryTermInstances = ptr;
+		return *mqt;
+	};
+	matched_query_term terms[] =
+	{
+		qt(10),
+		qt(5),
+		qt(1),
+		qt(2),
+		qt(50),
+		qt(8),
+		qt(100),
+		qt(102),
+		qt(80),
+		qt(81),
+		qt(85),
+		qt(70),
+		qt(150),
+		qt(250),
+		qt(15),
+		qt(1000),
+		qt(28),
+	};
+
+	document.matchedTermsCnt = sizeof_array(terms);
+	document.matchedTerms = terms;
+
+	document.sort_by_query_index();
+
+	for (uint32_t i{0}; i != sizeof_array(terms); ++i)
+	{
+		Print(terms[i].queryTermInstances->instances[0].index, "\n");
+	}
+
+	return 0;
+}
+#endif
+
+#if 0
 int main(int argc, char *argv[])
 {
 	simple_allocator allocator;
@@ -154,8 +202,10 @@ int main(int argc, char *argv[])
 		struct BPFilter final
 			: public MatchedIndexDocumentsFilter
 		{
-			 ConsiderResponse consider(const matched_document &doc, const DocWordsSpace &dws) override final
+			 ConsiderResponse consider(matched_document &doc, const DocWordsSpace &dws) override final
 			{
+				doc.sort_matched_terms_by_query_index();
+#if 0
 				const auto n = doc.matchedTermsCnt;
 
 				SLog("MATCHED ", doc.id, " https://www.bestprice.gr/item/", doc.id|(1<<31), "\n");
@@ -179,8 +229,9 @@ int main(int argc, char *argv[])
 						Print("INSTANCE ", it.index, ", ", it.rep, ", ", it.flags, "\n");
 					}
 				}
-
+#endif
 				return ConsiderResponse::Continue;
+
 			}
 		};
 
@@ -211,8 +262,8 @@ int main(int argc, char *argv[])
 
 
 		
-		exec_query<MatchedIndexDocumentsFilter>(q, &sources);
-		//auto res = exec_query<BPFilter>(q, &sources);
+		//exec_query<MatchedIndexDocumentsFilter>(q, &sources);
+		auto res = exec_query<BPFilter>(q, &sources);
 		//exec_query(strwlen32_t(argv[1]), ss, rr.get());
 	}
 
