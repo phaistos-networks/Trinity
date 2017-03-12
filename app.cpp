@@ -191,6 +191,7 @@ int main(int argc, char *argv[])
 
 		query q(asuc.AsS32());
 
+#if 0
 		auto node = ast_node::make(q.allocator, ast_node::Type::BinOp);
 		auto specialTokensNode = ast_node::make(q.allocator, ast_node::Type::ConstTrueExpr);
 
@@ -202,6 +203,7 @@ int main(int argc, char *argv[])
 		node->binop.op = Operator::AND;
 
 		q.root = node;
+#endif
 
 
 
@@ -209,8 +211,8 @@ int main(int argc, char *argv[])
 
 
 		
-		//exec_query<MatchedIndexDocumentsFilter>(asuc.AsS32(), &sources);
-		auto res = exec_query<BPFilter>(q, &sources);
+		exec_query<MatchedIndexDocumentsFilter>(q, &sources);
+		//auto res = exec_query<BPFilter>(q, &sources);
 		//exec_query(strwlen32_t(argv[1]), ss, rr.get());
 	}
 

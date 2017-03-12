@@ -2,24 +2,30 @@
 #include "docwordspace.h"
 #include "matches.h"
 
+// If enabled, will collect AND terms runs and OR terms runs and compile that to a single exec_node
+// as opposed to a series of (logicaland_impl and matchterm_impl), which would have required a single
+// call as opposed to multiple different calls. 
+// 
+// This should have resulted in a great performance boost but it didn't.
+// e.g for ./T ' apple OR samsung OR nokia OR iphone OR ipad OR microsoft OR the OR of OR in OR playstation OR pc OR xbox OR macbook OR case OR box OR mp3 OR player OR tv OR  panasonic OR windows OR out OR with OR over OR under OR soccer OR pro OR fifa OR ea OR ps2 OR playstation OR nintendo OR fast OR imac OR pro OR lg OR adidas OR nike OR stan OR black OR white OR dpf OR air OR force OR indesit OR morris OR watch OR galaxy OR 2016 OR 2017 OR 2105 OR 32gb  OR 1 OR 2 OR 10 '
+// 0.007 if COMPILER_MATCHRUNS_SUPPORT is not enabled, and 0.106 otherwise
+// if optimiser is not enabled(-O3), thats a drop from 0.182 to 0.268
+// this is very curious.
+//
+// I need ned to figure out why this is happening
+// UPDATE: logicalor_impl() would not evaluate the rhs branch if lhs was true which is wrong (see logicalor_impl comments)
+// with that fixed, now it takes 0.386 with optimizer disablef for COMPILER_MATCHRUNS_SUPPORT defined and 0.282 otherwise
+// So, that's quite an improvement indeed
+// Without COMPILER_MATCHRUNS_SUPPORT(-O3): 0.138s
+// WITH COMPILER_MATCHRUNS_SUPPORT(-O3): 0.108s
+#define COMPILER_MATCHRUNS_SUPPORT 1
+
 using namespace Trinity;
 
 namespace // static/local this module
 {
         static constexpr bool traceExec{false};
 
-        // tightly packed node (4 bytes)
-        // It's possible that we can use 12 bits for the operand(nodeCtxIdx) and the remaining 4 for the opcode
-        // and make sizeof(exec_node) == 2
-        //
-        // Eventually we will be able to compile this down to bytecode or generate machine coder
-        //
-        // We could also include a weight here -- so that if e.g a phrase or a complex expression matched we'd boost the score
-        // by some factor/coefficient(this would have been provided by the input query)
-        //
-        // TODO: consider an alternative exec_node which holds the funcptr and a pointer to e.g runtime_ctx token or whatever else
-        // in order to avoid dereferencing even if sizeof(exec_node) will be 16 instead of 4
-        // it may be worth it
         struct runtime_ctx;
 
         struct exec_node 	// 64bytes alignement seems to yield good results, but crashes if optimizer is enabled (i.e struct alignas(64) exec_node {})
@@ -73,6 +79,13 @@ namespace // static/local this module
                         uint8_t flags;           // phrase::flags
                 };
 
+#ifdef COMPILER_MATCHRUNS_SUPPORT
+		struct termsrun
+		{
+			uint16_t size;
+			exec_term_id_t terms[0];
+		};
+#endif
 
 
 #pragma eval and runtime specific
@@ -226,6 +239,54 @@ namespace // static/local this module
                         return *ptr;
                 }
 
+#ifdef COMPILER_MATCHRUNS_SUPPORT
+		// we need different register_termsrun() impls. because order of tokens matter
+		// (see optimiser and reordering schemes)
+		void *register_termsrun(const termsrun *const run, const exec_term_id_t termID)
+		{
+			const uint16_t computedSize = run->size + 1;
+			auto ptr = (termsrun *)runsAllocator.Alloc(sizeof(termsrun) + sizeof(exec_term_id_t) * computedSize);
+
+                        memcpy(ptr->terms, run->terms, sizeof(exec_term_id_t) * run->size);
+                        ptr->terms[run->size] = termID;
+                        ptr->size = computedSize;
+                        return ptr;
+		}
+
+		void *register_termsrun(const exec_term_id_t termID, const termsrun *const run)
+		{
+			const uint16_t computedSize = run->size + 1;
+			auto ptr = (termsrun *)runsAllocator.Alloc(sizeof(termsrun) + sizeof(exec_term_id_t) * computedSize);
+
+			ptr->terms[0] = termID;
+                        memcpy(ptr->terms + 1, run->terms, sizeof(exec_term_id_t) * run->size);
+                        ptr->size = computedSize;
+			return ptr;
+		}
+
+		void *register_termsrun(const exec_term_id_t termID1, const exec_term_id_t termID2)
+		{
+			static constexpr uint16_t computedSize{2};
+			auto ptr = (termsrun *)runsAllocator.Alloc(sizeof(termsrun) + sizeof(exec_term_id_t) * computedSize);
+
+			ptr->terms[0] = termID1;
+			ptr->terms[1] = termID2;
+			ptr->size = computedSize;
+			return ptr;
+		}
+
+		void *register_termsrun(const termsrun *const run1, const termsrun *run2)
+		{
+			const uint16_t computedSize = run1->size + run2->size;
+			auto ptr = (termsrun *)runsAllocator.Alloc(sizeof(termsrun) + sizeof(exec_term_id_t) * computedSize);
+
+			memcpy(ptr->terms, run1->terms, sizeof(exec_term_id_t) * run1->size);
+			memcpy(ptr->terms + run1->size, run2->terms, sizeof(exec_term_id_t) * run2->size);
+			ptr->size = computedSize;
+			return ptr;
+		}
+#endif
+
                 void *register_binop(const exec_node lhs, const exec_node rhs)
                 {
                         auto ptr = allocator.New<binop_ctx>();
@@ -368,6 +429,9 @@ namespace // static/local this module
                 uint16_t *curDocQueryTokensCaptured;
                 matched_document matchedDocument;
                 simple_allocator allocator;
+#ifdef COMPILER_MATCHRUNS_SUPPORT
+		simple_allocator runsAllocator{512};
+#endif
         };
 }
 
@@ -576,8 +640,76 @@ static inline bool noop_impl(const exec_node &, runtime_ctx &)
         return false;
 }
 
+#ifdef COMPILER_MATCHRUNS_SUPPORT
+static bool matchallterms_impl(const exec_node &self, runtime_ctx &rctx)
+{
+	const auto run = static_cast<const runtime_ctx::termsrun *>(self.ptr);
+	uint16_t i{0};
+	const auto size = run->size;
+	const auto did = rctx.curDocID;
 
-static inline bool matchtoken_impl(const exec_node &self, runtime_ctx &rctx)
+#if 0
+        Print("ALL of\n");
+        for (uint32_t i{0}; i != size; ++i)
+	{
+		const auto termID = run->terms[i];
+
+		Print(rctx.originalQueryTermInstances[termID]->term.token, "\n");
+	}
+	exit(0);
+#endif
+
+	do
+	{
+		const auto termID = run->terms[i];
+        	auto decoder = rctx.decode_ctx.decoders[termID];
+
+        	if (decoder->seek(did))
+                	rctx.capture_matched_term(termID);
+		else
+			return false;
+	} while (++i != size);
+	
+	return true;
+}
+
+static bool matchanyterms_impl(const exec_node &self, runtime_ctx &rctx)
+{
+        const auto run = static_cast<const runtime_ctx::termsrun *>(self.ptr);
+        uint16_t i{0};
+        const auto size = run->size;
+        bool res{false};
+        const auto did = rctx.curDocID;
+	const auto terms= run->terms;
+
+#if 0
+        Print("ANY of\n");
+        for (uint32_t i{0}; i != size; ++i)
+	{
+		const auto termID = run->terms[i];
+
+		Print(rctx.originalQueryTermInstances[termID]->term.token, "\n");
+	}
+	exit(0);
+#endif
+
+        do
+        {
+                const auto termID = terms[i];
+                auto decoder = rctx.decode_ctx.decoders[termID];
+
+                if (decoder->seek(did))
+                {
+                        rctx.capture_matched_term(termID);
+                        res = true;
+                }
+        } while (++i != size);
+
+        return res;
+}
+#endif
+
+static inline bool matchterm_impl(const exec_node &self, runtime_ctx &rctx)
 {
         const auto termID = exec_term_id_t(self.u16);
         auto decoder = rctx.decode_ctx.decoders[termID];
@@ -739,7 +871,14 @@ static inline bool logicalor_impl(const exec_node &self, runtime_ctx &rctx)
 {
         const auto opctx = (runtime_ctx::binop_ctx *)self.ptr;
 
-        return eval(opctx->lhs, rctx) || eval(opctx->rhs, rctx);
+        // WAS: return eval(opctx->lhs, rctx) || eval(opctx->rhs, rctx);
+	// We need to evaluate both LHS and RHS and return true if either of them is true
+	// this is so that we will COLLECT the tokens from both branches
+	// e.g [apple OR samsung] should match if either is found, but we need to collect both tokens if possible
+	const auto res1 = eval(opctx->lhs, rctx);
+	const auto res2 = eval(opctx->rhs, rctx);
+
+	return res1 || res2;
 }
 
 #pragma mark COMPILER
@@ -755,14 +894,14 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
 
                 case ast_node::Type::Token:
 			SLog("Compiling for token [", n->p->terms[0].token, "]\n");
-                        res.fp = matchtoken_impl;
+                        res.fp = matchterm_impl;
                         res.u16 = ctx.register_token(n->p);
                         break;
 
                 case ast_node::Type::Phrase:
                         if (n->p->size == 1)
                         {
-                                res.fp = matchtoken_impl;
+                                res.fp = matchterm_impl;
                                 res.u16 = ctx.register_token(n->p);
                         }
                         else
@@ -773,15 +912,68 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
                         break;
 
                 case ast_node::Type::BinOp:
+                        res.ptr = ctx.register_binop(compile(n->binop.lhs, ctx), compile(n->binop.rhs, ctx));
                         switch (n->binop.op)
                         {
                                 case Operator::AND:
                                 case Operator::STRICT_AND:
+#ifdef COMPILER_MATCHRUNS_SUPPORT
+                                        if (auto opctx = static_cast<const runtime_ctx::binop_ctx *>(res.ptr); opctx->lhs.fp == matchterm_impl && opctx->rhs.fp == matchterm_impl)
+                                        {
+						res.ptr = ctx.register_termsrun(opctx->lhs.u16, opctx->rhs.u16);
+						res.fp = matchallterms_impl;
+                                        }
+                                        else if (opctx->lhs.fp == matchterm_impl && opctx->rhs.fp == matchallterms_impl)
+                                        {
+						res.ptr = ctx.register_termsrun(opctx->lhs.u16, static_cast<const runtime_ctx::termsrun *>(opctx->rhs.ptr));
+						res.fp = matchallterms_impl;
+                                        }
+                                        else if (opctx->lhs.fp == matchallterms_impl && opctx->rhs.fp == matchterm_impl)
+                                        {
+						res.ptr = ctx.register_termsrun(static_cast<const runtime_ctx::termsrun *>(opctx->lhs.ptr), opctx->rhs.u16);
+						res.fp = matchallterms_impl;
+                                        }
+                                        else if (opctx->lhs.fp == matchallterms_impl && opctx->rhs.fp == matchallterms_impl)
+                                        {
+						res.ptr = ctx.register_termsrun(static_cast<const runtime_ctx::termsrun *>(opctx->lhs.ptr), static_cast<const runtime_ctx::termsrun *>(opctx->rhs.ptr));
+						res.fp = matchallterms_impl;
+                                        }
+                                        else
+                                                res.fp = logicaland_impl;
+#else
                                         res.fp = logicaland_impl;
+#endif
                                         break;
 
+
+
                                 case Operator::OR:
+#ifdef COMPILER_MATCHRUNS_SUPPORT
+                                        if (auto opctx = static_cast<const runtime_ctx::binop_ctx *>(res.ptr); opctx->lhs.fp == matchterm_impl && opctx->rhs.fp == matchterm_impl)
+                                        {
+						res.ptr = ctx.register_termsrun(opctx->lhs.u16, opctx->rhs.u16);
+						res.fp = matchanyterms_impl;
+                                        }
+                                        else if (opctx->lhs.fp == matchterm_impl && opctx->rhs.fp == matchanyterms_impl)
+                                        {
+						res.ptr = ctx.register_termsrun(opctx->lhs.u16, static_cast<const runtime_ctx::termsrun *>(opctx->rhs.ptr));
+						res.fp = matchanyterms_impl;
+                                        }
+                                        else if (opctx->lhs.fp == matchanyterms_impl && opctx->rhs.fp == matchterm_impl)
+                                        {
+						res.ptr = ctx.register_termsrun(static_cast<const runtime_ctx::termsrun *>(opctx->lhs.ptr), opctx->rhs.u16);
+						res.fp = matchanyterms_impl;
+                                        }
+                                        else if (opctx->lhs.fp == matchanyterms_impl && opctx->rhs.fp == matchanyterms_impl)
+                                        {
+						res.ptr = ctx.register_termsrun(static_cast<const runtime_ctx::termsrun *>(opctx->lhs.ptr), static_cast<const runtime_ctx::termsrun *>(opctx->rhs.ptr));
+						res.fp = matchanyterms_impl;
+                                        }
+                                        else
+                                                res.fp = logicaland_impl;
+#else
                                         res.fp = logicalor_impl;
+#endif
                                         break;
 
                                 case Operator::NOT:
@@ -792,7 +984,6 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
                                         std::abort();
                                         break;
                         }
-                        res.ptr = ctx.register_binop(compile(n->binop.lhs, ctx), compile(n->binop.rhs, ctx));
                         break;
 
                 case ast_node::Type::ConstFalse:

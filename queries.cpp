@@ -27,7 +27,7 @@ static str32_t parse_term(ast_parser &ctx)
 {
         // TODO:what about unexpected characters e.g ',./+><' etc?
         // this breaks our parser
-        if (const auto len = ctx.token_parser(ctx.content.p, ctx.content.end()))
+        if (const auto len = ctx.token_parser(ctx.content))
         {
 		const str32_t res(ctx.content.p, len);
 
@@ -1099,7 +1099,7 @@ Switch::vector<ast_node *> &query::nodes(ast_node *root, Switch::vector<ast_node
         return *res;
 }
 
-bool query::parse(const str32_t in, uint32_t(*tp)(const char *, const char *))
+bool query::parse(const str32_t in, uint32_t(*tp)(const str32_t))
 {
         ast_parser ctx{in, allocator, tp};
 

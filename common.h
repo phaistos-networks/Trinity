@@ -1,6 +1,7 @@
 #pragma once
 #include <switch.h>
 #include "limits.h"
+#include <text.h>
 
 namespace Trinity
 {
@@ -19,4 +20,9 @@ namespace Trinity
                 // - exec.cpp caches etc
                 return Trinity::str32_t(a, aLen).Cmp(b, bLen);
         }
+
+	static inline uint32_t default_token_parser_impl(const str32_t content)
+	{
+		return Text::TermLengthWithEnd(content.p, content.end());
+	}
 }
