@@ -25,17 +25,22 @@ static constexpr uint8_t OpPrio(const Operator op) noexcept
 
 static str32_t parse_term(ast_parser &ctx)
 {
-        // TODO:what about unexpected characters e.g ',./+><' etc?
-        // this breaks our parser
-        if (const auto len = ctx.token_parser(ctx.content))
+	// will strip characters that are not part of a valid token
+	// and will pay attention to special group termination characters
+	for (;;)
         {
-		const str32_t res(ctx.content.p, len);
+                if (const auto len = ctx.token_parser(ctx.content))
+                {
+                        const str32_t res(ctx.content.p, len);
 
-                ctx.content.strip_prefix(len);
-                return res;
+                        ctx.content.strip_prefix(len);
+                        return res;
+                }
+                else if (ctx.content.empty() || (ctx.groupTerm.size() && ctx.groupTerm.back() == ctx.content.front()))
+			return {};
+		else
+			ctx.content.strip_prefix(1);
         }
-        else
-                return {};
 }
 
 static ast_node *parse_phrase_or_token(ast_parser &ctx)
@@ -277,6 +282,8 @@ static ast_node *parse_unary(ast_parser &ctx)
 	// enable this for debugging
 	if (ctx.content.StripPrefix(_S("<")))
 	{
+		ctx.groupTerm.push_back('>');
+
                 auto e = parse_expr(ctx) ?: ctx.parse_failnode();
 
                 ctx.skip_ws();
@@ -285,6 +292,8 @@ static ast_node *parse_unary(ast_parser &ctx)
                         if (e->type != ast_node::Type::Dummy)
                                 e = ctx.parse_failnode();
                 }
+		else
+			ctx.groupTerm.pop_back();
 
 		auto res = ctx.alloc_node(ast_node::Type::ConstTrueExpr);
 
@@ -295,6 +304,8 @@ static ast_node *parse_unary(ast_parser &ctx)
 
         if (ctx.content.StripPrefix(_S("(")))
         {
+		ctx.groupTerm.push_back(')');
+
                 auto e = parse_expr(ctx) ?: ctx.parse_failnode();
 
                 ctx.skip_ws();
@@ -303,6 +314,8 @@ static ast_node *parse_unary(ast_parser &ctx)
                         if (e->type != ast_node::Type::Dummy)
                                 e = ctx.parse_failnode();
                 }
+		else
+			ctx.groupTerm.pop_back();
 
                 return e;
         }

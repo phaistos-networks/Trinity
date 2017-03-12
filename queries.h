@@ -136,6 +136,8 @@ namespace Trinity
                 term terms[Trinity::Limits::MaxPhraseSize];
                 uint32_t (*token_parser)(const str32_t);
                 std::vector<str8_t> distinctTokens;
+		// facilitates parsing
+		std::vector<str8_t::value_type> groupTerm;
 
                 auto *alloc_node(const ast_node::Type t)
                 {
