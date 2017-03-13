@@ -1,3 +1,11 @@
+/*
+We could have tracked `query index` in DocWordsSpace instead of `term IDs`, which would have made it trivial to perform proximity checks in MatchedIndexDocumentsFilter::consider(), but the downsides make it a bad ideal;
+- slower Trinity::Codecs::Decoder::materialize_hits() 
+- require a more elaborate materialize_hits() signature
+- slower phrasematch_impl()
+Given the above, and that the fact that not all consider() implementations will perform proximity checks for score computations, we settled for an alternative which doesn¢t require any changes and means that proximity checks are only trivially harder to perform. 
+We will simply identify all distinct termIDs (usually just one) for each query index and will look up the termIDs in that list.
+*/
 #pragma once
 #include "common.h"
 #include "runtime.h"
@@ -49,6 +57,7 @@ namespace Trinity
                         {
 				// we reset every 65k documents
 				// this is preferrable to using uint32_t to encode the actual document in position{}
+				// no need to memset() for (maxPos + 1 + Trinity::Limits::MaxPhraseSize), just upto (maxPos + 1)
                                 memset(positions, 0, sizeof(position) * (maxPos + 1));
                                 curSeq = 1; 	// important; set to 1 not 0
                         }

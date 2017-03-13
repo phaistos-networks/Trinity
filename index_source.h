@@ -17,8 +17,7 @@ namespace Trinity
             : public RefCounted<IndexSource>
         {
               protected:
-                Switch::unordered_map<str8_t, uint32_t> termIDsMap;
-                Switch::unordered_map<uint32_t, term_index_ctx> cache;
+                Switch::unordered_map<str8_t, term_index_ctx> cache;
                 uint64_t gen{0}; // See IndexSourcesCollection
 
               public:
@@ -27,41 +26,15 @@ namespace Trinity
                         return gen;
                 }
 
-                // Returns an INDEX SOURCE WORD SPACE integer identifier
-                // You will need to translate to this words space. See exec.cpp
                 // TODO: serialize access
-                uint32_t resolve_term(const str8_t term)
+                term_index_ctx term_ctx(const str8_t term)
                 {
-                        uint32_t *p;
+			term_index_ctx *ptr;
 
-                        SLog("Resolving [", term, "]\n");
-
-                        if (termIDsMap.Add(term, 0, &p))
-                        {
-                                if (auto tctx = resolve_term_ctx(term); 0 == tctx.documents)
-                                {
-                                        // Undefined in this segment
-                                        SLog("UNDEFINED [", term, "]\n");
-                                        *p = 0;
-                                }
-                                else
-                                {
-                                        SLog("FOR [", term, "] ", tctx.documents, "\n");
-                                        *p = termIDsMap.size();
-                                        cache.insert({*p, tctx});
-                                }
-                        }
-
-                        SLog("For [", term, "] ", *p, "\n");
-                        return *p;
+			if (cache.Add(term, {}, &ptr))
+				*ptr = resolve_term_ctx(term);
+			return *ptr;
                 }
-
-                // TODO: serialize access
-                term_index_ctx term_ctx(const uint32_t termID /* segment space */)
-                {
-                        return cache[termID];
-                }
-
 
 
                 // Subclasses only need to implement 3 methods

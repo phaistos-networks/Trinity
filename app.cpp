@@ -202,11 +202,22 @@ int main(int argc, char *argv[])
 		struct BPFilter final
 			: public MatchedIndexDocumentsFilter
 		{
-			 ConsiderResponse consider(matched_document &doc, const DocWordsSpace &dws) override final
+			const DocWordsSpace *dws;
+			const query_index_terms **queryIndicesTerms;
+
+			void prepare(const DocWordsSpace *const dws_, const query_index_terms **qit) override final
 			{
+				dws = dws_;
+				queryIndicesTerms = qit;
+			}
+
+                        ConsiderResponse consider(matched_document &doc) override final
+                        {
 				doc.sort_matched_terms_by_query_index();
-#if 0
+#if 1
 				const auto n = doc.matchedTermsCnt;
+				size_t curRun{0};
+
 
 				SLog("MATCHED ", doc.id, " https://www.bestprice.gr/item/", doc.id|(1<<31), "\n");
 				for (uint32_t i{0}; i != n; ++i)
@@ -228,6 +239,50 @@ int main(int argc, char *argv[])
 
 						Print("INSTANCE ", it.index, ", ", it.rep, ", ", it.flags, "\n");
 					}
+
+					if (i)
+					{
+						bool seq{false};
+
+						for (uint32_t k{0}; k != t->queryTermInstances->cnt; ++k)
+						{
+							const auto idx = t->queryTermInstances->instances[k].index;
+
+							if (idx)
+							{
+								if (auto ptr = queryIndicesTerms[idx - 1])
+								{
+									for (uint32_t j{0}; j != ptr->cnt; ++j)
+									{
+										const auto id = ptr->termIDs[j];
+
+										for (uint32_t l{0}; l != t->hits->freq; ++l)
+										{
+											if (const auto pos = t->hits->all[l].pos)
+											{
+												if (dws->test(id, pos -1))
+													seq = true;
+											}
+										}
+									}
+								}
+							}
+						}
+						
+						
+
+						if (seq)
+						{
+							++curRun;
+						}
+						else if (curRun)
+						{
+							SLog("Ending run ", curRun, "\n");
+							
+							curRun = 0;
+						}
+					}
+
 				}
 #endif
 				return ConsiderResponse::Continue;

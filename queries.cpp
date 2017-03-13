@@ -1061,11 +1061,6 @@ bool ast_node::any_leader_tokens() const
 
 void query::leader_nodes(std::vector<ast_node *> *const out)
 {
-        // This is a proof of concept
-        // you shouldn't need to do this for queries, only for runtime queries
-        // where we have gotten a chance to reorder branches
-        // so that lhs is always the cheaper to evaluate
-        // see reorder_root() and optimize_binops()
         if (!root)
                 return;
 

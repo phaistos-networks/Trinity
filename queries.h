@@ -304,6 +304,15 @@ namespace Trinity
                 // that node's value directly.
                 // This is a utility method for replacing a run (see process_runs() method) with a new
                 // expression(node)
+		//
+		// This is great for augmenting a query with synonyms e.g
+		// for query [sofa] you could replace sofa with
+		// [sofa OR couch OR sofas OR couches OR lounges OR lounge]
+		// and also great for spell checking queries. You can process_runs() and then spell check every run
+		// and if you have an alternative spelling for the run, then replace the run with a new ast that contains
+		// the original and the suggested
+		// e.g for [world of worrcraft video game] 
+		// [ ((world of worrcraft video game) OR (world of warcraft video game)) ]
                 static void replace_run(ast_node **run, const size_t cnt, ast_node *newExprNode)
                 {
                         // Just set all nodes _except_ the first to dummy

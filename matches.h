@@ -6,15 +6,29 @@
 
 namespace Trinity
 {
+	// Used to track for each query index(i.e index in the query terms) the distinct termIDs that map to it
+	// That will usually be one term, except when there are OR sequences
+	// e.g  [apple laptop OR "macbook pro"]
+	// both laptop and macbook will be map to the query index(1)
+	//
+	// This is built by exec_query() and passed to MatchedIndexDocumentsFilter::prepare()
+	// It is useful for proximity checks in conjuction with DocWordsSpace
+	struct query_index_terms final
+	{
+		uint16_t cnt;
+		exec_term_id_t termIDs[0];
+	};
+
         // Materialized hits for a term and the current document
         // this is used both for evaluation and for scoring documents
         struct term_hits final
         {
                 term_hit *all{0};
-                uint16_t freq;
-                uint16_t allCapacity{0};
+                uint16_t freq; 		// total hits for the term
+
 
 		// facilitates execution -- ignoring during scoring
+                uint16_t allCapacity{0};
 		uint16_t docSeq;
 
                 void set_freq(const uint16_t newFreq)
@@ -52,7 +66,7 @@ namespace Trinity
 			str8_t token;
 		} term;
 
-                uint8_t cnt;
+                uint8_t cnt; // i.e if your query is [world of warcraft mists of pandaria] then you will have 2 instances for token "of" in the query, with rep = 1
                 struct instance_struct
                 {
                         uint16_t index;
@@ -103,13 +117,19 @@ namespace Trinity
 			Abort,
 		};
 
-
-		// You may want to use dws to improve score based on how terms document matches proximity relative to their proximity in the query
 		// You can query_term_instances::term.id with dws
 		// `match` is not const because you may want to match.sort_matched_terms_by_query_index()
-		virtual ConsiderResponse consider(matched_document &match, const DocWordsSpace &dws) 
+		virtual ConsiderResponse consider(matched_document &match)
 		{
 			return ConsiderResponse::Continue;
+		}
+
+		// Invoked before the query execution begins
+		// You probably want to store dws and queryIndicesTerms in a member variable in your prepare(), and use it in your consider() for proximity checks
+		// this default implementation does nothing
+		virtual void prepare(const DocWordsSpace *dws, const query_index_terms **queryIndicesTerms)
+		{
+
 		}
 
 		virtual ~MatchedIndexDocumentsFilter()
