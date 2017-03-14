@@ -1,6 +1,6 @@
 include /home/system/Development/Switch/Makefile.dfl 
-CPPFLAGS:=$(CPPFLAGS_SANITY) $(OPTIMIZER_CFLAGS)
-#CPPFLAGS:=$(CPPFLAGS_SANITY) #-fsanitize=address
+#CPPFLAGS:=$(CPPFLAGS_SANITY) $(OPTIMIZER_CFLAGS)
+CPPFLAGS:=$(CPPFLAGS_SANITY) #-fsanitize=address
 
 OBJS:=codecs.o queries.o exec.o google_codec.o docidupdates.o indexer.o docwordspace.o terms.o segment_index_source.o index_source.o merge.o matches.o lucene_codec.o app.o
 

@@ -43,6 +43,8 @@ int main(int argc, char *argv[])
 	simple_allocator allocator;
 	auto outSession = new Trinity::Codecs::Lucene::IndexSession("/tmp/TSEGMENTS/1800/");
 
+
+	collection.commit();
 	outSession->begin();
 	collection.merge(outSession, &allocator, &terms);
 	outSession->end();
@@ -50,17 +52,6 @@ int main(int argc, char *argv[])
 	SLog("positionsOut.size = ", outSession->positionsOut.size(), "\n");
 
 	require(outSession->indexOut.size() == fileSize);
-	const auto *a = (uint8_t *)fileData, *b = (uint8_t *)outSession->indexOut.data();
-	for (uint32_t i{0}; i != fileSize; ++i)
-	{
-		if (a[i] != b[i])
-		{
-			SLog("Mismatch ", i, "\n");
-			SLog(*(uint32_t *)(a + i),  " ", *(uint32_t *)(b + i), "\n");
-			return 1;
-		}
-	}
-
 	SLog("indexOut.size = ", outSession->indexOut.size(), "\n");
 	delete outSession;
 
@@ -275,6 +266,7 @@ int main(int argc, char *argv[])
                 close(fd);
                 require(fileData != MAP_FAILED);
 
+		Print("INDEXING\n");
                 for (const auto *p = static_cast<const uint8_t *>(fileData), *const e = p + fileSize; p != e;)
                 {
                         p += sizeof(uint16_t);

@@ -120,7 +120,8 @@ namespace Trinity
 			// See for example:https://blog.twitter.com/2010/twitters-new-search-architecture "efficient early query termination")
 			// where apparently they implemented a codec that stores document matches in DESC order in a term's postlist
 			// so that as soon as they find the top-K most recent tweets, they stop
-			// (the only problem with this is that updated_documents_scanner expectes the document IDs to be provided in ascending monotonic order)
+			// (the only problem with this is that updated_documents_scanner expectes the document IDs to be provided in ascending monotonic order, and Trinity::MergeCandidatesCollection::merge() expects
+			// documents to be stored in ascending order, but both can trivially change)
 			Abort,
 		};
 
