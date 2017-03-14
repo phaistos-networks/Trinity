@@ -1022,9 +1022,8 @@ void ast_node::set_alltokens_flags(const uint8_t flags)
 
 bool ast_node::any_leader_tokens() const
 {
-        std::vector<const ast_node *> stack;
+        std::vector<const ast_node *> stack{this};
 
-        stack.push_back(this);
         do
         {
                 auto n = stack.back();

@@ -23,7 +23,7 @@ void Trinity::Codecs::Google::Encoder::begin_term()
         }
 }
 
-void Trinity::Codecs::Google::Encoder::begin_document(const uint32_t documentID, const uint16_t hitsCnt)
+void Trinity::Codecs::Google::Encoder::begin_document(const docid_t documentID, const uint16_t hitsCnt)
 {
 	require(documentID);
 	if (unlikely(documentID <= lastCommitedDocID))
@@ -61,6 +61,7 @@ void Trinity::Codecs::Google::Encoder::new_hit(const uint32_t pos, const range_b
 		}
 		else
 			hitsData.encode_varuint32(delta << 1);
+
 		if (payloadSize)
 			hitsData.serialize(payload.offset, payloadSize);
 	}
@@ -99,12 +100,12 @@ void Trinity::Codecs::Google::Encoder::end_term(term_index_ctx *tctx)
 
 	if (CONSTRUCT_SKIPLIST)
         {
-                const uint16_t skipListEntries = skipListData.size() / (sizeof(uint32_t) + sizeof(uint32_t));
+                const uint16_t skipListEntries = skipListData.size() / (sizeof(docid_t) + sizeof(uint32_t));
 
 		if (trace)
 			SLog("Skiplist of size ", skipListEntries, "\n");
 
-		require(skipListData.size() == skipListEntries * (sizeof(uint32_t) + sizeof(uint32_t)));
+		require(skipListData.size() == skipListEntries * (sizeof(docid_t) + sizeof(uint32_t)));
 
                 out->serialize(skipListData.data(), skipListData.size());     // actual skiplist
                 *(uint16_t *)(out->data() + curTermOffset) = skipListEntries; // skiplist size in entries in the index chunk header
@@ -147,9 +148,9 @@ void Trinity::Codecs::Google::Encoder::commit_block()
         if (--skiplistEntryCountdown == 0)
         {
                 if (trace)
-                        SLog("NEW skiplist record for ", prevBlockLastDocumentID, ", so far: ", skipListData.size() / (sizeof(uint32_t) + sizeof(uint32_t)), "\n");
+                        SLog("NEW skiplist record for ", prevBlockLastDocumentID, ", so far: ", skipListData.size() / (sizeof(docid_t) + sizeof(uint32_t)), "\n");
 
-		if (likely(skipListData.size() / (sizeof(uint32_t) + sizeof(uint32_t)) < UINT16_MAX))
+		if (likely(skipListData.size() / (sizeof(docid_t) + sizeof(uint32_t)) < UINT16_MAX))
                 {
                         // we can only support upto 65k skiplist entries so that
                         // we will only need a u16 to store that number in the index chunk header for the term
@@ -211,7 +212,7 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
 
                 struct
                 {
-                        uint32_t documents[N];
+                        docid_t documents[N];
                         uint32_t freqs[N];
                         uint8_t size;
                         uint8_t idx;
@@ -249,19 +250,17 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
                 }
         };
 
-        chunk chunks[128];
-        uint16_t toAdvance[128];
+        chunk chunks[participantsCnt];
+        uint16_t toAdvance[participantsCnt];
         uint16_t rem{participantsCnt};
         auto encoder = static_cast<Trinity::Codecs::Google::Encoder *>(encoder_);
-
-        require(participantsCnt <= sizeof_array(chunks));
 
         for (uint32_t i{0}; i != participantsCnt; ++i)
         {
                 auto c = chunks + i;
 
-                c->p = participants[i].ap->indexPtr + participants[i].indexChunk.offset;
-                c->e = c->p + participants[i].indexChunk.size();
+                c->p = participants[i].ap->indexPtr + participants[i].tctx.indexChunk.offset;
+                c->e = c->p + participants[i].tctx.indexChunk.size();
                 c->maskedDocsReg = participants[i].maskedDocsReg;
 
                 // Simplifies refill()
@@ -269,7 +268,7 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
                 c->cur_block.documents[0] = 0;
 
                 if (trace)
-                        SLog("merge participant ", i, " ", participants[i].indexChunk, "\n");
+                        SLog("merge participant ", i, " ", participants[i].tctx.indexChunk, "\n");
         }
 
         const auto refill = [](auto c) {
@@ -374,14 +373,12 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
         for (;;)
         {
                 uint32_t toAdvanceCnt = 1;
-                uint32_t lowestDID = chunks[0].cur_block.documents[chunks[0].cur_block.idx];
+                docid_t lowestDID = chunks[0].cur_block.documents[chunks[0].cur_block.idx];
 
                 toAdvance[0] = 0;
                 for (uint32_t i{1}; i < rem; ++i)
                 {
-                        const auto id = chunks[i].cur_block.documents[chunks[i].cur_block.idx];
-
-                        if (id < lowestDID)
+                        if (const auto id = chunks[i].cur_block.documents[chunks[i].cur_block.idx]; id < lowestDID)
                         {
                                 lowestDID = id;
                                 toAdvanceCnt = 1;
@@ -451,7 +448,7 @@ l1:;
 
 #pragma mark DECODER
 
-uint32_t Trinity::Codecs::Google::Decoder::skiplist_search(const uint32_t target) const noexcept
+uint32_t Trinity::Codecs::Google::Decoder::skiplist_search(const docid_t target) const noexcept
 {
         // we store {previous block's last ID, block's offset}
         // in skiplist[], because when we unpack a block, we need to know
@@ -496,7 +493,8 @@ void Trinity::Codecs::Google::Decoder::skip_block_doc()
         if (trace)
                 SLog("skipping document index ", blockDocIdx, ", freq = ", freqs[blockDocIdx], "\n");
 
-        const auto freq = freqs[blockDocIdx++];
+	// we reset freqs[blockDocIdx] when we materialise so this works fine if we materialise_hits() and then attempt to skip_block_doc()
+        const auto freq = freqs[blockDocIdx];
         uint8_t curPayloadSize{0};
         uint32_t dummy;
 
@@ -569,11 +567,11 @@ void Trinity::Codecs::Google::Decoder::materialize_hits(const exec_term_id_t ter
 
         // reset explicitly
         // we have already materialized here
-        // This is also important because otherwise next() and skip() would haywire
+        // This is also important because otherwise next() and skip() would haywire (see skip_block_doc() )
         freqs[blockDocIdx] = 0;
 }
 
-void Trinity::Codecs::Google::Decoder::unpack_block(const uint32_t thisBlockLastDocID, const uint8_t n)
+void Trinity::Codecs::Google::Decoder::unpack_block(const docid_t thisBlockLastDocID, const uint8_t n)
 {
         static constexpr bool trace{false};
         const auto k{n - 1};
@@ -617,7 +615,7 @@ void Trinity::Codecs::Google::Decoder::unpack_block(const uint32_t thisBlockLast
         blockDocIdx = 0;
 }
 
-void Trinity::Codecs::Google::Decoder::seek_block(const uint32_t target)
+void Trinity::Codecs::Google::Decoder::seek_block(const docid_t target)
 {
         static constexpr bool trace{false};
 
@@ -730,7 +728,7 @@ void Trinity::Codecs::Google::Decoder::skip_remaining_block_documents()
         }
 }
 
-uint32_t Trinity::Codecs::Google::Decoder::begin()
+Trinity::docid_t Trinity::Codecs::Google::Decoder::begin()
 {
         static constexpr bool trace{false};
 
@@ -767,7 +765,6 @@ bool Trinity::Codecs::Google::Decoder::next()
                         SLog("done with block\n");
 
                 skip_block_doc();
-
                 if (p != chunkEnd)
                 {
                         // we are at the last document in the block
@@ -794,6 +791,7 @@ bool Trinity::Codecs::Google::Decoder::next()
                         SLog("Just skipping block\n");
 
                 skip_block_doc();
+		++blockDocIdx;
         }
 
         curDocument.id = documents[blockDocIdx];
@@ -802,7 +800,7 @@ bool Trinity::Codecs::Google::Decoder::next()
         return true;
 }
 
-bool Trinity::Codecs::Google::Decoder::seek(const uint32_t target)
+bool Trinity::Codecs::Google::Decoder::seek(const docid_t target)
 {
         static constexpr bool trace{false};
 
@@ -813,7 +811,7 @@ bool Trinity::Codecs::Google::Decoder::seek(const uint32_t target)
         {
                 // we can safely assume (p != chunkEnd)
                 // because in that case we 'd have finalize() and
-                // blockLastDocID would have been UINT32_MAX
+                // blockLastDocID would have been MaxDocIDValue
                 // and (target > blockLastDocID) would have been false
 
                 skip_remaining_block_documents();
@@ -906,6 +904,7 @@ bool Trinity::Codecs::Google::Decoder::seek(const uint32_t target)
                                 SLog("Skipping block document\n");
 
                         skip_block_doc();
+			++blockDocIdx;
                 }
         }
 
@@ -955,8 +954,8 @@ void Trinity::Codecs::Google::Decoder::init(const term_index_ctx &tctx, Trinity:
 
                         for (uint32_t i{0}; i != skipListEntriesCnt; ++i)
                         {
-                                const auto id = *(uint32_t *)it;
-                                it += sizeof(uint32_t);
+                                const auto id = *(docid_t *)it;
+                                it += sizeof(docid_t);
                                 const auto offset = *(uint32_t *)it;
                                 it += sizeof(uint32_t);
 
@@ -979,11 +978,11 @@ void Trinity::Codecs::Google::Decoder::init(const term_index_ctx &tctx, Trinity:
         }
 }
 
-Trinity::Codecs::Decoder *Trinity::Codecs::Google::AccessProxy::new_decoder(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access)
+Trinity::Codecs::Decoder *Trinity::Codecs::Google::AccessProxy::new_decoder(const term_index_ctx &tctx)
 {
         auto d = std::make_unique<Trinity::Codecs::Google::Decoder>();
 
-        d->init(tctx, access);
+        d->init(tctx, this);
         return d.release();
 }
 
@@ -995,7 +994,7 @@ void Trinity::Codecs::Google::IndexSession::end()
 {
 }
 
-Trinity::Codecs::Encoder *Trinity::Codecs::Google::IndexSession::new_encoder(Trinity::Codecs::IndexSession *s)
+Trinity::Codecs::Encoder *Trinity::Codecs::Google::IndexSession::new_encoder()
 {
-        return new Trinity::Codecs::Google::Encoder(s);
+        return new Trinity::Codecs::Google::Encoder(this);
 }

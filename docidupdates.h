@@ -1,7 +1,7 @@
 #pragma once
 #include <switch.h>
 #include <memory>
-
+#include "common.h"
 
 // Efficient, lean, fixed-size bitmaps based document IDs tracking
 // You are expected to test for document IDs in ascending order
@@ -10,12 +10,15 @@ namespace Trinity
         struct updated_documents final
         {
 		// Each bitmaps bank can be accessed by a skiplist via binary search
-                const uint32_t *skiplist;
+                const docid_t *skiplist;
                 const uint32_t skiplistSize;
 
 		// Fixed size bitmap banks
                 const uint32_t bankSize;
                 const uint8_t *banks;
+
+		docid_t lowestID;
+		docid_t highestID;
 		
 		inline operator bool() const
 		{
@@ -27,15 +30,17 @@ namespace Trinity
         // as bitmaps using pack_updates()
         struct updated_documents_scanner final
         {
-                const uint32_t *const end;
+                const docid_t *const end;
                 const uint32_t bankSize;
 
                 range32_t curBankRange;
-                const uint32_t *skiplistBase;
+                const docid_t *skiplistBase;
                 const uint8_t *curBank;
 
-                const uint32_t *const udSkipList;
+                const docid_t *const udSkipList;
                 const uint8_t *const udBanks;
+
+		const range_base<docid_t, docid_t> documentsRange;
 
 
                 void reset()
@@ -44,7 +49,7 @@ namespace Trinity
                 }
 
                 updated_documents_scanner(const updated_documents &ud)
-                    : end{ud.skiplist + ud.skiplistSize}, bankSize{ud.bankSize}, skiplistBase{ud.skiplist}, udSkipList{ud.skiplist}, udBanks{ud.banks}
+                    : end{ud.skiplist + ud.skiplistSize}, bankSize{ud.bankSize}, skiplistBase{ud.skiplist}, udSkipList{ud.skiplist}, udBanks{ud.banks}, documentsRange{ud.lowestID, ud.highestID - ud.lowestID + 1}
                 {
                         if (skiplistBase != end)
                         {
@@ -68,7 +73,7 @@ namespace Trinity
 
 
                 // You are expected to test monotonically increasing document IDs
-                bool test(const uint32_t id) noexcept;
+                bool test(const docid_t id) noexcept;
 
 		inline bool operator==(const updated_documents_scanner &o) const noexcept
                 {
@@ -76,15 +81,15 @@ namespace Trinity
                 }
         };
 
-	void pack_updates(std::vector<uint32_t> &updatedDocumentIDs, IOBuffer *const buf);
+	void pack_updates(std::vector<docid_t> &updatedDocumentIDs, IOBuffer *const buf);
 
-	updated_documents unpack_updates(const range_base<const uint8_t *, uint32_t> content);
+	updated_documents unpack_updates(const range_base<const uint8_t *, docid_t> content);
 
 
 	// manages multiple scanners and tests among all of them, and if any of them is exchausted, it is removed from the collection
 	struct masked_documents_registry final
 	{
-		bool test(const uint32_t id)
+		bool test(const docid_t id)
                 {
                         for (uint8_t i{0}; i < rem;)
                         {

@@ -89,7 +89,7 @@ namespace Trinity
 	// and are expected to return a score 
         struct matched_document final
         {
-                uint32_t id; // document ID
+                docid_t id; // document ID
                 uint16_t matchedTermsCnt;
                 matched_query_term *matchedTerms;
 
@@ -106,14 +106,21 @@ namespace Trinity
 	// For example, you may want to track the top-K documents and then eventually merge them all together
 	struct MatchedIndexDocumentsFilter
 	{
+		const DocWordsSpace *dws;
+		const query_index_terms **queryIndicesTerms;
+
 		enum class ConsiderResponse : uint8_t
 		{
 			Continue = 0,
 			// If you return Abort, then the execution engine will stop immediately.
 			// You should probably never to do that, but if you do, because for example you
 			// are only interested in the first few documents matched regardless of their scores
-			// (see for example:https://blog.twitter.com/2010/twitters-new-search-architecture "efficient early query termination")
 			// then you can return Abort to return immediately from the execution to the callee
+			//
+			// See for example:https://blog.twitter.com/2010/twitters-new-search-architecture "efficient early query termination")
+			// where apparently they implemented a codec that stores document matches in DESC order in a term's postlist
+			// so that as soon as they find the top-K most recent tweets, they stop
+			// (the only problem with this is that updated_documents_scanner expectes the document IDs to be provided in ascending monotonic order)
 			Abort,
 		};
 
@@ -125,16 +132,14 @@ namespace Trinity
 		}
 
 		// Invoked before the query execution begins
-		// You probably want to store dws and queryIndicesTerms in a member variable in your prepare(), and use it in your consider() for proximity checks
-		// this default implementation does nothing
-		virtual void prepare(const DocWordsSpace *dws, const query_index_terms **queryIndicesTerms)
+		virtual void prepare(const DocWordsSpace *dws_, const query_index_terms **queryIndicesTerms_)
 		{
-
+			dws = dws_;
+			queryIndicesTerms = queryIndicesTerms_;
 		}
 
 		virtual ~MatchedIndexDocumentsFilter()
 		{
-
 		}
 	};
 }

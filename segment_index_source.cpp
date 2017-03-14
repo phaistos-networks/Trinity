@@ -1,5 +1,6 @@
 #include "segment_index_source.h"
 #include "google_codec.h"
+#include "lucene_codec.h"
 
 Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
 {
@@ -81,6 +82,8 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
 
         if (codec.Eq(_S("GOOGLE")))
                 accessProxy.reset(new Trinity::Codecs::Google::AccessProxy(basePath, index.start()));
+        else if (codec.Eq(_S("LUCENE")))
+                accessProxy.reset(new Trinity::Codecs::Lucene::AccessProxy(basePath, index.start()));
         else
                 throw Switch::data_error("Unknown codec");
 }

@@ -20,7 +20,7 @@ namespace Trinity
 
                                 void end() override final;
 
-                                Trinity::Codecs::Encoder *new_encoder(Trinity::Codecs::IndexSession *) override final;
+                                Trinity::Codecs::Encoder *new_encoder() override final;
 
                                 IndexSession(const char *bp)
                                     : Trinity::Codecs::IndexSession{bp}
@@ -40,15 +40,13 @@ namespace Trinity
                         class Encoder final
                             : public Trinity::Codecs::Encoder
                         {
-                              public:
-                                IOBuffer skipListData;
-
                               private:
+                                IOBuffer skipListData;
                                 IOBuffer block, hitsData;
-                                uint32_t prevBlockLastDocumentID{0}, curDocID{0}, lastCommitedDocID;
+                                docid_t prevBlockLastDocumentID{0}, curDocID{0}, lastCommitedDocID;
                                 uint8_t curBlockSize, curPayloadSize;
                                 uint32_t lastPos;
-                                uint32_t docDeltas[N];
+                                docid_t docDeltas[N];
                                 uint32_t blockFreqs[N];
                                 uint32_t skiplistEntryCountdown{SKIPLIST_STEP};
                                 uint32_t curTermOffset;
@@ -70,7 +68,7 @@ namespace Trinity
 
                                 void begin_term() override final;
 
-                                void begin_document(const uint32_t documentID, const uint16_t hitsCnt) override final;
+                                void begin_document(const docid_t documentID, const uint16_t hitsCnt) override final;
 
                                 void new_hit(const uint32_t pos, const range_base<const uint8_t *, const uint8_t> payload) override final;
                                 
@@ -97,7 +95,7 @@ namespace Trinity
                                         return "GOOGLE"_s8;
                                 }
 
-                                Trinity::Codecs::Decoder *new_decoder(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access) override final;
+                                Trinity::Codecs::Decoder *new_decoder(const term_index_ctx &tctx) override final;
                         };
 
                         // We used to keep track of remDocsInBlocks
@@ -115,46 +113,46 @@ namespace Trinity
                         class Decoder final
                             : public Trinity::Codecs::Decoder
                         {
-                                uint32_t documents[N];
+                                docid_t documents[N];
                                 const uint8_t *p, *chunkEnd;
                                 uint8_t blockDocIdx;
-                                uint32_t blockLastDocID{0};
+                                docid_t blockLastDocID{0};
                                 uint32_t freqs[N];
                                 uint32_t skipListIdx;
                                 const uint8_t *base;
-                                std::vector<std::pair<uint32_t, uint32_t>> skiplist;
+                                std::vector<std::pair<docid_t, uint32_t>> skiplist;
 
                               private:
-                                uint32_t skiplist_search(const uint32_t target) const noexcept;
+                                uint32_t skiplist_search(const docid_t target) const noexcept;
 
                                 void skip_block_doc();
 
-                                void unpack_block(const uint32_t thisBlockLastDocID, const uint8_t n);
+                                void unpack_block(const docid_t thisBlockLastDocID, const uint8_t n);
 
-                                void seek_block(const uint32_t target);
+                                void seek_block(const docid_t target);
 
                                 void unpack_next_block();
 
                                 void finalize()
                                 {
                                         blockDocIdx = 0;
-                                        blockLastDocID = UINT32_MAX; // magic value; signifies end of documents
-                                        documents[0] = UINT32_MAX;
+                                        blockLastDocID = MaxDocIDValue; // magic value; signifies end of documents
+                                        documents[0] = MaxDocIDValue;
                                         p = chunkEnd;
 
-					curDocument.id = UINT32_MAX;
+					curDocument.id = MaxDocIDValue;
                                 }
 
                                 // see skip_block_doc()
                                 void skip_remaining_block_documents();
 
                               public:
-                                uint32_t begin() override final;
+                                docid_t begin() override final;
 
-                                // XXX: make sure you check if (cur_document() != UINT32_MAX)
+                                // XXX: make sure you check if (cur_document() != MaxDocIDValue)
                                 bool next() override final;
 
-                                bool seek(const uint32_t target) override final;
+                                bool seek(const docid_t target) override final;
 
                                 void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) override final;
 

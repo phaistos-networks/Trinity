@@ -73,7 +73,7 @@ namespace // static/local this module
                 {
                 }
 
-                auto materialize_term_hits_impl(const exec_term_id_t termID)
+                void materialize_term_hits_impl(const exec_term_id_t termID)
                 {
                         auto th = decode_ctx.termHits[termID];
                         auto dec = decode_ctx.decoders[termID];
@@ -88,8 +88,7 @@ namespace // static/local this module
                 {
                         auto th = decode_ctx.termHits[termID];
 
-                        require(th);
-                        if (th->docSeq != curDocSeq)
+                        if (likely(th->docSeq != curDocSeq))
                         {
                                 // Not already materialized
                                 materialize_term_hits_impl(termID);
@@ -107,11 +106,11 @@ namespace // static/local this module
 
                         if (const auto qti = originalQueryTermInstances[termID])
                         {
-                                // if this not nullptr, it means this was not in a NOT branch so we should account for it
-                                // we exclude all tokens in NOT branches when we collect the original query tokens
+                                // If this not nullptr, it means this was not in a NOT branch so we should track it
+                                // We exclude all tokens in NOT rhs branches when we collect the original query tokens
                                 if (curDocQueryTokensCaptured[termID] != curDocSeq)
                                 {
-                                        // not captured already for this document
+                                        // Not captured already for this document
                                         auto p = matchedDocument.matchedTerms + matchedDocument.matchedTermsCnt++;
                                         auto th = decode_ctx.termHits[termID];
 
@@ -120,24 +119,6 @@ namespace // static/local this module
 
                                         curDocQueryTokensCaptured[termID] = curDocSeq;
                                         p->queryTermInstances = qti;
-
-                                        if (th->docSeq == curDocSeq)
-                                        {
-                                                // already materialised
-                                                if (trace)
-                                                        SLog("Already materialized\n");
-                                        }
-                                        else
-                                        {
-                                                // track it so that we can materialise it before we score the document
-                                                // don't matrerialise just yet because it's possible the query predicate won't match the document
-                                                // e.g [foo bar] if only foo matches but not bar we don't want to materialise foo term hits anyway
-                                                // TODO: we will not track it for now, but maybe we should for performance reasons so
-                                                // that we won't have to iterater across all matchedDocument.matchedTerms and attempt to materialise
-                                                if (trace)
-                                                        SLog("Not materialised yet\n");
-                                        }
-
                                         p->hits = th;
                                 }
                                 else if (trace)
@@ -168,10 +149,10 @@ namespace // static/local this module
                         require(decode_ctx.decoders[termID]);
                 }
 
-                void reset(const uint32_t did)
+                void reset(const docid_t did)
                 {
                         curDocID = did;
-                        docWordsSpace.reset(did);
+                        docWordsSpace.reset();
                         matchedDocument.matchedTermsCnt = 0;
 
                         // see docwordspace.h
@@ -203,6 +184,7 @@ namespace // static/local this module
 
                 // Resolves a term to a termID relative to the runtime_ctx
                 // this id is meaningless outside this execution context
+		// and we use it because its easier to track/use integers than strings
                 exec_term_id_t resolve_term(const str8_t term)
                 {
                         exec_term_id_t *ptr;
@@ -291,8 +273,6 @@ namespace // static/local this module
                 {
                         const auto termID = resolve_term(p->terms[0].token);
 
-                        SLog("REG [", p->terms[0].token, "] ", termID, "\n");
-
                         prepare_decoder(termID);
                         return termID;
                 }
@@ -361,7 +341,7 @@ namespace // static/local this module
 #pragma mark members
                 // This is from the lead tokens
                 // We expect all token and phrases opcodes to check against this document
-                uint32_t curDocID;
+                docid_t curDocID;
                 // See docwordspace.h
                 uint16_t curDocSeq;
 
@@ -409,7 +389,6 @@ namespace // static/local this module
 
                 DocWordsSpace docWordsSpace;
                 Switch::unordered_map<str8_t, exec_term_id_t> termsDict;
-                Switch::unordered_map<exec_term_id_t, uint32_t> toIndexSrcSpace; // translation between runtime_ctx and segment term IDs spaces
                 Switch::unordered_map<exec_term_id_t, str8_t> idToTerm;          // maybe useful for tracing by the score functions
                 uint16_t *curDocQueryTokensCaptured;
                 matched_document matchedDocument;
@@ -1165,7 +1144,7 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
         // See leader_nodes() impl. comments
         std::vector<ast_node *> leaderNodes;
         uint16_t toAdvance[Limits::MaxQueryTokens];
-        Switch::vector<Trinity::Codecs::Decoder *> leaderTokensDecoders;
+        std::vector<Trinity::Codecs::Decoder *> leaderTokensDecoders;
         // see query_index_terms and MatchedIndexDocumentsFilter::prepare() comments
         query_index_terms **queryIndicesTerms;
 
@@ -1363,7 +1342,7 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
         for (;;)
         {
                 // Select document from the leader tokens/decoders
-                uint32_t docID = leaderDecoders[0]->curDocument.id; // // see Codecs::Decoder::curDocument comments
+                auto docID = leaderDecoders[0]->curDocument.id; // // see Codecs::Decoder::curDocument comments
                 uint8_t toAdvanceCnt{1};
 
                 toAdvance[0] = 0;

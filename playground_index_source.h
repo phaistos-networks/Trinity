@@ -26,7 +26,7 @@ namespace Trinity
 
                 Trinity::Codecs::Decoder *new_postings_decoder(const term_index_ctx ctx) override final
                 {
-                        return accessProxy->new_decoder(ctx, accessProxy.get());
+                        return accessProxy->new_decoder(ctx);
                 }
         };
 }

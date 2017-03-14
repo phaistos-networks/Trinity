@@ -37,7 +37,7 @@ l100:
         const auto &it = skipList[top];
         const auto o = it.blockOffset;
         auto prev = it.term;
-	char termStorage[Limits::MaxTermLength];
+	str8_t::value_type termStorage[Limits::MaxTermLength];
 
         memcpy(termStorage, prev.data(), prev.size());
 
@@ -47,7 +47,7 @@ l100:
                 const auto suffixLen = *p++;
 
                 memcpy(termStorage + commonPrefixLen, p, suffixLen * sizeof(str8_t::value_type));
-                p += suffixLen;
+                p += suffixLen * sizeof(str8_t::value_type);
 
                 const auto curTermLen = commonPrefixLen + suffixLen;
                 const auto r = terms_cmp(q.data(), q.size(), termStorage, curTermLen);
@@ -99,8 +99,7 @@ void Trinity::unpack_terms_skiplist(const range_base<const uint8_t *, const uint
 
 void Trinity::pack_terms(std::vector<std::pair<str8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index)
 {
-        //static constexpr uint32_t SKIPLIST_INTERVAL{128};	 // 128 or 64 is more than fine
-        static constexpr uint32_t SKIPLIST_INTERVAL{2};	 // 128 or 64 is more than fine
+        static constexpr uint32_t SKIPLIST_INTERVAL{128};	 // 128 or 64 is more than fine
         uint32_t nextSkipListEntry{1}; 	// so that we will output for the first term (required)
         str8_t prev;
 
@@ -191,7 +190,7 @@ void Trinity::terms_data_view::iterator::decode_cur()
 		const auto suffixLen = *p++;
 
 		memcpy(termStorage + commonPrefixLen, p, suffixLen * sizeof(str8_t::value_type));
-		p += suffixLen;
+		p += suffixLen * sizeof(str8_t::value_type);
 
 		cur.term.len = commonPrefixLen + suffixLen;
 		cur.tctx.documents = Compression::decode_varuint32(p);

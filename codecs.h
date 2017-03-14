@@ -85,6 +85,10 @@ namespace Trinity
 
 			}
 
+			// handy utility function
+			// see SegmentIndexSession::commit()
+			void persist_terms(std::vector<std::pair<str8_t, term_index_ctx>> &);
+
 
 			// Subclasses should e.g open files, allocate memory etc
                         virtual void begin() = 0;
@@ -100,7 +104,7 @@ namespace Trinity
 			
 			// constructs a new encoder 
 			// handy utility function
-			virtual Encoder *new_encoder(IndexSession *) = 0;
+			virtual Encoder *new_encoder() = 0;
 
 
 
@@ -117,8 +121,9 @@ namespace Trinity
 			// really only used for queries as an IndexSource), then you can just implement this and merge() as no-ops.
 			virtual range32_t append_index_chunk(const AccessProxy *src, const term_index_ctx srcTCTX) = 0;
 
+
 			// If we have multiple postlists for the same term(i.e merging 2+ segments and same term exists in 2+ of them) then
-			// where we can't just use append_index_chunk()  but instead we need to merge them, we need to use this codec-specific merge function
+			// where we can't just use append_index_chunk() but instead we need to merge them, we need to use this codec-specific merge function
 			// that will do this for us. Use append_index_chunk() otherwise.
 			// 
 			// You are expected to have encoder->begin_term() before invoking this method, and to invoke encoder->end_term() after the method has returned
@@ -126,7 +131,7 @@ namespace Trinity
 			struct merge_participant
 			{
 				AccessProxy *ap;
-				range32_t indexChunk;
+				term_index_ctx tctx;
 				masked_documents_registry *maskedDocsReg;
 			};
 				
@@ -152,7 +157,7 @@ namespace Trinity
 
                         virtual void begin_term() = 0;
 
-                        virtual void begin_document(const uint32_t documentID, const uint16_t totalHits) = 0;
+                        virtual void begin_document(const docid_t documentID, const uint16_t totalHits) = 0;
 
 			// If you want to register a hit for a special token (e.g site:foo.com) where position makes no sense, you should
 			// use position 0(or a very high position, but 0 is preferrable)
@@ -178,41 +183,54 @@ namespace Trinity
 			// having to call anything.
 			//
 			// The only minor downside is that Decoder subclases *MUST* update curDocument in their begin(), next() and seek() methods
-			// Recall that document ID UINT32_MAX can be used for 'no more documents'. 
+			// Recall that document ID MaxDocIDValue can be used for 'no more documents'. 
 			// 
-			// Using `dec->curDocument` instea of dec->cur_doc_id() and dec->cur_doc_freq()
+			// Using `dec->curDocument` instead of dec->cur_doc_id() and dec->cur_doc_freq()
 			// results in a drop from 0.238s to 0.222s for a very fancy query
 			//
 			// UPDATE: now no longer expose cur_doc_id() and cur_doc_freq() which saves us 2*sizeof(void*) bytes from the vtable
 			// which is potentially great
 			struct
 			{
-				uint32_t id;
+				docid_t id;
 				uint16_t freq;
 			} curDocument;
 
 
 
-			// before iterating via next(), you need to begin()
-			// if you do not intend to iterate the documents list, and only wish to seek documents
+			// Before iterating via next(), you need to begin()
+			//
+			// If you do not intend to iterate the documents list, and only wish to seek documents
 			// you can/should skip begin() and just use seek()
-			// returns UINT32_MAX if there are no documents
+			//
+			// Returns MaxDocIDValue if there are no documents
 			// (Remeber to update curDocument)
-                        virtual uint32_t begin() = 0;
+                        virtual docid_t begin() = 0;
 
-			// returns false if no documents list has been exchausted
+			// Returns false if no documents list has been exchausted
 			// or advances to the next document and returns true
+			// Make sure that you do not advance to nowhere if you are already at the end, because e.g for a query that contains the same 
+			// term twice e.g [trinity search engine called trinity] (trinity is set twice in the query)
+			// the execution engine may invoke seek() to the shared decoder for the second trinity instance and getting to the end, and then attempt to advance the leader decoder for first trinity
+			// by invoking next(), so the next() should be able to handle being at the end already
 			// (Remeber to update curDocument)
                         virtual bool next() = 0;
 
-			// (Remeber to update curDocument)
-                        virtual bool seek(const uint32_t target) = 0;
-
-			// Materialises hits for the _current_ document
+			// XXX: it is important that if you fail to seek to target you stop to ONE document after target, or if you have exhausted the documents list then 
+			// just return false and set curDocument.id  = MaxDocIDValue
+			// i.e if you are at curDocument.id = 50 and the ids in the list are (20, 50, 55, 70, 80, 100, 150, 200) and you
+			// seek to 110, then you must stop at 150 (or earlier but not earlier than 50)
+			// See provided codecs implementations.
 			//
-			// XXX: if you materialize, it's likely that future cur_doc_freq() calls will return, at best, 0
-			// so you should not materialize if have already done so -- if you know the codec you use
-			// will reset freqs tracker internally so that cur_doc_freq() == 0 you can check for that
+			// This is important so that subsequent accesses to curDocument, and call to next() and seek() will work as expected
+			// (Remeber to update curDocument)
+                        virtual bool seek(const docid_t target) = 0;
+
+			// Materializes hits for the _current_ document
+			// You must also dwspace->set(termID, pos) for positions != 0
+			//
+			// XXX: if you materialize, it's likely that curDocument.freq will be reset to 0
+			// so you should not materialize if have already done so.
                         virtual void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) = 0;
 
 			// not going to rely on a constructor for initialization because
@@ -237,7 +255,10 @@ namespace Trinity
 			// utility function: returns a new decoder for posts list
 			// Some codecs(e.g lucene's) may need to access the filesystem and/or other codec specific state
 			// AccessProxy faciliates that (this is effectively a pointer to self)
-                        virtual Decoder *new_decoder(const term_index_ctx &tctx, AccessProxy *access) = 0;
+			//
+			// XXX: Make sure you Decoder::init() before you return it
+			// see e.g Google::AccessProxy::new_decoder()
+                        virtual Decoder *new_decoder(const term_index_ctx &tctx) = 0;
 
 			AccessProxy(const char *bp, const uint8_t *index_ptr)
 				: basePath{bp}, indexPtr{index_ptr}

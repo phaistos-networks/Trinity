@@ -19,7 +19,7 @@ namespace Trinity
 // For other applications that do not need to access to all terms, one couild get those structures, make sure TRINITY_TERMS_FAT_INDEX is defined
 // and use it .
 //#define TRINITY_TERMS_FAT_INDEX 
-	struct terms_skiplist_entry
+	struct terms_skiplist_entry final
         {
                 str8_t term;
 #ifdef TRINITY_TERMS_FAT_INDEX
@@ -56,16 +56,16 @@ namespace Trinity
 
 	// iterator access to the terms data
 	// this is very useful for merging terms dictionaries (see IndexSourcePrefixCompressedTermsView)
-	struct terms_data_view
+	struct terms_data_view final
         {
               public:
-                struct iterator
+                struct iterator final
                 {
                         friend struct terms_data_view;
 
                       public:
                         const uint8_t *p;
-                        char termStorage[Limits::MaxTermLength];
+                        str8_t::value_type termStorage[Limits::MaxTermLength];
                         struct
                         {
                                 str8_t term;
@@ -76,6 +76,7 @@ namespace Trinity
                             : p{ptr}
                         {
                                 cur.term.p = termStorage;
+				cur.term.len = 0;
                         }
 
                         inline bool operator==(const iterator &o) const noexcept
@@ -137,7 +138,7 @@ namespace Trinity
         };
 
 	// A specialised IndexSourceTermsView for accessing prefix-encoded terms dictionaries
-	struct IndexSourcePrefixCompressedTermsView
+	struct IndexSourcePrefixCompressedTermsView final
 		: public IndexSourceTermsView
         {
               private:
@@ -165,6 +166,7 @@ namespace Trinity
                 }
         };
 
+	//A handy wrapper for memory mapped terms data and a skiplist from the terms index
         class SegmentTerms
         {
 		private:

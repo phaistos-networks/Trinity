@@ -30,9 +30,11 @@ std::unique_ptr<Trinity::masked_documents_registry> Trinity::MergeCandidatesColl
 }
 
 // Make sure you have commited first
+// Unlike with e.g SegmentIndexSession where the order of postlists in the index is based on our translation(term=>integer id) and the ascending order of that id
+// here the order will match the order the terms are found in `tersm`, because we perform a merge-sort and so we process terms in lexicograpphic order
 void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is, simple_allocator *allocator, std::vector<std::pair<str8_t, Trinity::term_index_ctx>> *const terms)
 {
-	static constexpr bool trace{true};
+	static constexpr bool trace{false};
 
 	struct tracked_candidate
 	{
@@ -58,10 +60,10 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
         if (all_.empty())
                 return;
 
-        uint16_t toAdvance[128];
+        uint16_t toAdvance[all_.size()];
         auto all = all_.data();
         const auto isCODEC = is->codec_identifier();
-	DocWordsSpace dws{65536}; // dummy, for materialize_hits()
+	DocWordsSpace dws{Limits::MaxPosition}; // dummy, for materialize_hits()
 	size_t termHitsCapacity{0};
 	term_hit *termHitsStorage{nullptr};
 	std::vector<Trinity::Codecs::IndexSession::merge_participant> mergeParticipants;
@@ -129,8 +131,8 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 			else
 			{
 				term_index_ctx tctx;
-				std::unique_ptr<Trinity::Codecs::Encoder> enc(is->new_encoder(is));
-				std::unique_ptr<Trinity::Codecs::Decoder> dec(c.ap->new_decoder(selected.second, c.ap));
+				std::unique_ptr<Trinity::Codecs::Encoder> enc(is->new_encoder());
+				std::unique_ptr<Trinity::Codecs::Decoder> dec(c.ap->new_decoder(selected.second));
 				auto maskedDocsReg = scanner_registry_for(all[toAdvance[0]].idx);
 
 				dec->begin();
@@ -175,7 +177,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 		{
 			if (sameCODEC)
 			{
-				std::unique_ptr<Trinity::Codecs::Encoder> enc(is->new_encoder(is));
+				std::unique_ptr<Trinity::Codecs::Encoder> enc(is->new_encoder());
 				term_index_ctx tctx;
 
 				mergeParticipants.clear();
@@ -186,7 +188,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 					mergeParticipants.push_back(
 					{
 						all[idx].candidate.ap,
-						all[idx].candidate.terms->cur().second.indexChunk,
+						all[idx].candidate.terms->cur().second,
 						scanner_registry_for(all[idx].idx).release()
 					});
                                 }
@@ -203,13 +205,13 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 			{
 				// we got to merge-sort across different codecs and output to an encoder of a different, potentially, codec
 				term_index_ctx tctx;
-				std::unique_ptr<Trinity::Codecs::Encoder> enc(is->new_encoder(is));
+				std::unique_ptr<Trinity::Codecs::Encoder> enc(is->new_encoder());
 
 				for (uint16_t i{0}; i != toAdvanceCnt; ++i)
 				{
 					const auto idx = toAdvance[i];
 					auto ap = all[idx].candidate.ap;
-					auto dec = ap->new_decoder(all[idx].candidate.terms->cur().second, ap);
+					auto dec = ap->new_decoder(all[idx].candidate.terms->cur().second);
 					auto reg = scanner_registry_for(all[idx].idx).release();
 					
 					require(reg);
@@ -228,7 +230,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 				for (;;)
 				{
 					uint16_t toAdvanceCnt{1};
-					uint32_t lowestDID = decoders[0].first->curDocument.id;
+					auto lowestDID = decoders[0].first->curDocument.id;
 
 					toAdvance[0] = 0;
 					for (uint16_t i{1}; i != rem; ++i)

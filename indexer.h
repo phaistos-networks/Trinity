@@ -21,7 +21,7 @@ namespace Trinity
                 IOBuffer b;
                 IOBuffer hitsBuf;
                 std::vector<std::pair<uint32_t, std::pair<uint32_t, range_base<uint32_t, uint8_t>>>> hits;
-                std::vector<uint32_t> updatedDocumentIDs;
+                std::vector<docid_t> updatedDocumentIDs;
                 simple_allocator dictionaryAllocator;
                 Switch::unordered_map<str8_t, uint32_t> dictionary;
 		Switch::unordered_map<uint32_t, str8_t> invDict;
@@ -30,7 +30,7 @@ namespace Trinity
                 struct document_proxy final
                 {
                         SegmentIndexSession &sess;
-                        const uint32_t did;
+                        const docid_t did;
                         std::vector<std::pair<uint32_t, std::pair<uint32_t, range_base<uint32_t, uint8_t>>>> &hits;
                         IOBuffer &hitsBuf;
 
@@ -39,7 +39,7 @@ namespace Trinity
                                 return sess.term_id(term);
                         }
 
-                        document_proxy(SegmentIndexSession &s, uint32_t documentID, std::vector<std::pair<uint32_t, std::pair<uint32_t, range_base<uint32_t, uint8_t>>>> &h, IOBuffer &hb)
+                        document_proxy(SegmentIndexSession &s, docid_t documentID, std::vector<std::pair<uint32_t, std::pair<uint32_t, range_base<uint32_t, uint8_t>>>> &h, IOBuffer &hb)
                             : sess{s}, did{documentID}, hits{h}, hitsBuf{hb}
                         {
                         }
@@ -87,12 +87,12 @@ namespace Trinity
                         b.clear();
                 }
 
-                void erase(const uint32_t documentID);
+                void erase(const docid_t documentID);
 
 		// after you have obtained a document_proxy, you can use its insert methods to register term hits
 		// and when you are done indexing a document, use insert() or update() to insert as a NEW document or update an existing
 		// document in case it is already indexed in another segment
-                document_proxy begin(const uint32_t documentID);
+                document_proxy begin(const docid_t documentID);
 
                 // In the past we 'd store those in reverse, so that if we were to erase a document and then index it
                 // we 'd read the document's terms first (because we 'd read in reverse from the buffer) and would ignore

@@ -46,7 +46,7 @@ namespace Trinity
                         free(positions);
 		}
 
-		void reset(const uint32_t did)
+		void reset()
 		{
 			// in order to avoid resetting/clearing positions[] for every other document
 			// we track a document-specific identifier in positions[] so if positions[idx].docSeq != curDocSeq

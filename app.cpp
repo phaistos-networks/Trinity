@@ -7,10 +7,68 @@
 #include <set>
 #include <text.h>
 #include "merge.h"
+#include "lucene_codec.h"
 
 
 using namespace Trinity;
 
+#if 1
+int main(int argc, char *argv[])
+{
+	MergeCandidatesCollection collection;
+	int fd = open("/tmp/TSEGMENTS/1500/terms.data", O_RDONLY);
+
+	require(fd != -1);
+	auto fileSize = lseek64(fd, 0, SEEK_END);
+	auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
+	close(fd);
+	require(fileData != MAP_FAILED);
+	
+	IndexSourcePrefixCompressedTermsView itv({(const uint8_t *)fileData, (uint32_t)fileSize});
+	fd = open("/tmp/TSEGMENTS/1500/index", O_RDONLY);
+	require(fd != -1);
+	fileSize = lseek64(fd, 0, SEEK_END);
+	fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
+	close(fd);
+	require(fileData != MAP_FAILED);
+
+	Trinity::Codecs::Lucene::AccessProxy ap("/tmp/TSEGMENTS/1500/", (uint8_t *)fileData);
+
+	SegmentTerms st("/tmp/TSEGMENTS/1500/");
+
+	collection.insert({1500, &itv, &ap, {}});
+
+
+	std::vector<std::pair<str8_t, Trinity::term_index_ctx>> terms;
+	simple_allocator allocator;
+	auto outSession = new Trinity::Codecs::Lucene::IndexSession("/tmp/TSEGMENTS/1800/");
+
+	outSession->begin();
+	collection.merge(outSession, &allocator, &terms);
+	outSession->end();
+
+	SLog("positionsOut.size = ", outSession->positionsOut.size(), "\n");
+
+	require(outSession->indexOut.size() == fileSize);
+	const auto *a = (uint8_t *)fileData, *b = (uint8_t *)outSession->indexOut.data();
+	for (uint32_t i{0}; i != fileSize; ++i)
+	{
+		if (a[i] != b[i])
+		{
+			SLog("Mismatch ", i, "\n");
+			SLog(*(uint32_t *)(a + i),  " ", *(uint32_t *)(b + i), "\n");
+			return 1;
+		}
+	}
+
+	SLog("indexOut.size = ", outSession->indexOut.size(), "\n");
+	delete outSession;
+
+
+
+	return 0;
+}
+#endif
 
 #if 0
 int main()
@@ -98,7 +156,109 @@ int main(int argc, char *argv[])
 #endif
 
 
+#if 0
+int main(int argc, char *argv[])
+{
+	auto sess = std::make_unique<Trinity::Codecs::Lucene::IndexSession>("/tmp/LUCENE/1/");
+	//auto sess = std::make_unique<Trinity::Codecs::Google::IndexSession>("/tmp/LUCENE/1/");
+	auto enc = sess->new_encoder();
+	term_index_ctx tctx;
+	term_hit hits[8192];
+	uint32_t pos{1};
+
+        enc->begin_term();
+
 #if 1
+	const size_t n{15};
+
+        enc->begin_document(1, n);
+        for (uint32_t i{10}; i != 10 + n; ++i)
+        {
+		enc->new_hit(pos++, {(uint8_t *)&i, sizeof(uint32_t)});
+	}
+	enc->end_document();
+
+	enc->begin_document(10, 2);
+	enc->new_hit(15, {});
+	enc->new_hit(16, {});
+	enc->end_document();
+
+	enc->begin_document(100, 2);
+	enc->new_hit(25, {});
+	enc->new_hit(50, {});
+	enc->end_document();
+
+#else
+        for (uint32_t i{1}; i < 250; ++i)
+        {
+                if (i > 100 && i < 125)
+                {
+                        enc->begin_document(i, 2);
+                        enc->new_hit(pos++, {(uint8_t *)&i, sizeof(uint32_t)});
+                        enc->new_hit(pos++, {});
+                        enc->end_document();
+                }
+                else
+                {
+                        enc->begin_document(i, 1);
+                        enc->new_hit(pos++, {(uint8_t *)&i, sizeof(uint32_t)});
+                        enc->end_document();
+                }
+
+                if (i < 15)
+                        ++i;
+        }
+#endif
+        enc->end_term(&tctx);
+
+	SLog(sess->indexOut.size(), "\n");
+        delete enc;
+
+
+
+	Print("\n\n\n\n\n");
+
+        auto ap = new Trinity::Codecs::Lucene::AccessProxy("/tmp/LUCENE/1/", (uint8_t *)sess->indexOut.data(), (uint8_t *)sess->positionsOut.data());
+	auto dec = ap->new_decoder(tctx);
+	DocWordsSpace dws;
+
+	dec->begin();
+	dec->seek(1);
+	//if (!dec->seek(80)) { SLog("Failed to seek\n"); } dec->seek(51000);
+
+	if (dec->curDocument.id == MaxDocIDValue)
+	{
+		SLog("Done\n");
+		dec->seek(5550000);
+
+		return 0;
+	}
+
+	for (;;)
+	{
+		const auto freq = dec->curDocument.freq;
+
+		Print(ansifmt::color_magenta, "DOCUMENT:", dec->curDocument.id, " ", freq, ansifmt::reset, "\n");
+		dec->materialize_hits(0, &dws, hits);
+
+		for (uint32_t i{0}; i != freq; ++i)
+		{
+			Print("HIT:     ", hits[i].pos,  " PAYLOAD:", *(uint32_t *)&hits[i].payload, "\n");
+		}
+
+
+		if (dec->next() == false)
+			break;
+	}
+
+	delete dec;
+	delete ap;
+        return 0;
+}
+#endif
+
+
+#if 0
 int main(int argc, char *argv[])
 {
 	if (argc == 1)
@@ -169,9 +329,16 @@ int main(int argc, char *argv[])
                 }
                 munmap(fileData, fileSize);
 
+#if 0
                 auto is = new Trinity::Codecs::Google::IndexSession("/tmp/TSEGMENTS/100");
 
                 indexSess.commit(is);
+#else
+                auto is = new Trinity::Codecs::Lucene::IndexSession("/tmp/TSEGMENTS/1500");
+
+                indexSess.commit(is);
+
+#endif
                 delete is;
         }
 	else
@@ -182,7 +349,11 @@ int main(int argc, char *argv[])
 		pack_updates(maskedProducts, &maskedProductsBuf);
 		auto updates = unpack_updates({(uint8_t *)maskedProductsBuf.data(), maskedProductsBuf.size()});
 		auto maskedDocsSrc = new TrivialMaskedDocumentsIndexSource(updates);
+#if 0
 		auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/100");
+#else
+		auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/1500");
+#endif
 		auto rr = masked_documents_registry::make(nullptr, 0);
 		IndexSourcesCollection sources;
 		Buffer asuc;
@@ -202,15 +373,6 @@ int main(int argc, char *argv[])
 		struct BPFilter final
 			: public MatchedIndexDocumentsFilter
 		{
-			const DocWordsSpace *dws;
-			const query_index_terms **queryIndicesTerms;
-
-			void prepare(const DocWordsSpace *const dws_, const query_index_terms **qit) override final
-			{
-				dws = dws_;
-				queryIndicesTerms = qit;
-			}
-
                         ConsiderResponse consider(matched_document &doc) override final
                         {
 				doc.sort_matched_terms_by_query_index();
@@ -317,9 +479,8 @@ int main(int argc, char *argv[])
 
 
 		
-		//exec_query<MatchedIndexDocumentsFilter>(q, &sources);
-		auto res = exec_query<BPFilter>(q, &sources);
-		//exec_query(strwlen32_t(argv[1]), ss, rr.get());
+		exec_query<MatchedIndexDocumentsFilter>(q, &sources);
+		//auto res = exec_query<BPFilter>(q, &sources);
 	}
 
         return 0;

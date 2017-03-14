@@ -113,13 +113,13 @@ uint32_t SegmentIndexSession::term_id(const str8_t term)
         return *idp;
 }
 
-void SegmentIndexSession::erase(const uint32_t documentID)
+void SegmentIndexSession::erase(const docid_t documentID)
 {
         updatedDocumentIDs.push_back(documentID);
         // NO NEED: b.pack(documentID, uint16_t(0));
 }
 
-Trinity::SegmentIndexSession::document_proxy SegmentIndexSession::begin(const uint32_t documentID)
+Trinity::SegmentIndexSession::document_proxy SegmentIndexSession::begin(const docid_t documentID)
 {
         hits.clear();
         hitsBuf.clear();
@@ -128,7 +128,7 @@ Trinity::SegmentIndexSession::document_proxy SegmentIndexSession::begin(const ui
 
 // You are expected to have invoked sess->begin() and built the index in sess->indexOut
 // see SegmentIndexSession::commit()
-void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<uint32_t> &updatedDocumentIDs)
+void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<docid_t> &updatedDocumentIDs)
 {
         // Persist index
         int fd = open(Buffer{}.append(sess->basePath, "/index").c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_LARGEFILE, 0775);
@@ -198,14 +198,14 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         struct segment_data
         {
                 uint32_t termID;
-                uint32_t documentID;
+                docid_t documentID;
                 uint32_t hitsOffset;
                 uint16_t hitsCnt;
         };
 
         std::vector<uint32_t> allOffsets;
         Switch::unordered_map<uint32_t, term_index_ctx> map;
-        std::unique_ptr<Trinity::Codecs::Encoder> enc_(sess->new_encoder(sess));
+        std::unique_ptr<Trinity::Codecs::Encoder> enc_(sess->new_encoder());
 
         const auto scan = [ enc = enc_.get(), &map ](const auto data, const auto dataSize)
         {
@@ -215,8 +215,8 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
 
                 for (const auto *p = data, *const e = p + dataSize; p != e;)
                 {
-                        const auto documentID = *(uint32_t *)p;
-                        p += sizeof(uint32_t);
+                        const auto documentID = *(docid_t *)p;
+                        p += sizeof(docid_t);
                         auto termsCnt = *(uint16_t *)p;
                         p += sizeof(uint16_t);
 
@@ -258,7 +258,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                 for (const auto *it = all.data(), *const e = it + all.size(); it != e;)
                 {
                         const auto term = it->termID;
-			uint32_t prevDID{0};
+			docid_t prevDID{0};
 
                         enc->begin_term();
 
@@ -305,7 +305,6 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
 
         // Persist terms dictionary
         std::vector<std::pair<str8_t, term_index_ctx>> v;
-        IOBuffer data, index;
 
         for (const auto &it : map)
         {
@@ -315,13 +314,6 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                 v.push_back({term, it.value()});
         }
 
-        pack_terms(v, &data, &index);
-
-        if (data.SaveInFile(Buffer{}.append(sess->basePath, "/terms.data").c_str()) != data.size())
-                throw Switch::system_error("Failed to persist terms.data");
-
-        if (index.SaveInFile(Buffer{}.append(sess->basePath, "/terms.idx").c_str()) != index.size())
-                throw Switch::system_error("Failed to persist terms.idx");
-
+	sess->persist_terms(v);
 	persist_segment(sess, updatedDocumentIDs);
 }

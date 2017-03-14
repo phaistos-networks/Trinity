@@ -2,7 +2,7 @@
 
 // packs a list of updated/delete documents into a buffer that also contains
 // a skiplist for random access to the bitmaps
-void Trinity::pack_updates(std::vector<uint32_t> &updatedDocumentIDs, IOBuffer *const buf)
+void Trinity::pack_updates(std::vector<docid_t> &updatedDocumentIDs, IOBuffer *const buf)
 {
         if (updatedDocumentIDs.size())
         {
@@ -39,9 +39,10 @@ void Trinity::pack_updates(std::vector<uint32_t> &updatedDocumentIDs, IOBuffer *
                         buf->advance_size(BANK_SIZE / 8);
                 }
 
-                buf->pack(uint8_t(log2(BANK_SIZE)));                     // 1 byte will suffice
-                buf->serialize(skiplist.data(), skiplist.size());        // skiplist
-                buf->pack(uint32_t(skiplist.size() / sizeof(uint32_t))); // TODO: use varint encoding here
+                buf->pack(uint8_t(log2(BANK_SIZE)));                     	// 1 byte will suffice
+                buf->serialize(skiplist.data(), skiplist.size());        	// skiplist
+                buf->pack(uint32_t(skiplist.size() / sizeof(docid_t))); 	// TODO: use varint encoding here
+		buf->pack(updatedDocumentIDs.front(), updatedDocumentIDs.back()); //lowest, highest
 
         }
 }
@@ -57,23 +58,33 @@ Trinity::updated_documents Trinity::unpack_updates(const range_base<const uint8_
 	const auto *const b = content.start();
 	const auto *p = b + content.size();
 
+	p-=sizeof(docid_t);
+	const auto highest = *(docid_t *)p;
+	p-=sizeof(docid_t);
+	const auto lowest = *(docid_t *)p;
+
 	p-=sizeof(uint32_t);
 	const auto skiplistSize = *(uint32_t *)p;
 	p-=skiplistSize * sizeof(uint32_t);
 
-	const auto skiplist = reinterpret_cast<const uint32_t *>(p);
+	const auto skiplist = reinterpret_cast<const docid_t *>(p);
 	const uint32_t bankSize = 1 << (*(--p));
 
 	require(p - content.start() == bankSize / 8 * skiplistSize);
-	return {skiplist, skiplistSize, bankSize, b};
+	return {skiplist, skiplistSize, bankSize, b, lowest, highest};
 }
 
-bool Trinity::updated_documents_scanner::test(const uint32_t id) noexcept
+bool Trinity::updated_documents_scanner::test(const docid_t id) noexcept
 {
 	static constexpr bool trace{false};
 
 	if (trace)
 		SLog(ansifmt::bold, "Check for ", id, ", curBankRange = ", curBankRange, ", contains ", curBankRange.Contains(id), ansifmt::reset, "\n");
+	
+	if (!documentsRange.Contains(id))
+		return false;
+
+	// TODO: bloom filter checks
 
 	if (id >= curBankRange.start())
 	{
