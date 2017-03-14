@@ -122,6 +122,7 @@ namespace Trinity
 			// so that as soon as they find the top-K most recent tweets, they stop
 			// (the only problem with this is that updated_documents_scanner expectes the document IDs to be provided in ascending monotonic order, and Trinity::MergeCandidatesCollection::merge() expects
 			// documents to be stored in ascending order, but both can trivially change)
+			// See CONCEPTS.md please
 			Abort,
 		};
 

@@ -371,7 +371,7 @@ static ast_node *parse_subexpr(ast_parser &ctx, const uint16_t limit)
                 {
                         // (of AND apple) AND apple
                         cur->binop.rhs->p->rep += v->p->rep;
-                        v = ctx.alloc_node(ast_node::Type::Dummy);
+                        //v = ctx.alloc_node(ast_node::Type::Dummy);
                 }
                 else
                 {

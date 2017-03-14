@@ -350,7 +350,7 @@ namespace // static/local this module
 
                 struct decode_ctx_struct
                 {
-                        // decoders[] and termHits[] are indexed by termID
+                        // decoders[](for decoding terms posting lists) and termHits[] are indexed by termID
                         Trinity::Codecs::Decoder **decoders{nullptr};
                         term_hits **termHits{nullptr};
                         uint16_t capacity{0};

@@ -5,21 +5,20 @@
 
 namespace Trinity
 {
-	// We are going to map term=>term_index_ctx representation in a segment's termlist file
+
+	// Information about a term's posting list and number of documents it matches
+	// We track the number of documents because it may be useful(and it is) to some codecs, and also
+	// is extremely useful during execution where we re-order the query nodes based on evaluation cost which
+	// is directly related to the a term's posting list size based on the number of documents it matches.
         struct term_index_ctx final
         { 
-		// total documents matching term in the index(i.e segment, or whatever else)
-		// this is really important
-		//
-		// However, it's also important to remember that we can't compute TFIDF like Lucene claims to do if multiple segments
-		// are involved in an execution plan and at least one of them has updated documents that override 1+ other segments, because
-		// we can't really add the documents across all segments for the same term in order to determine how many document. 
-		// Maybe we can track that counts during evaluation though
                 uint32_t documents;  
 
-		// chunk that holds all postings for a given term
-		// We need to keep track of that size because it allows for all kind of optimizations and efficient skiplist access
-		// This is codec specific
+		// For each each term, the inverted index contains a `posting list`, where
+		// each posting contains the occurrences information (e.g frequences and positions)
+		// for documents that contain the trerm. This is the chunk in the index that
+		// holds the posting list.
+		// This is codec specific though -- for some codecs, this could mean something else
 		range32_t indexChunk;
 
 		term_index_ctx(const uint32_t d, const range32_t c)
@@ -62,8 +61,8 @@ namespace Trinity
 		struct Encoder;
 		struct AccessProxy;
 
-		// represents a new indexer session
-		// all indexer sessions have an indexOut that holds the index(posts)
+		// Represents a new indexer session
+		// all indexer sessions have an indexOut that holds the index(posting lists for each distinct term)
 		// but other codecs may e.g open/track more files or buffers
 		//
 		// The base path makes sense for disk based storage, but some codecs may only operate on in-memory
@@ -111,23 +110,31 @@ namespace Trinity
 			// This is used during merge
 			// By providing the access to an index and a term's tctx, we should append to the current indexOut
 			// for most codecs, that's just a matter of copying the region in tctx.indexChunk into indexOut, but
-			// some other codecs may need to access other files in the src (e.g lucene codec uses two extra files for positions/attributes)
+			// some other codecs may need to access other files in the src 
+			// (e.g lucene codec uses an extra files for positions/attributes)
 			//
 			// must hold that (src->codec_identifier() == this->codec_identifier())
 			//
-			// XXX: If you want to filter a chunk's documents though, don't use this method. see MergeCandidatesCollection::merge()
+			// XXX: If you want to filter a chunk's documents though, don't use this method. 
+			// See MergeCandidatesCollection::merge()
 			//
-			// If you have a fancy codec that you don't expect to use for merging other segments (e.g some fancy in-memory wrapper that is
+			// If you have a fancy codec that you don't expect to use for merging other segments 
+			// (e.g some fancy in-memory wrapper that is
 			// really only used for queries as an IndexSource), then you can just implement this and merge() as no-ops.
 			virtual range32_t append_index_chunk(const AccessProxy *src, const term_index_ctx srcTCTX) = 0;
 
 
-			// If we have multiple postlists for the same term(i.e merging 2+ segments and same term exists in 2+ of them) then
-			// where we can't just use append_index_chunk() but instead we need to merge them, we need to use this codec-specific merge function
+			// If we have multiple postng lists for the same term(i.e merging 2+ segments 
+			// and same term exists in 2+ of them) t
+			// where we can't just use append_index_chunk() but instead we need to merge them, 
+			// we need to use this codec-specific merge function
 			// that will do this for us. Use append_index_chunk() otherwise.
 			// 
-			// You are expected to have encoder->begin_term() before invoking this method, and to invoke encoder->end_term() after the method has returned
-			// The input pairs hold an AccessProxy for the data and a range in the the index of that data, and the encoder the target codec encoer
+			// You are expected to have encoder->begin_term() before invoking this method, 
+			// and to invoke encoder->end_term() after the method has returned
+			//
+			// The input pairs hold an AccessProxy for the data and a range in the the index of that data, and 
+			// the encoder the target codec encoder
 			struct merge_participant
 			{
 				AccessProxy *ap;
@@ -138,7 +145,7 @@ namespace Trinity
                         virtual void merge(merge_participant *participants, const uint16_t participantsCnt, Encoder *const encoder) = 0;
                 };
 
-                // Encoder interface for encoding a single term's postlists
+                // Encoder interface for encoding a single term's posting list
                 struct Encoder
                 {
 			IndexSession *const sess;
@@ -159,10 +166,10 @@ namespace Trinity
 
                         virtual void begin_document(const docid_t documentID, const uint16_t totalHits) = 0;
 
-			// If you want to register a hit for a special token (e.g site:foo.com) where position makes no sense, you should
-			// use position 0(or a very high position, but 0 is preferrable)
-			// You will likely only need to set payload for special terms (e.g site:foo.com). Payload can be upto 8 byte sin size(sizeof(uint64_t)). You
-			// should try to keep that as low as possible.
+			// If you want to register a hit for a special token (e.g site:foo.com) where position makes no sense, 
+			// you should use position 0(or a very high position, but 0 is preferrable)
+			// You will likely only need to set payload for special terms (e.g site:foo.com). 
+			// Payload can be upto 8 byte sin size(sizeof(uint64_t)). You should try to keep that as low as possible.
                         virtual void new_hit(const uint32_t position, const range_base<const uint8_t *, const uint8_t> payload) = 0;
 
                         virtual void end_document() = 0;
@@ -172,7 +179,7 @@ namespace Trinity
 
 
 
-		// Decoder interface for decoding a single term's postlists
+		// Decoder interface for decoding a single term's posting list.
 		// If a decoder makes use of skiplist data, they are expected to be serialized in the index
 		// and the decoder is responsible for deserializing and using them from there
                 struct Decoder
@@ -188,8 +195,8 @@ namespace Trinity
 			// Using `dec->curDocument` instead of dec->cur_doc_id() and dec->cur_doc_freq()
 			// results in a drop from 0.238s to 0.222s for a very fancy query
 			//
-			// UPDATE: now no longer expose cur_doc_id() and cur_doc_freq() which saves us 2*sizeof(void*) bytes from the vtable
-			// which is potentially great
+			// UPDATE: now no longer expose cur_doc_id() and cur_doc_freq() which saves us 2*sizeof(void*) bytes 
+			// from the vtable which is potentially great
 			struct
 			{
 				docid_t id;
@@ -207,13 +214,15 @@ namespace Trinity
 			// (Remeber to update curDocument)
                         virtual docid_t begin() = 0;
 
-			// Returns false if no documents list has been exchausted
-			// or advances to the next document and returns true
+
+			// Returns false if the postings list has been exhausted
+			// or advances to the next document in the postings list and return true
 			//
 			// - if at the end, return false
 			// - otherwise advance by one and return the current document
 			//
-			// Make sure that you do not advance to `nowhere` if you are already at the end, because e.g for a query that contains the same 
+			// Make sure that you do not advance to `nowhere` if you are already at the end, because 
+			// e.g for a query that contains the same 
 			// term twice e.g [trinity search engine called trinity] (trinity is set twice in the query)
 			// the execution engine may invoke seek() to the shared decoder for the second trinity 
 			// instance and getting to the end, and then attempt to advance the leader decoder for first trinity
@@ -221,32 +230,37 @@ namespace Trinity
 			// (Remeber to update curDocument)
                         virtual bool next() = 0;
 
+
 			// Seeks to a target document
 			// 
 			// - If you are at a document > target, return false
 			// - If you are at the end of the documents/hits, return false
 			// - If you matched the document, return true
 			//
-			// XXX: it is important that if you fail to seek to target you stop to ONE document after target, or if you have exhausted the documents list then 
+			// XXX: it is important that if you fail to seek to target you stop to ONE document after target, 
+			// or if you have exhausted the documents list then 
 			// just return false and set curDocument.id  = MaxDocIDValue
-			// i.e if you are at curDocument.id = 50 and the ids in the list are (20, 50, 55, 70, 80, 100, 150, 200) and you
-			// seek to 110, then you must stop at 150 (or earlier but not earlier than 50)
+			// i.e if you are at curDocument.id = 50 and the ids in the list are (20, 50, 55, 70, 80, 100, 150, 200) and 
+			// you seek to 110, then you must stop at 150 (or earlier but not earlier than 50)
 			// See provided codecs implementations.
 			//
 			// This is important so that subsequent accesses to curDocument, and call to next() and seek() will work as expected
 			// (Remeber to update curDocument)
                         virtual bool seek(const docid_t target) = 0;
 
-			// Materializes hits for the _current_ document
+
+			// Materializes hits for the _current_ document in the postings list
 			// You must also dwspace->set(termID, pos) for positions != 0
 			//
 			// XXX: if you materialize, it's likely that curDocument.freq will be reset to 0
 			// so you should not materialize if have already done so.
                         virtual void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) = 0;
 
-			// not going to rely on a constructor for initialization because
+
+			// Initialised the decoding state for accessing the postings list
+			//
+			// Not going to rely on a constructor for initialization because
 			// we want to force subclasses to define a method with this signature
-			// TODO: skiplist data should be specific to the AccessProxy
 			virtual void init(const term_index_ctx &, AccessProxy *) = 0;
 
 			virtual ~Decoder()
@@ -263,11 +277,11 @@ namespace Trinity
 			const char *basePath;	 // not really necessary, but keep it around just in case
 			const uint8_t *const indexPtr;
 
-			// utility function: returns a new decoder for posts list
+			// utility function: returns a new decoder for a term's posting list
 			// Some codecs(e.g lucene's) may need to access the filesystem and/or other codec specific state
 			// AccessProxy faciliates that (this is effectively a pointer to self)
 			//
-			// XXX: Make sure you Decoder::init() before you return it
+			// XXX: Make sure you Decoder::init() before you return from the method
 			// see e.g Google::AccessProxy::new_decoder()
                         virtual Decoder *new_decoder(const term_index_ctx &tctx) = 0;
 
