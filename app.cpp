@@ -12,7 +12,7 @@
 
 using namespace Trinity;
 
-#if 1
+#if 0
 int main(int argc, char *argv[])
 {
 	MergeCandidatesCollection collection;
@@ -249,7 +249,7 @@ int main(int argc, char *argv[])
 #endif
 
 
-#if 0
+#if 1
 int main(int argc, char *argv[])
 {
 	if (argc == 1)

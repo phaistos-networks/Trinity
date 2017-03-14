@@ -70,12 +70,12 @@ void Trinity::Codecs::Lucene::IndexSession::begin()
 
 void Trinity::Codecs::Lucene::IndexSession::end()
 {
-	int fd = open(Buffer{}.append(basePath, "/hits.data").c_str(), O_WRONLY|O_LARGEFILE|O_CREAT, 0775);
+        int fd = open(Buffer{}.append(basePath, "/hits.data").c_str(), O_WRONLY | O_LARGEFILE | O_CREAT, 0775);
 
-	expect(fd != -1);
-	// XXX: use SwitchFS::writev_safe() or use multiple write() calls because if a write() is for size >= sizeof(ssize_t) it will fail with EINVAL
-	expect(pwrite64(fd, positionsOut.data(), positionsOut.size(), 0) == positionsOut.size());
-	close(fd);
+        expect(fd != -1);
+        // XXX: use SwitchFS::writev_safe() or use multiple write() calls because if a write() is for size >= sizeof(ssize_t) it will fail with EINVAL
+        expect(pwrite64(fd, positionsOut.data(), positionsOut.size(), 0) == positionsOut.size());
+        close(fd);
 }
 
 range32_t Trinity::Codecs::Lucene::IndexSession::append_index_chunk(const Trinity::Codecs::AccessProxy *src_, const term_index_ctx srcTCTX)
@@ -104,21 +104,21 @@ range32_t Trinity::Codecs::Lucene::IndexSession::append_index_chunk(const Trinit
 void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participants, const uint16_t participantsCnt, Trinity::Codecs::Encoder *enc_)
 {
         // This is somewhat complicated, but if we do this, then all that's left is the
-	static constexpr bool trace{false};
+        static constexpr bool trace{false};
         struct candidate
         {
                 docid_t lastDocID;
                 docid_t docDeltas[BLOCK_SIZE];
                 uint32_t docFreqs[BLOCK_SIZE];
-		uint32_t hitsPayloadLengths[BLOCK_SIZE];
-		uint32_t hitsPositionDeltas[BLOCK_SIZE];
+                uint32_t hitsPayloadLengths[BLOCK_SIZE];
+                uint32_t hitsPositionDeltas[BLOCK_SIZE];
                 masked_documents_registry *maskedDocsReg;
 
                 uint32_t documentsLeft;
                 uint32_t hitsLeft;
                 uint32_t skippedHits;
-		uint8_t bufferedHits;
-		uint8_t hitsIndex;
+                uint8_t bufferedHits;
+                uint8_t hitsIndex;
 
                 struct
                 {
@@ -138,15 +138,15 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                         uint8_t size;
                 } cur_block;
 
-		const uint8_t *payloadsIt, *payloadsEnd;
+                const uint8_t *payloadsIt, *payloadsEnd;
 
                 void refill_hits(FastPForLib::FastPFor<4> &forUtil)
                 {
                         uint32_t payloadsChunkLength;
                         auto hdp = positions_chunk.p;
 
-			if (trace)
-			SLog(ansifmt::bold, "REFILLING NOW, hitsLeft = ", hitsLeft, ansifmt::reset, "\n");
+                        if (trace)
+                                SLog(ansifmt::bold, "REFILLING NOW, hitsLeft = ", hitsLeft, ansifmt::reset, "\n");
 
                         if (hitsLeft >= BLOCK_SIZE)
                         {
@@ -173,10 +173,10 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                                         varbyte_get32(hdp, v);
 
                                         if (v & 1)
-					{
+                                        {
                                                 payloadLen = *hdp++;
-						require(payloadLen <= sizeof(uint64_t));
-					}
+                                                require(payloadLen <= sizeof(uint64_t));
+                                        }
 
                                         hitsPositionDeltas[i] = v >> 1;
                                         hitsPayloadLengths[i] = payloadLen;
@@ -197,8 +197,8 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                 void refill_documents(FastPForLib::FastPFor<4> &forUtil)
                 {
-			if (trace)
-			SLog("Refilling documents ", documentsLeft, "\n");
+                        if (trace)
+                                SLog("Refilling documents ", documentsLeft, "\n");
 
                         if (documentsLeft >= BLOCK_SIZE)
                         {
@@ -211,7 +211,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                         else
                         {
                                 uint32_t v;
-				auto p = index_chunk.p;
+                                auto p = index_chunk.p;
 
                                 for (uint32_t i{0}; i != documentsLeft; ++i)
                                 {
@@ -226,18 +226,18 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                                                 docFreqs[i] = v;
                                         }
                                 }
-				index_chunk.p = p;
+                                index_chunk.p = p;
 
                                 cur_block.size = documentsLeft;
                                 documentsLeft = 0;
                         }
                         cur_block.i = 0;
 
-			if (trace)
-			SLog(cur_block.i, " ", cur_block.size, "\n");
+                        if (trace)
+                                SLog(cur_block.i, " ", cur_block.size, "\n");
                 }
 
-		void skip_ommitted_hits(FastPForLib::FastPFor<4> &forUtil)
+                void skip_ommitted_hits(FastPForLib::FastPFor<4> &forUtil)
                 {
                         if (!skippedHits)
                                 return;
@@ -258,31 +258,31 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                                 skippedHits = 0;
                                 bufferedHits = 0;
 
-				uint32_t sum{0};
+                                uint32_t sum{0};
 
                                 for (uint32_t i{0}; i != n; ++i)
                                         sum += hitsPayloadLengths[hitsIndex++];
 
-				payloadsIt += sum;
+                                payloadsIt += sum;
                         }
                 }
 
                 void output_hits(FastPForLib::FastPFor<4> &forUtil, Trinity::Codecs::Lucene::Encoder *enc)
                 {
                         auto freq = docFreqs[cur_block.i];
-			uint64_t payload;
+                        uint64_t payload;
                         uint16_t pos{0};
 
-			if (trace)
-			SLog("Will output hits for ", cur_block.i, " ", freq, ", skippedHits = ", skippedHits, "\n");
+                        if (trace)
+                                SLog("Will output hits for ", cur_block.i, " ", freq, ", skippedHits = ", skippedHits, "\n");
 
                         skip_ommitted_hits(forUtil);
                         if (hitsIndex + freq <= bufferedHits)
                         {
                                 const auto upto = hitsIndex + freq;
 
-				if (trace)
-				SLog("fast-path\n");
+                                if (trace)
+                                        SLog("fast-path\n");
 
                                 while (hitsIndex != upto)
                                 {
@@ -290,32 +290,32 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                                         const auto pl = hitsPayloadLengths[hitsIndex];
 
-					if (pl)
+                                        if (pl)
                                         {
                                                 require(pl <= sizeof(uint64_t));
                                                 memcpy(&payload, payloadsIt, pl);
                                                 payloadsIt += pl;
                                         }
                                         else
-						payload = 0;
+                                                payload = 0;
 
-					enc->new_hit(pos, {(uint8_t *)&payload, uint8_t(pl)});
+                                        enc->new_hit(pos, {(uint8_t *)&payload, uint8_t(pl)});
 
                                         ++hitsIndex;
                                 }
                         }
                         else
                         {
-				if (trace)
-				SLog("SLOW path\n");
+                                if (trace)
+                                        SLog("SLOW path\n");
 
                                 for (;;)
                                 {
                                         const auto n = std::min<uint32_t>(bufferedHits - hitsIndex, freq);
                                         const auto upto = hitsIndex + n;
 
-					if (trace)
-					SLog("upto = ", upto, ", bufferedHits = ", bufferedHits, ", hitsIndex = ", hitsIndex, "\n");
+                                        if (trace)
+                                                SLog("upto = ", upto, ", bufferedHits = ", bufferedHits, ", hitsIndex = ", hitsIndex, "\n");
 
                                         while (hitsIndex != upto)
                                         {
@@ -323,16 +323,16 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                                                 const auto pl = hitsPayloadLengths[hitsIndex];
 
-						if (pl)
+                                                if (pl)
                                                 {
-							require(pl <= sizeof(uint64_t));
+                                                        require(pl <= sizeof(uint64_t));
                                                         memcpy(&payload, payloadsIt, pl);
                                                         payloadsIt += pl;
                                                 }
                                                 else
-							payload = 0;
+                                                        payload = 0;
 
-						enc->new_hit(pos, {(uint8_t *)&payload, uint8_t(pl)});
+                                                enc->new_hit(pos, {(uint8_t *)&payload, uint8_t(pl)});
 
                                                 ++hitsIndex;
                                         }
@@ -340,12 +340,12 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                                         freq -= n;
 
                                         if (freq)
-					{
-						if (trace)
-						SLog("Will refill hits\n");
+                                        {
+                                                if (trace)
+                                                        SLog("Will refill hits\n");
 
                                                 refill_hits(forUtil);
-					}
+                                        }
                                         else
                                                 break;
                                 }
@@ -356,24 +356,24 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                 bool next(FastPForLib::FastPFor<4> &forUtil)
                 {
-			skippedHits += docFreqs[cur_block.i];
-			lastDocID += docDeltas[cur_block.i++];
+                        skippedHits += docFreqs[cur_block.i];
+                        lastDocID += docDeltas[cur_block.i++];
 
                         if (cur_block.i == cur_block.size)
                         {
-				if (trace)
-				SLog("End of block, documentsLeft = ", documentsLeft, "\n");
+                                if (trace)
+                                        SLog("End of block, documentsLeft = ", documentsLeft, "\n");
 
                                 if (!documentsLeft)
                                         return false;
 
-				skip_ommitted_hits(forUtil);
+                                skip_ommitted_hits(forUtil);
                                 refill_documents(forUtil);
                         }
                         else
                         {
-				if (trace)
-				SLog("NOW at ", cur_block.i, "\n");
+                                if (trace)
+                                        SLog("NOW at ", cur_block.i, "\n");
                         }
                         return true;
                 }
@@ -385,7 +385,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                 constexpr auto current_freq() noexcept
                 {
-			return docFreqs[cur_block.i];
+                        return docFreqs[cur_block.i];
                 }
         };
 
@@ -405,9 +405,9 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                 c->documentsLeft = participants[i].tctx.documents;
                 c->lastDocID = 0;
                 c->skippedHits = 0;
-		c->hitsIndex = 0;
-		c->bufferedHits = 0;
-		c->payloadsIt = c->payloadsEnd = nullptr;
+                c->hitsIndex = 0;
+                c->bufferedHits = 0;
+                c->payloadsIt = c->payloadsEnd = nullptr;
 
                 const auto hitsDataOffset = *(uint32_t *)p;
                 p += sizeof(uint32_t);
@@ -422,11 +422,11 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                 c->hitsLeft = sumHits;
                 c->refill_documents(forUtil);
 
-		if (trace)
-		SLog("participant ", i, " ", c->documentsLeft, " ", c->hitsLeft, "\n");
+                if (trace)
+                        SLog("participant ", i, " ", c->documentsLeft, " ", c->hitsLeft, "\n");
         }
 
-	uint32_t prev{0};
+        uint32_t prev{0};
 
         for (;;)
         {
@@ -445,29 +445,26 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                                 toAdvance[0] = i;
                         }
                 }
-		
-		if (unlikely(did <= prev))
-		{
-			SLog("unexpected ", did, "<=", prev, "\n");
-			exit(1);
-		}
-			
 
+                if (unlikely(did <= prev))
+                {
+                        SLog("unexpected ", did, "<=", prev, "\n");
+                        exit(1);
+                }
 
-		require(did > prev);
+                require(did > prev);
                 prev = did;
 
                 const auto c = candidates + toAdvance[0]; // always choose the first because they are sorted in-order
 
-		if (!c->maskedDocsReg->test(did))
-		{
-			const auto freq = c->current_freq();
+                if (!c->maskedDocsReg->test(did))
+                {
+                        const auto freq = c->current_freq();
 
-			encoder->begin_document(did, freq);
-			c->output_hits(forUtil, encoder);
-			encoder->end_document();
-		}
-
+                        encoder->begin_document(did, freq);
+                        c->output_hits(forUtil, encoder);
+                        encoder->end_document();
+                }
 
                 do
                 {
@@ -502,7 +499,7 @@ void Trinity::Codecs::Lucene::Encoder::begin_term()
 
 void Trinity::Codecs::Lucene::Encoder::begin_document(const uint32_t documentID, const uint16_t hitsCnt)
 {
-	require(documentID > lastDocID);
+        require(documentID > lastDocID);
 
         const auto delta = documentID - lastDocID;
 
@@ -538,10 +535,10 @@ void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_b
         lastPosition = pos;
 
         if (const auto size = payload.size())
-	{
-		require(size <= sizeof(uint64_t));
+        {
+                require(size <= sizeof(uint64_t));
                 payloadsBuf.serialize(payload.offset, size);
-	}
+        }
 
         ++totalHits;
         if (unlikely(totalHits == BLOCK_SIZE))
@@ -688,10 +685,10 @@ void Trinity::Codecs::Lucene::Decoder::refill_hits()
                         varbyte_get32(hdp, v);
 
                         if (v & 1)
-			{
+                        {
                                 payloadLen = *hdp++;
-				require(payloadLen <= sizeof(uint64_t));
-			}
+                                require(payloadLen <= sizeof(uint64_t));
+                        }
 
                         if (trace)
                                 SLog("GOT ", v >> 1, " ", payloadLen, "\n");
@@ -871,17 +868,17 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                                 decode_next_block();
                 }
                 else if (curDocument.id == target)
-		{
-			if (trace)
-				SLog("Found it\n");
+                {
+                        if (trace)
+                                SLog("Found it\n");
                         return true;
-		}
+                }
                 else if (curDocument.id > target)
-		{
-			if (trace)
-				SLog("Not Here, now past target\n");
+                {
+                        if (trace)
+                                SLog("Not Here, now past target\n");
                         return false;
-		}
+                }
                 else if (!next_impl())
                         return false;
         }
@@ -904,12 +901,12 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
         if (hitsIndex + freq <= bufferedHits)
         {
                 uint16_t pos{0};
-		const auto upto = hitsIndex + freq;
+                const auto upto = hitsIndex + freq;
 
                 if (trace)
                         SLog("fast-path\n");
 
-		while (hitsIndex != upto)
+                while (hitsIndex != upto)
                 {
                         const auto pl = hitsPayloadLengths[hitsIndex];
 
@@ -931,8 +928,8 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
                         else
                                 outPtr->payload = 0;
 
-			++outPtr;
-			++hitsIndex;
+                        ++outPtr;
+                        ++hitsIndex;
                 }
         }
         else
@@ -969,10 +966,10 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
                                         memcpy(&outPtr->payload, payloadsIt, pl);
                                         payloadsIt += pl;
                                 }
-				else
-					outPtr->payload = 0;
+                                else
+                                        outPtr->payload = 0;
 
-				++outPtr;
+                                ++outPtr;
                                 ++hitsIndex;
                         }
 
@@ -1024,21 +1021,21 @@ Trinity::Codecs::Lucene::AccessProxy::AccessProxy(const char *bp, const uint8_t 
 {
         if (hd == nullptr)
         {
-		int fd = open(Buffer{}.append(basePath, "/hits.data").c_str(), O_RDONLY|O_LARGEFILE);
+                int fd = open(Buffer{}.append(basePath, "/hits.data").c_str(), O_RDONLY | O_LARGEFILE);
 
-		if (fd == -1)
-		{
-			if (errno != ENOENT)
-				throw Switch::data_error("Unable to access hits.data");
-		}
-		else if (const auto fileSize = lseek64(fd, 0, SEEK_END))
-		{
-			hitsDataPtr = reinterpret_cast<const uint8_t *>(mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0));
+                if (fd == -1)
+                {
+                        if (errno != ENOENT)
+                                throw Switch::data_error("Unable to access hits.data");
+                }
+                else if (const auto fileSize = lseek64(fd, 0, SEEK_END))
+                {
+                        hitsDataPtr = reinterpret_cast<const uint8_t *>(mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0));
 
-			close(fd);
-			expect(hitsDataPtr != MAP_FAILED);
-		}
-		else
-			close(fd);
+                        close(fd);
+                        expect(hitsDataPtr != MAP_FAILED);
+                }
+                else
+                        close(fd);
         }
 }

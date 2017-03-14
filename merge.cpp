@@ -118,7 +118,6 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 		const str8_t outTerm(allocator->CopyOf(selected.first.data(), selected.first.size()), selected.first.size());
 		[[maybe_unused]] const bool fastPath = sameCODEC && codec == isCODEC;
 
-		// && 0 for debugging crap
 		if (toAdvanceCnt == 1)
 		{
                         auto c = all[toAdvance[0]].candidate;

@@ -209,13 +209,24 @@ namespace Trinity
 
 			// Returns false if no documents list has been exchausted
 			// or advances to the next document and returns true
-			// Make sure that you do not advance to nowhere if you are already at the end, because e.g for a query that contains the same 
+			//
+			// - if at the end, return false
+			// - otherwise advance by one and return the current document
+			//
+			// Make sure that you do not advance to `nowhere` if you are already at the end, because e.g for a query that contains the same 
 			// term twice e.g [trinity search engine called trinity] (trinity is set twice in the query)
-			// the execution engine may invoke seek() to the shared decoder for the second trinity instance and getting to the end, and then attempt to advance the leader decoder for first trinity
+			// the execution engine may invoke seek() to the shared decoder for the second trinity 
+			// instance and getting to the end, and then attempt to advance the leader decoder for first trinity
 			// by invoking next(), so the next() should be able to handle being at the end already
 			// (Remeber to update curDocument)
                         virtual bool next() = 0;
 
+			// Seeks to a target document
+			// 
+			// - If you are at a document > target, return false
+			// - If you are at the end of the documents/hits, return false
+			// - If you matched the document, return true
+			//
 			// XXX: it is important that if you fail to seek to target you stop to ONE document after target, or if you have exhausted the documents list then 
 			// just return false and set curDocument.id  = MaxDocIDValue
 			// i.e if you are at curDocument.id = 50 and the ids in the list are (20, 50, 55, 70, 80, 100, 150, 200) and you
