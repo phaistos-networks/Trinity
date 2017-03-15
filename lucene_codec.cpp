@@ -1,5 +1,8 @@
 #include "lucene_codec.h"
 #include <switch_bitops.h>
+
+
+
 static constexpr bool trace{false};
 
 static bool all_equal(const uint32_t *const values, const size_t n) noexcept
@@ -14,6 +17,15 @@ static bool all_equal(const uint32_t *const values, const size_t n) noexcept
         return true;
 }
 
+// TODO: 
+// Consider using MaskedVBytes instead: https://github.com/lemire/MaskedVByte
+// See 
+// - http://maskedvbyte.org
+// - http://engineering.indeedblog.com/blog/2015/03/vectorized-vbyte-decoding-high-performance-vector-instructions/
+// - https://github.com/GregBowyer/lucene-solr/tree/intrinsics
+// - https://www.youtube.com/watch?v=z4JTjUp3NC0 (this is incredible )
+//
+// It should be a simple matter of encoding the result of vbyte_encode() before the encoded data and then the encoded data(also would need to modify pfor_decode())
 static void pfor_encode(FastPForLib::FastPFor<4> &forUtil, const uint32_t *values, const size_t n, IOBuffer &out)
 {
         if (all_equal(values, n))
@@ -46,10 +58,27 @@ static const uint8_t *pfor_decode(FastPForLib::FastPFor<4> &forUtil, const uint8
                 uint32_t value;
 
                 varbyte_get32(p, value);
+
                 if (trace)
                         SLog("All equal values of ", value, "\n");
+
+#if 0
+		// The compiler would unroll it for us, but let's see if this is OK
+		for (uint32_t i{0}; i != Trinity::Codecs::Lucene::BLOCK_SIZE / 8; ++i)
+		{
+			*(values++) = value;
+			*(values++) = value;
+			*(values++) = value;
+			*(values++) = value;
+			*(values++) = value;
+			*(values++) = value;
+			*(values++) = value;
+			*(values++) = value;
+		}
+#else
                 for (uint32_t i{0}; i != Trinity::Codecs::Lucene::BLOCK_SIZE; ++i)
                         values[i] = value;
+#endif
         }
         else
         {
@@ -117,8 +146,8 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                 uint32_t documentsLeft;
                 uint32_t hitsLeft;
                 uint32_t skippedHits;
-                uint8_t bufferedHits;
-                uint8_t hitsIndex;
+                uint16_t bufferedHits;
+                uint16_t hitsIndex;
 
                 struct
                 {
@@ -267,7 +296,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                         }
                 }
 
-                void output_hits(FastPForLib::FastPFor<4> &forUtil, Trinity::Codecs::Lucene::Encoder *enc)
+                void output_hits(FastPForLib::FastPFor<4> &forUtil, Trinity::Codecs::Lucene::Encoder *__restrict__ enc)
                 {
                         auto freq = docFreqs[cur_block.i];
                         uint64_t payload;
@@ -746,12 +775,30 @@ void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
                         if (trace)
                                 SLog("NOW skippedHits = ", skippedHits, ", hitsIndex = ", hitsIndex, "\n");
 
+#ifdef TRINITY_ENABLE_PREFETCH
+			{
+				const size_t prefetchIterations = n / 16; 	// 64/4
+				const auto end = hitsIndex + n;
+
+				for (uint32_t i{0}; i != prefetchIterations; ++i)
+                                {
+                                        _mm_prefetch(hitsPayloadLengths, _MM_HINT_NTA);
+
+                                        for (const auto upto = i + 16; hitsIndex != upto; ++hitsIndex)
+                                                payloadsIt += hitsPayloadLengths[hitsIndex];
+                                }
+
+                                while (hitsIndex != end)
+                                        payloadsIt += hitsPayloadLengths[hitsIndex++];
+                        }
+#else
                         for (uint32_t i{0}; i != n; ++i)
                         {
                                 const auto pl = hitsPayloadLengths[hitsIndex++];
 
                                 payloadsIt += pl;
                         }
+#endif
 
                         if (trace)
                                 SLog("hitsIndex now = ", hitsIndex, ", bufferedHits = ", bufferedHits, "\n");
@@ -828,7 +875,7 @@ bool Trinity::Codecs::Lucene::Decoder::next_impl()
         skippedHits += docFreqs[docsIndex];
         lastDocID += docDeltas[docsIndex];
 
-        if (++docsIndex == bufferedDocs)
+        if (unlikely(++docsIndex == bufferedDocs))
         {
                 if (p != chunkEnd)
                         decode_next_block();
@@ -884,7 +931,7 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
         }
 }
 
-void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t termID, DocWordsSpace *dws, term_hit *out)
+void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t termID, DocWordsSpace *__restrict__ dws, term_hit *__restrict__ out)
 {
         auto freq = docFreqs[docsIndex];
         auto outPtr = out;

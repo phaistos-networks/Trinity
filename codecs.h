@@ -1,3 +1,6 @@
+// See http://www.dcs.gla.ac.uk/%7Ecraigm/publications/catena14compression.pdf
+// This is a survey of various posting list encoding schemes (integer encoding schemes)
+// We use PFOR for Lucene, varbyte for most codecs, etc
 #pragma once
 #include "docwordspace.h"
 #include "docidupdates.h"
@@ -274,7 +277,10 @@ namespace Trinity
 		// All AccessProxy instances have a pointer to the actual index(posts lists) in common
 		struct AccessProxy
                 {
-			const char *basePath;	 // not really necessary, but keep it around just in case
+			const char *basePath;
+			// Index of the posting lists for all distinct terms
+			// This is typically a pointer to memory mapped index file, or a memory-resident anything, or
+			// something other specific to the codec
 			const uint8_t *const indexPtr;
 
 			// utility function: returns a new decoder for a term's posting list

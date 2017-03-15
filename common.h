@@ -2,6 +2,10 @@
 #include <switch.h>
 #include "limits.h"
 #include <text.h>
+#define TRINITY_ENABLE_PREFETCH 1
+#ifdef TRINITY_ENABLE_PREFETCH
+#include <emmintrin.h> // for _mm_prefetch() intrinsic . We could have also used __builtin_prefetch()
+#endif
 
 namespace Trinity
 {

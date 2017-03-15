@@ -105,8 +105,8 @@ namespace Trinity
 				uint32_t lastPosition;
 				FastPForLib::FastPFor<4> forUtil;
 				uint32_t docsLeft, hitsLeft;
-				uint8_t docsIndex, hitsIndex;
-				uint8_t bufferedDocs, bufferedHits;
+				uint16_t docsIndex, hitsIndex;
+				uint16_t bufferedDocs, bufferedHits;
 				uint32_t skippedHits;
 
                               private:

@@ -75,8 +75,8 @@ namespace // static/local this module
 
                 void materialize_term_hits_impl(const exec_term_id_t termID)
                 {
-                        auto th = decode_ctx.termHits[termID];
-                        auto dec = decode_ctx.decoders[termID];
+                        auto *const __restrict__ th = decode_ctx.termHits[termID];
+                        auto *const __restrict__ dec = decode_ctx.decoders[termID];
                         const auto docHits = dec->curDocument.freq; // see Codecs::Decoder::curDocument comments
 
                         th->docSeq = curDocSeq;
@@ -653,24 +653,23 @@ static bool matchallterms_impl(const exec_node &self, runtime_ctx &rctx)
 
 static bool matchanyterms_impl(const exec_node &self, runtime_ctx &rctx)
 {
-        const auto run = static_cast<const runtime_ctx::termsrun *>(self.ptr);
         uint16_t i{0};
-        const auto size = run->size;
         bool res{false};
         const auto did = rctx.curDocID;
-        const auto terms = run->terms;
+#if 1
+        const auto *__restrict__ run = static_cast<const runtime_ctx::termsrun *>(self.ptr);
+        const auto size = run->size;
+        const auto *__restrict__ terms = run->terms;
 
-#if 0
-        Print("ANY of\n");
-        for (uint32_t i{0}; i != size; ++i)
-	{
-		const auto termID = run->terms[i];
+#if defined(TRINITY_ENABLE_PREFETCH)
+        // this helps
+        // from 0.091 down to 0.085
+        const auto n = size / (64 / sizeof(exec_term_id_t));
+        auto ptr = terms;
 
-		Print(rctx.originalQueryTermInstances[termID]->term.token, "\n");
-	}
-	exit(0);
+        for (uint32_t i{0}; i != n; ++i, ptr += (64 / sizeof(exec_term_id_t)))
+                _mm_prefetch(ptr, _MM_HINT_NTA);
 #endif
-
         do
         {
                 const auto termID = terms[i];
@@ -682,6 +681,42 @@ static bool matchanyterms_impl(const exec_node &self, runtime_ctx &rctx)
                         res = true;
                 }
         } while (++i != size);
+#else
+        // this works but turns out to be _slower_ than the original implementation for some reason
+        // even-though I expected it to have been faster
+        auto run = static_cast<runtime_ctx::termsrun *>(self.ptr);
+        auto size = run->size;
+        auto terms = run->terms;
+
+#if defined(TRINITY_ENABLE_PREFETCH)
+        // this helps
+        // from 0.091 down to 0.085
+        const auto n = size / (64 / sizeof(exec_term_id_t));
+        auto ptr = terms;
+
+        for (uint32_t i{0}; i != n; ++i, ptr += (64 / sizeof(exec_term_id_t)))
+                _mm_prefetch(ptr, _MM_HINT_NTA);
+#endif
+        while (i < size)
+        {
+                const auto termID = terms[i];
+                auto decoder = rctx.decode_ctx.decoders[termID];
+
+                if (decoder->seek(did))
+                {
+                        rctx.capture_matched_term(termID);
+                        res = true;
+                        ++i;
+                }
+                else if (unlikely(decoder->curDocument.id == MaxDocIDValue))
+                {
+                        terms[i] = terms[--size];
+                        run->size = size;
+                }
+                else
+                        ++i;
+        }
+#endif
 
         return res;
 }
@@ -978,7 +1013,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &ctx)
 // We can't reuse the same compiled bytecode/runtime_ctx to run the same query across multiple index sources, because
 // we optimize based on the index source structure and terms involved in the query
 // It is also very cheap to construct those.
-void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_registry *const maskedDocumentsRegistry, MatchedIndexDocumentsFilter *__restrict__ const matchesFilter)
+void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc, masked_documents_registry *const __restrict__ maskedDocumentsRegistry, MatchedIndexDocumentsFilter *__restrict__ const matchesFilter)
 {
         struct query_term_instance
         {
@@ -1224,7 +1259,7 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
         }
 
         require(leaderTokensDecoders.size());
-        auto leaderDecoders = leaderTokensDecoders.data();
+        auto *const __restrict__ leaderDecoders = leaderTokensDecoders.data();
         uint32_t leaderDecodersCnt = leaderTokensDecoders.size();
         const auto maxQueryTermIDPlus1 = rctx.termsDict.size() + 1;
 
@@ -1375,28 +1410,44 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                         if (eval(rootExecNode, rctx))
                         {
                                 const auto n = rctx.matchedDocument.matchedTermsCnt;
-                                auto allMatchedTerms = rctx.matchedDocument.matchedTerms;
+                                auto *const __restrict__ allMatchedTerms = rctx.matchedDocument.matchedTerms;
 
                                 rctx.matchedDocument.id = docID;
 
                                 // See runtime_ctx::capture_matched_term() comments
+
+#if defined(TRINITY_ENABLE_PREFETCH) && 0 // turns out we rarely match more than 8 terms so this is not a good idea although
+                                {
+                                        static constexpr uint32_t stride{64 / sizeof(allMatchedTerms[0])};
+                                        const uint32_t iterations = n / stride;
+                                        uint32_t i{0};
+
+					for (uint32_t k{0}; k != iterations; ++k)
+					{
+                                                for (const auto upto = i + stride; i != upto; ++i)
+                                                {
+                                                        const auto termID = allMatchedTerms[i].queryTermInstances->term.id;
+
+                                                        rctx.materialize_term_hits(termID);
+                                                }
+                                        }
+
+                                        while (i != n)
+                                        {
+                                                const auto termID = allMatchedTerms[i++].queryTermInstances->term.id;
+
+                                                rctx.materialize_term_hits(termID);
+                                        }
+                                }
+
+#else
                                 for (uint16_t i{0}; i != n; ++i)
                                 {
                                         const auto termID = allMatchedTerms[i].queryTermInstances->term.id;
 
                                         rctx.materialize_term_hits(termID);
                                 }
-
-                                if (traceExec)
-                                {
-                                        SLog(ansifmt::bold, ansifmt::color_blue, "MATCHED ", docID, ansifmt::reset, "\n");
-                                        for (uint16_t i{0}; i != n; ++i)
-                                        {
-                                                auto mt = allMatchedTerms + i;
-
-                                                SLog("MATCHED TERM [", mt->queryTermInstances->term.token, "]\n");
-                                        }
-                                }
+#endif
 
 
                                 if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
@@ -1404,6 +1455,7 @@ void Trinity::exec_query(const query &in, IndexSource *idxsrc, masked_documents_
                                         // Eearly abort
                                         // Maybe the filter has collected as many documents as it needs
                                         // See https://blog.twitter.com/2010/twitters-new-search-architecture "efficient early query termination"
+					// See CONCEPTS.md
                                 }
 
                                 ++matchedDocuments;
