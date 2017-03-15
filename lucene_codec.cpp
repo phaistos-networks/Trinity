@@ -1,5 +1,9 @@
 #include "lucene_codec.h"
 #include <switch_bitops.h>
+#ifdef LUCENE_USE_MASKEDVBYTE
+#include <ext/MaskedVByte/include/varintencode.h>
+#include <ext/MaskedVByte/include/varintdecode.h>
+#endif
 
 
 
@@ -40,6 +44,14 @@ static void pfor_encode(FastPForLib::FastPFor<4> &forUtil, const uint32_t *value
         if (trace)
                 SLog("ENCODING:", strwlen32_t((char *)values, n * sizeof(uint32_t)).CRC32(), "\n");
 
+#ifdef LUCENE_USE_MASKEDVBYTE
+	out.reserve(n * 8);
+	out.pack(uint8_t(1));
+
+	const auto len = vbyte_encode(const_cast<uint32_t *>(values), n, (uint8_t *)out.end());
+
+	out.advance_size(len);
+#else
         const auto offset = out.size();
 
         out.RoomFor(sizeof(uint8_t));
@@ -48,6 +60,7 @@ static void pfor_encode(FastPForLib::FastPFor<4> &forUtil, const uint32_t *value
         forUtil.encodeArray(values, n, (uint32_t *)out.end(), l);
         out.advance_size(l * sizeof(uint32_t));
         *(out.data() + offset) = l; // this is great, means we can skip ahead n * sizeof(uint32_t) bytes to get to the next block
+#endif
 }
 
 static const uint8_t *pfor_decode(FastPForLib::FastPFor<4> &forUtil, const uint8_t *p, uint32_t *values)
@@ -62,31 +75,79 @@ static const uint8_t *pfor_decode(FastPForLib::FastPFor<4> &forUtil, const uint8
                 if (trace)
                         SLog("All equal values of ", value, "\n");
 
-#if 0
-		// The compiler would unroll it for us, but let's see if this is OK
-		for (uint32_t i{0}; i != Trinity::Codecs::Lucene::BLOCK_SIZE / 8; ++i)
-		{
-			*(values++) = value;
-			*(values++) = value;
-			*(values++) = value;
-			*(values++) = value;
-			*(values++) = value;
-			*(values++) = value;
-			*(values++) = value;
-			*(values++) = value;
-		}
-#else
+		// the compiler is likely clever enough to unroll or whatever it is that it needs to do
+		// UPDATE: well, it's not
+		// with -Ofast -msse4  -ftree-vectorize -Wno-sign-compare
+		// this is compiled down to
+		/*
+		*
+			.LBB0_1:
+			movl    %eax, (%rsp,%rbx,4)
+			movl    %eax, 4(%rsp,%rbx,4)
+			movl    %eax, 8(%rsp,%rbx,4)
+			movl    %eax, 12(%rsp,%rbx,4)
+			movl    %eax, 16(%rsp,%rbx,4)
+			movl    %eax, 20(%rsp,%rbx,4)
+			movl    %eax, 24(%rsp,%rbx,4)
+			movl    %eax, 28(%rsp,%rbx,4)
+			addq    $8, %rbx
+			cmpq    $128, %rbx
+			jne     .LBB0_1
+
+		*
+		*/
+#if 1
+		// this is still faster than the optimised alternative below, for no good reason
                 for (uint32_t i{0}; i != Trinity::Codecs::Lucene::BLOCK_SIZE; ++i)
                         values[i] = value;
+#else
+		// this loop is compiled to
+		// it is unrolled as expected but its still not optimal
+		/*
+		 *
+
+			movq    8(%rsp), %rcx
+			movq    %rax, (%rcx,%rbx)
+			movq    8(%rsp), %rcx
+			movq    %rax, 8(%rcx,%rbx)
+			movq    8(%rsp), %rcx
+			movq    %rax, 16(%rcx,%rbx)
+			movq    8(%rsp), %rcx
+			movq    %rax, 24(%rcx,%rbx)
+			movq    8(%rsp), %rcx
+			movq    %rax, 32(%rcx,%rbx)
+			movq    8(%rsp), %rcx
+			movq    %rax, 40(%rcx,%rbx)
+			movq    8(%rsp), %rcx
+			movq    %rax, 48(%rcx,%rbx)
+			movq    8(%rsp), %rcx
+			movq    %rax, 56(%rcx,%rbx)
+			addq    $64, %rbx
+			cmpq    $512, %rbx              # imm = 0x200
+			jne     .LBB0_1
+		*
+		*/
+
+		const uint32_t pair[] = { value, value };
+		const uint64_t u64 = *(uint64_t *)pair;
+		auto *const out = (uint64_t *)values;
+
+		for (uint32_t i{0}; i != Trinity::Codecs::Lucene::BLOCK_SIZE / 2; ++i)
+			out[i] = u64;
 #endif
+
         }
         else
         {
+#if defined(LUCENE_USE_MASKEDVBYTE)
+                p+=masked_vbyte_decode(p, values, Trinity::Codecs::Lucene::BLOCK_SIZE);
+#else
                 size_t n{Trinity::Codecs::Lucene::BLOCK_SIZE};
                 const auto *ptr = reinterpret_cast<const uint32_t *>(p);
 
                 ptr = forUtil.decodeArray(ptr, blockSize, values, n);
                 p = reinterpret_cast<const uint8_t *>(ptr);
+#endif
         }
 
         return p;

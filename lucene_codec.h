@@ -8,7 +8,14 @@ namespace Trinity
 	{
 		namespace Lucene
 		{
+// this doesn't seem to be helping much 
+// however, we are not using masked_vbyte_select_delta()/masked_vbyte_search_delta() which could been useful
+//#define LUCENE_USE_MASKEDVBYTE 1 	
+#ifdef LUCENE_USE_MASKEDVBYTE
+			static constexpr size_t BLOCK_SIZE{64};
+#else
 			static constexpr size_t BLOCK_SIZE{128};
+#endif
 
                         struct IndexSession final
                             : public Trinity::Codecs::IndexSession
