@@ -16,6 +16,7 @@ namespace Trinity
 #else
 			static constexpr size_t BLOCK_SIZE{128};
 #endif
+			static constexpr size_t SKIPLIST_STEP{4};	 // every (4 * 128) documents
 
                         struct IndexSession final
                             : public Trinity::Codecs::IndexSession
@@ -48,15 +49,30 @@ namespace Trinity
                         class Encoder final
                             : public Trinity::Codecs::Encoder
                         {
-                              private:
-			      	docid_t lastDocID;
-				uint32_t docDeltas[BLOCK_SIZE], docFreqs[BLOCK_SIZE], hitPayloadSizes[BLOCK_SIZE], hitPosDeltas[BLOCK_SIZE];
-				uint32_t buffered, totalHits, sumHits;
-				uint32_t termDocuments;
-				uint16_t lastPosition;
-				uint32_t termIndexOffset, termPositionsOffset;
-				FastPForLib::FastPFor<4> forUtil;
-				IOBuffer payloadsBuf;
+				private:
+                                  struct skiplist_entry
+                                  {
+                                          // offset to the index relative to the term base offset
+                                          uint32_t indexOffset;
+                                          docid_t lastDocID; // previous to the first document id in the block
+					  // offset to the hits relative to the term base offset
+                                          uint32_t lastHitsBlockOffset;
+					  uint32_t totalDocumentsSoFar;
+                                          uint32_t totalHitsSoFar;
+                                  };
+
+                                private:
+                                  std::vector<skiplist_entry> skiplist;
+                                  docid_t lastDocID;
+                                  uint32_t docDeltas[BLOCK_SIZE], docFreqs[BLOCK_SIZE], hitPayloadSizes[BLOCK_SIZE], hitPosDeltas[BLOCK_SIZE];
+                                  uint32_t buffered, totalHits, sumHits;
+                                  uint32_t termDocuments;
+                                  uint16_t lastPosition;
+                                  uint32_t termIndexOffset, termPositionsOffset;
+                                  FastPForLib::FastPFor<4> forUtil;
+                                  IOBuffer payloadsBuf;
+                                  uint32_t skiplistCountdown;
+				  skiplist_entry cur_block;
 
                               private:
                                 void commit_block();
@@ -102,6 +118,16 @@ namespace Trinity
                         class Decoder final
                             : public Trinity::Codecs::Decoder
                         {
+				private:
+                                  struct skiplist_entry
+                                  {
+                                          uint32_t indexOffset;
+                                          docid_t lastDocID;
+                                          uint32_t lastHitsBlockOffset;
+					  uint32_t totalDocumentsSoFar;
+                                          uint32_t totalHitsSoFar;
+                                  };
+
                               private:
                                 const uint8_t *p;
                                 const uint8_t *chunkEnd;
@@ -115,8 +141,13 @@ namespace Trinity
 				uint16_t docsIndex, hitsIndex;
 				uint16_t bufferedDocs, bufferedHits;
 				uint32_t skippedHits;
+                                std::vector<skiplist_entry> skiplist;
+                                uint32_t skipListIdx;
+                                const uint8_t *postingListBase, *hitsBase;
 
                               private:
+			      	uint32_t skiplist_entry(const docid_t) const noexcept;
+
                                 bool next_impl();
 
                                 void refill_hits();

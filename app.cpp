@@ -422,11 +422,9 @@ int main(int argc, char *argv[])
 								}
 							}
 						}
-						
-						
 
-						if (seq)
-						{
+                                                if (seq)
+                                                {
 							++curRun;
 						}
 						else if (curRun)
@@ -455,7 +453,7 @@ int main(int argc, char *argv[])
 		auto node = ast_node::make(q.allocator, ast_node::Type::BinOp);
 		auto specialTokensNode = ast_node::make(q.allocator, ast_node::Type::ConstTrueExpr);
 
-		specialTokensNode->expr = ast_parser("(LEGEND OR WIIU)"_s32, q.allocator).parse();
+		specialTokensNode->expr = ast_parser("(LEGEND OR ZELDA)"_s32, q.allocator).parse();
 		specialTokensNode->set_alltokens_flags(1);
 
 		node->binop.rhs = q.root;

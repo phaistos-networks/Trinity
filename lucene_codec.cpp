@@ -182,6 +182,8 @@ range32_t Trinity::Codecs::Lucene::IndexSession::append_index_chunk(const Trinit
         p += sizeof(uint32_t);
         const auto positionsChunkSize = *(uint32_t *)p;
         p += sizeof(uint32_t);
+	[[maybe_unused]] const auto skiplistSize = *(uint16_t *)p;
+	p+=sizeof(uint16_t);
         const auto newHitsDataOffset = positionsOut.size();
 
         positionsOut.serialize(src->hitsDataPtr + hitsDataOffset, positionsChunkSize);
@@ -265,7 +267,6 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                                         if (v & 1)
                                         {
                                                 payloadLen = *hdp++;
-                                                require(payloadLen <= sizeof(uint64_t));
                                         }
 
                                         hitsPositionDeltas[i] = v >> 1;
@@ -382,7 +383,6 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                                         if (pl)
                                         {
-                                                require(pl <= sizeof(uint64_t));
                                                 memcpy(&payload, payloadsIt, pl);
                                                 payloadsIt += pl;
                                         }
@@ -415,7 +415,6 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                                                 if (pl)
                                                 {
-                                                        require(pl <= sizeof(uint64_t));
                                                         memcpy(&payload, payloadsIt, pl);
                                                         payloadsIt += pl;
                                                 }
@@ -505,6 +504,8 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                 p += sizeof(uint32_t);
                 const auto posChunkSize = *(uint32_t *)p;
                 p += sizeof(uint32_t);
+                [[maybe_unused]] const auto skiplistSize = *(uint16_t *)p;
+                p += sizeof(uint16_t);
 
                 c->index_chunk.p = p;
                 c->positions_chunk.p = ap->hitsDataPtr + hitsDataOffset;
@@ -516,9 +517,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                         SLog("participant ", i, " ", c->documentsLeft, " ", c->hitsLeft, "\n");
         }
 
-        uint32_t prev{0};
-
-        for (;;)
+        for (uint32_t prev{0};;)
         {
                 uint16_t toAdvanceCnt{1};
                 auto did = candidates[0].current();
@@ -583,8 +582,11 @@ void Trinity::Codecs::Lucene::Encoder::begin_term()
         termDocuments = 0;
         termIndexOffset = sess->indexOut.size();
         termPositionsOffset = static_cast<Trinity::Codecs::Lucene::IndexSession *>(sess)->positionsOut.size();
+	cur_block.lastHitsBlockOffset = 0;
+	skiplistCountdown = SKIPLIST_STEP;
+	skiplist.clear();
 
-        sess->indexOut.pack(uint32_t(termPositionsOffset), uint32_t(0), uint32_t(0)); // will fill in later. Will also track positions chunk size for efficient merge
+        sess->indexOut.pack(uint32_t(termPositionsOffset), uint32_t(0), uint32_t(0), uint16_t(0)); // will fill in later. Will also track positions chunk size for efficient merge
 }
 
 void Trinity::Codecs::Lucene::Encoder::begin_document(const uint32_t documentID, const uint16_t hitsCnt)
@@ -593,12 +595,30 @@ void Trinity::Codecs::Lucene::Encoder::begin_document(const uint32_t documentID,
 
         const auto delta = documentID - lastDocID;
 
+	if (!buffered)
+	{
+		cur_block.indexOffset = sess->indexOut.size() - termIndexOffset;
+		cur_block.lastDocID = lastDocID;
+		cur_block.totalHitsSoFar = sumHits + totalHits;
+		cur_block.totalDocumentsSoFar = termDocuments;
+	}
+
         docDeltas[buffered] = delta;
         docFreqs[buffered] = hitsCnt;
         ++termDocuments;
 
         if (unlikely(++buffered == BLOCK_SIZE))
         {
+		if (--skiplistCountdown == 0)
+		{
+			if (likely(skiplist.size() < UINT16_MAX))
+			{
+				// keep it sane
+				skiplist.push_back(cur_block);
+			}
+                        skiplistCountdown = SKIPLIST_STEP;
+                }
+
                 auto indexOut = &sess->indexOut;
 
                 pfor_encode(forUtil, docDeltas, buffered, *indexOut);
@@ -635,6 +655,7 @@ void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_b
         {
                 auto positionsOut = &static_cast<Trinity::Codecs::Lucene::IndexSession *>(sess)->positionsOut;
 
+		cur_block.lastHitsBlockOffset = positionsOut->size() - termPositionsOffset;
                 pfor_encode(forUtil, hitPosDeltas, totalHits, *positionsOut);
                 pfor_encode(forUtil, hitPayloadSizes, totalHits, *positionsOut);
 
@@ -674,6 +695,7 @@ void Trinity::Codecs::Lucene::Encoder::end_term(term_index_ctx *out)
 {
         // varbyte the remainign doc deltas and frequencies
         auto indexOut = &sess->indexOut;
+	const uint16_t skiplistSize = skiplist.size();
 
         sumHits += totalHits;
 
@@ -727,6 +749,20 @@ void Trinity::Codecs::Lucene::Encoder::end_term(term_index_ctx *out)
         }
 
         *(uint32_t *)(sess->indexOut.data() + termIndexOffset + sizeof(uint32_t) + sizeof(uint32_t)) = static_cast<Trinity::Codecs::Lucene::IndexSession *>(sess)->positionsOut.size() - termPositionsOffset;
+        *(uint16_t *)(sess->indexOut.data() + termIndexOffset + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t)) = skiplistSize;
+
+	if (skiplistSize)
+	{
+		// serialize skiplist here
+		auto *const __restrict__ b = &sess->indexOut;
+
+		for (const auto &it : skiplist)
+			b->pack(it.indexOffset, it.lastDocID, it.lastHitsBlockOffset, it.totalDocumentsSoFar, it.totalHitsSoFar);
+
+		skiplist.clear();
+	}
+
+
         out->documents = termDocuments;
         out->indexChunk.Set(termIndexOffset, uint32_t(sess->indexOut.size() - termIndexOffset));
 }
@@ -802,7 +838,7 @@ void Trinity::Codecs::Lucene::Decoder::refill_hits()
 void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
 {
         if (trace)
-                SLog("SKIPPING ", n, " hits, hitsIndex = ", hitsIndex, "\n");
+                SLog("SKIPPING ", n, " hits, hitsIndex = ", hitsIndex,  ", bufferedHits = ", bufferedHits, "\n");
 
         if (n)
         {
@@ -816,53 +852,65 @@ void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
                 }
                 else
                 {
-                        if (!bufferedHits)
+			auto rem{n};
+
+			if (trace)
+				SLog(ansifmt::bold, "NOW skippedHits = ", skippedHits, ", bufferedHits = ", bufferedHits, ", n = ", n, "\n");
+
+			do
                         {
-                                if (trace)
-                                        SLog("Need to refill\n");
-
-                                refill_hits();
-
-                                if (trace)
-                                        SLog("DID refill hitsIndex = ", hitsIndex, "\n");
-                        }
-
-                        if (trace)
-                                SLog("Adjusting by ", n, "\n");
-
-                        skippedHits -= n;
-                        bufferedHits -= n;
-
-                        if (trace)
-                                SLog("NOW skippedHits = ", skippedHits, ", hitsIndex = ", hitsIndex, "\n");
-
-#ifdef TRINITY_ENABLE_PREFETCH
-			{
-				const size_t prefetchIterations = n / 16; 	// 64/4
-				const auto end = hitsIndex + n;
-
-				for (uint32_t i{0}; i != prefetchIterations; ++i)
+                                if (!bufferedHits)
                                 {
-                                        _mm_prefetch(hitsPayloadLengths, _MM_HINT_NTA);
+                                        if (trace)
+                                                SLog("Need to refill\n");
 
-                                        for (const auto upto = i + 16; hitsIndex != upto; ++hitsIndex)
-                                                payloadsIt += hitsPayloadLengths[hitsIndex];
+                                        refill_hits();
+
+                                        if (trace)
+                                                SLog("DID refill hitsIndex = ", hitsIndex, "\n");
                                 }
 
-                                while (hitsIndex != end)
-                                        payloadsIt += hitsPayloadLengths[hitsIndex++];
-                        }
-#else
-                        for (uint32_t i{0}; i != n; ++i)
-                        {
-                                const auto pl = hitsPayloadLengths[hitsIndex++];
+                                const auto step = std::min<uint32_t>(rem, bufferedHits);
 
-                                payloadsIt += pl;
-                        }
+
+                                if (trace)
+                                        SLog("skippedHits = ", skippedHits, ", hitsIndex = ", hitsIndex, ", step = ", step, ", bufferedHits  = ", bufferedHits, "\n");
+
+#if defined(TRINITY_ENABLE_PREFETCH)
+                                {
+                                        const size_t prefetchIterations = step / 16; // 64/4
+                                        const auto end = hitsIndex + step;
+
+                                        require(step + hitsIndex <= BLOCK_SIZE);
+
+                                        for (uint32_t i{0}; i != prefetchIterations; ++i)
+                                        {
+                                                _mm_prefetch(hitsPayloadLengths + hitsIndex, _MM_HINT_NTA);
+
+                                                for (const auto upto = hitsIndex + 16; hitsIndex != upto; ++hitsIndex)
+                                                        payloadsIt += hitsPayloadLengths[hitsIndex];
+                                        }
+
+                                        while (hitsIndex != end)
+                                                payloadsIt += hitsPayloadLengths[hitsIndex++];
+                                }
+#else
+                                for (uint32_t i{0}; i != step; ++i)
+                                {
+                                        const auto pl = hitsPayloadLengths[hitsIndex++];
+
+                                        payloadsIt += pl;
+                                }
 #endif
 
-                        if (trace)
-                                SLog("hitsIndex now = ", hitsIndex, ", bufferedHits = ", bufferedHits, "\n");
+                                skippedHits -= step;
+                                bufferedHits -= step;
+                                rem -= step;
+
+                                if (trace)
+                                        SLog("hitsIndex now = ", hitsIndex, ", bufferedHits = ", bufferedHits, ", rem ", rem, "\n");
+
+                        } while (rem);
                 }
         }
 }
@@ -951,6 +999,37 @@ bool Trinity::Codecs::Lucene::Decoder::next_impl()
         return true;
 }
 
+#if 0
+uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target) const noexcept
+{
+        // See Google::Decoder::skiplist_search()
+        uint32_t idx{UINT32_MAX};
+
+        for (int32_t top{int32_t(skiplist.size()) - 1}, btm{int32_t(skipListIdx)}; btm <= top;)
+        {
+                const auto mid = (btm + top) / 2;
+                const auto v = skiplist[mid].first;
+
+                if (target < v)
+                        top = mid - 1;
+                else
+                {
+                        if (v != target)
+                                idx = mid;
+                        else if (mid != skipListIdx)
+                        {
+                                // we need this
+                                idx = mid - 1;
+                        }
+
+                        btm = mid + 1;
+                }
+        }
+
+        return idx;
+}
+#endif
+
 bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
 {
         // if we store (block freq, last docID in block) we can perhaps skip
@@ -973,7 +1052,28 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                                 return false;
                         }
                         else
+			{
+#if 0
+				if (skipListIdx != skiplist.size())
+				{
+					// see if we can determine where to seek to here
+					if (const auto index = skiplist_search(target); index !=UINT32_MAX)
+					{
+						// XXX: what if we point into the _current_ hits block?
+						const auto &it = skiplist[index];
+						auto blockPtr = postingListBase + res.indexOffset;
+						auto hitsBlockPtr = hitsBase + res.lastHitsBlockOffset;
+
+						lastDocID = it.lastDocID;
+						documentsLeft = it.totalDocumentsSoFar;
+						hitsLeft = uit.totalHitsSoFar;
+					}
+
+				}
+#endif
+				
                                 decode_next_block();
+			}
                 }
                 else if (curDocument.id == target)
                 {
@@ -1006,10 +1106,9 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
                 SLog("hitsIndex = ", hitsIndex, ", freq = ", freq, ", bufferedHits = ", bufferedHits, "\n");
 
         // fast-path; can satisfy directly from the current hits block
-        if (hitsIndex + freq <= bufferedHits)
+        if (const auto upto = hitsIndex + freq; upto <= bufferedHits)
         {
                 uint16_t pos{0};
-                const auto upto = hitsIndex + freq;
 
                 if (trace)
                         SLog("fast-path\n");
@@ -1017,6 +1116,7 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
                 while (hitsIndex != upto)
                 {
                         const auto pl = hitsPayloadLengths[hitsIndex];
+
 
                         pos += hitsPositionDeltas[hitsIndex];
                         outPtr->pos = pos;
@@ -1099,10 +1199,11 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
 void Trinity::Codecs::Lucene::Decoder::init(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access)
 {
         auto ap = static_cast<Trinity::Codecs::Lucene::AccessProxy *>(access);
-        auto indexPtr = ap->indexPtr;
-        auto ptr = indexPtr + tctx.indexChunk.offset;
+        const auto indexPtr = ap->indexPtr;
+        const auto ptr = indexPtr + tctx.indexChunk.offset;
         const auto chunkSize = tctx.indexChunk.size();
 
+	postingListBase = ptr;
         p = ptr;
         chunkEnd = ptr + chunkSize;
         lastDocID = 0;
@@ -1120,8 +1221,30 @@ void Trinity::Codecs::Lucene::Decoder::init(const term_index_ctx &tctx, Trinity:
         hitsLeft = *(uint32_t *)p;
         p += sizeof(uint32_t);
         p += sizeof(uint32_t); // positions chunk size
+	[[maybe_unused]] const auto skiplistSize = *(uint16_t *)p; 
+	p+=sizeof(uint16_t);
 
-        hdp = ap->hitsDataPtr + hitsDataOffset;
+	if (skiplistSize)
+	{
+		// deserialize the skiplist and maybe use it
+		static constexpr size_t skiplistEntrySize{sizeof(uint32_t) * 5};
+		const auto *it = reinterpret_cast<const uint32_t *>(ptr + chunkSize - (skiplistSize * skiplistEntrySize));
+		struct skiplist_entry e;
+
+		chunkEnd = reinterpret_cast<const uint8_t *>(it);
+		for (uint32_t i{0}; i != skiplistSize; ++i, it += 5)
+                {
+                        e.indexOffset = it[0];
+                        e.lastDocID = it[1];
+                        e.lastHitsBlockOffset = it[2];
+                        e.totalDocumentsSoFar = it[3];
+                        e.totalHitsSoFar = it[4];
+			skiplist.push_back(e);
+                }
+        }
+
+	skipListIdx = 0;
+        hitsBase = hdp = ap->hitsDataPtr + hitsDataOffset;
 }
 
 Trinity::Codecs::Lucene::AccessProxy::AccessProxy(const char *bp, const uint8_t *p, const uint8_t *hd)

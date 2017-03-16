@@ -27,6 +27,11 @@ namespace Trinity
                         {
                                 ast_node *lhs, *rhs;
                                 Operator op;
+
+				constexpr auto normalized_operator() const noexcept
+				{
+					return op == Operator::STRICT_AND ? Operator::AND : op;
+				}
                         } binop;
 
                         struct
@@ -49,12 +54,13 @@ namespace Trinity
                         Token,
                         Phrase,
                         UnaryOp,
-                        Dummy, // Also treat as a ConstTrue node (normalize will deal with it)
+                        Dummy, // also semantically equivalent to both a 'true' node and a useless node. normalize_root() will deal with such nodes(GC)
                         ConstFalse,
                         // Suppose you want to match special tokens FOO|BAR and FANCY|TERM if they are found in the index, i.e treat them as optional.
                         // That¢s easy. You can get the original query e.g [apple iphone] and transform it like so `(FOO|BAR OR FANCY|TERM) OR (apple iPhone)` and that¢d work great.
                         // However, imagine you want to match FOO|BAR and FANCY|TERM but ONLY IF the original query also matches. You can¢t practically construct that query like the one above.
-                        // This is where you 'd use this node. When evaluated it will always return true after evaluating its expression.
+                        // This is where you 'd use this node. When evaluated it will always return true after evaluating its expression. That is, for this use case, 
+			// if [apple iphone] matches THEN it will attempt to match [FOO|BAR OR FANCY|TERM], but even if that sub-expression fails, it won't matter.
                         // This allows for this kind of expression and other such use cases.
                         ConstTrueExpr,
                 } type;
@@ -241,6 +247,9 @@ namespace Trinity
 		   - [ipad pro] : the lead token is ipad. So we just scan the ipad documents and advance those
 		   - [apple OR macbook OR iphone NOT cable]: the lead tokens are (apple, macbook, iphone)
 		   - [apple OR (macbook pro)] : lead tokens are [apple, macbook]
+
+		   * the execution engine uses a specialised such implementation for exec_nodes
+		   * for simplicity and performance.
 		 */
                 void leader_nodes(std::vector<ast_node *> *const out);
 

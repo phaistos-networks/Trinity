@@ -119,9 +119,15 @@ namespace Trinity
 			//
 			// See for example:https://blog.twitter.com/2010/twitters-new-search-architecture "efficient early query termination")
 			// where apparently they implemented a codec that stores document matches in DESC order in a term's postlist
-			// so that as soon as they find the top-K most recent tweets, they stop
-			// (the only problem with this is that updated_documents_scanner expectes the document IDs to be provided in ascending monotonic order, and Trinity::MergeCandidatesCollection::merge() expects
-			// documents to be stored in ascending order, but both can trivially change)
+			// so that as soon as they find the top-K most recent tweets, they stop.
+			// You can't use that ordering without modifying Trinity::MergeCandidatesCollection::merge(), the various datastructures in docidupdates
+			// and SegmentIndexSession::commit(), and various codecs because they are designed on the assumption that document IDs are provided/ordered in ascending order.
+			// You can modify them, which shouild be easy, or just use a simple translation scheme when indexing documents and when considering them in consider()
+			// Specifically, the document IDs you index could be
+			// const auto translatedDocumentID = std::numeric_limits<docid_t>::max() - documentID; 
+			// and in your consider()
+			// const auto actualDocumentID = std::numeric_limits<docid_t>::max() - max.id;
+			// This simple translation sceheme will help you accomplish a reverse ordering without having to change anything in this codebase.
 			// See CONCEPTS.md please
 			Abort,
 		};
