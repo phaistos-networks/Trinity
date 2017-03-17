@@ -35,13 +35,11 @@ namespace // static/local this module
                         exec_node rhs;
                 };
 
-                // See compile()
                 struct unaryop_ctx
                 {
                         exec_node expr;
                 };
 
-                // See compile() and OpCodes::MatchPhrase
 		struct phrase
 		{
 			uint8_t size;
@@ -155,7 +153,7 @@ namespace // static/local this module
                                 const auto maxQueryTermIDPlus1 = termsDict.size() + 1;
 
                                 memset(curDocQueryTokensCaptured, 0, sizeof(uint16_t) * maxQueryTermIDPlus1);
-                                for (uint32_t i{0}; i < decode_ctx.capacity; ++i)
+                                for (uint32_t i{0}; i != decode_ctx.capacity; ++i)
                                 {
                                         if (auto ptr = decode_ctx.termHits[i])
                                                 ptr->docSeq = 0;
@@ -168,6 +166,7 @@ namespace // static/local this module
                                 ++curDocSeq;
                         }
                 }
+
 
 #pragma mark Compiler / Optimizer specific
                 term_index_ctx term_ctx(const exec_term_id_t termID)
@@ -331,17 +330,6 @@ static bool matchallterms_impl(const exec_node &self, runtime_ctx &rctx)
         const auto size = run->size;
         const auto did = rctx.curDocID;
 
-#if 0
-        Print("ALL of\n");
-        for (uint32_t i{0}; i != size; ++i)
-	{
-		const auto termID = run->terms[i];
-
-		Print(rctx.originalQueryTermInstances[termID]->term.token, "\n");
-	}
-	exit(0);
-#endif
-
         do
         {
                 const auto termID = run->terms[i];
@@ -433,21 +421,22 @@ static inline bool matchterm_impl(const exec_node &self, runtime_ctx &rctx)
         const auto res = decoder->seek(rctx.curDocID);
 
         if (res)
+	{
                 rctx.capture_matched_term(termID);
-
-        if (traceExec)
-                SLog(ansifmt::color_green, "Attempting to match token [", rctx.originalQueryTermInstances[termID]->term.token, "] against ", rctx.curDocID, ansifmt::reset, " => ", res, "\n");
-        return res;
+		return true;
+	}
+	else
+		return false;
 }
 
-static bool unaryand_impl(const exec_node &self, runtime_ctx &rctx)
+static inline bool unaryand_impl(const exec_node &self, runtime_ctx &rctx)
 {
         const auto op = (runtime_ctx::unaryop_ctx *)self.ptr;
 
         return eval(op->expr, rctx);
 }
 
-static bool unarynot_impl(const exec_node &self, runtime_ctx &rctx)
+static inline bool unarynot_impl(const exec_node &self, runtime_ctx &rctx)
 {
         const auto op = (runtime_ctx::unaryop_ctx *)self.ptr;
 
@@ -743,6 +732,7 @@ static uint32_t reorder_execnode(exec_node &n, bool &updates, runtime_ctx &rctx)
 
                 reorder_execnode(ctx->expr, updates, rctx);
                 // it is important to return UINT32_MAX - 1 so that it will not result in a binop's (lhs, rhs) swap
+		// we need to special-case the handling of those nodes
                 return UINT32_MAX - 1;
         }
         else if (n.fp == matchallterms_impl)
@@ -794,8 +784,8 @@ static exec_node reorder_execnodes(exec_node n, runtime_ctx &rctx)
         return n;
 }
 
-// Considers all binary ops, and potentiall swaps (lhs, rhs) of binary ops, but not based on actual cost
-// but on heuristics
+// Considers all binary ops, and potentiall swaps (lhs, rhs) of binary ops,
+// but not based on actual cost but on heuristics
 struct reorder_ctx
 {
         bool dirty;
@@ -956,7 +946,6 @@ static bool try_collect(exec_node &res, simple_allocator &a, T fp)
                 // collect collection, will turn this into 0+ termruns and 0+ phraseruns
                 res.fp = reinterpret_cast<decltype(res.fp)>(fp);
                 res.ptr = execnodes_collection::make(a, opctx->lhs, opctx->rhs);
-		SLog("Collect for ", ptr_repr(fp), "\n");
                 return true;
         }
         else
@@ -1418,7 +1407,10 @@ static void capture_leader(const exec_node n, std::vector<exec_node> *const out,
                         auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
 
                         if (ctx->lhs.fp != consttrueexpr_impl)
+			{
+				// we need to special case those
                                 capture_leader(ctx->lhs, out, threshold);
+			}
                         else
                                 capture_leader(ctx->rhs, out, threshold);
                 }
@@ -1624,6 +1616,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
 
 	for (const auto id : *leaderTermIDs)
 		Print("LEADER TERM ID:", id, "\n");
+	//exit(0);
 
         return root;
 }
@@ -1757,6 +1750,12 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                 SLog("Nothing to do\n");
                 return;
         }
+
+	// It should be easy to emit machine code from the exec_nodes tree
+	// which should result in a respectable speed up.
+	// For now, for simplicity and for portability we are not doing it yet, but someome
+	// should be able do it without significant effort.
+
 
         uint16_t toAdvance[Limits::MaxQueryTokens];
         std::vector<Trinity::Codecs::Decoder *> leaderTermsDecoders;
@@ -1923,8 +1922,6 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                 auto *const __restrict__ allMatchedTerms = rctx.matchedDocument.matchedTerms;
 
                                 rctx.matchedDocument.id = docID;
-
-// See runtime_ctx::capture_matched_term() comments
 
 #if defined(TRINITY_ENABLE_PREFETCH) && 0 // turns out we rarely match more than 8 terms so this is not a good idea although
                                 {

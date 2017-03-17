@@ -344,16 +344,13 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                                 if (!bufferedHits)
                                         refill_hits(forUtil);
 
-                                const auto n = skippedHits;
-
-                                skippedHits = 0;
-                                bufferedHits = 0;
-
                                 uint32_t sum{0};
+				const auto n = skippedHits;
 
                                 for (uint32_t i{0}; i != n; ++i)
                                         sum += hitsPayloadLengths[hitsIndex++];
 
+                                skippedHits = 0;
                                 payloadsIt += sum;
                         }
                 }
@@ -859,7 +856,7 @@ void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
 
 			do
                         {
-                                if (!bufferedHits)
+				if (hitsIndex == bufferedHits)
                                 {
                                         if (trace)
                                                 SLog("Need to refill\n");
@@ -870,8 +867,7 @@ void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
                                                 SLog("DID refill hitsIndex = ", hitsIndex, "\n");
                                 }
 
-                                const auto step = std::min<uint32_t>(rem, bufferedHits);
-
+                                const auto step = std::min<uint32_t>(rem, bufferedHits - hitsIndex);
 
                                 if (trace)
                                         SLog("skippedHits = ", skippedHits, ", hitsIndex = ", hitsIndex, ", step = ", step, ", bufferedHits  = ", bufferedHits, "\n");
@@ -880,8 +876,6 @@ void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
                                 {
                                         const size_t prefetchIterations = step / 16; // 64/4
                                         const auto end = hitsIndex + step;
-
-                                        require(step + hitsIndex <= BLOCK_SIZE);
 
                                         for (uint32_t i{0}; i != prefetchIterations; ++i)
                                         {
@@ -904,7 +898,6 @@ void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
 #endif
 
                                 skippedHits -= step;
-                                bufferedHits -= step;
                                 rem -= step;
 
                                 if (trace)
@@ -1088,7 +1081,9 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                         return false;
                 }
                 else if (!next_impl())
+		{
                         return false;
+		}
         }
 }
 
@@ -1096,6 +1091,7 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
 {
         auto freq = docFreqs[docsIndex];
         auto outPtr = out;
+
 
         if (trace)
                 SLog(ansifmt::bold, ansifmt::color_blue, "materializing, skippedHits = ", skippedHits, ansifmt::reset, "\n");
@@ -1153,7 +1149,7 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
                         const auto upto = hitsIndex + n;
 
                         if (trace)
-                                SLog("UPTO = ", upto, "\n");
+                                SLog("UPTO = ", upto, ", bufferedHits = ", bufferedHits, ", hitsIndex = ", hitsIndex, ", freq = ", freq, ", n = ", n, "\n");
 
                         while (hitsIndex != upto)
                         {
@@ -1180,7 +1176,6 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
                                 ++outPtr;
                                 ++hitsIndex;
                         }
-
                         freq -= n;
 
                         if (trace)

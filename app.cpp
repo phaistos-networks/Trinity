@@ -449,7 +449,7 @@ int main(int argc, char *argv[])
 
 		query q(asuc.AsS32());
 
-#if 0
+#if 1
 		auto node = ast_node::make(q.allocator, ast_node::Type::BinOp);
 		auto specialTokensNode = ast_node::make(q.allocator, ast_node::Type::ConstTrueExpr);
 

@@ -62,6 +62,8 @@ namespace Trinity
                         // This is where you 'd use this node. When evaluated it will always return true after evaluating its expression. That is, for this use case, 
 			// if [apple iphone] matches THEN it will attempt to match [FOO|BAR OR FANCY|TERM], but even if that sub-expression fails, it won't matter.
                         // This allows for this kind of expression and other such use cases.
+			//
+			// We need to handle those type of nodes and the equivalent exec_nodes properly for leader terms/tokens generation.
                         ConstTrueExpr,
                 } type;
 
