@@ -33,23 +33,22 @@ namespace Trinity
                 const docid_t *const end;
                 const uint32_t bankSize;
 
-                range32_t curBankRange;
+                range_base<docid_t, docid_t> curBankRange;
                 const docid_t *skiplistBase;
                 const uint8_t *curBank;
-
+		docid_t maxDocID;
                 const docid_t *const udSkipList;
                 const uint8_t *const udBanks;
-
-		const range_base<docid_t, docid_t> documentsRange;
 
 
                 void reset()
                 {
-                        curBankRange.Set(UINT32_MAX, 0);
+                        curBankRange.Set(MaxDocIDValue, 0);
+			maxDocID = MaxDocIDValue;
                 }
 
                 updated_documents_scanner(const updated_documents &ud)
-                    : end{ud.skiplist + ud.skiplistSize}, bankSize{ud.bankSize}, skiplistBase{ud.skiplist}, udSkipList{ud.skiplist}, udBanks{ud.banks}, documentsRange{ud.lowestID, ud.highestID - ud.lowestID + 1}
+                    : end{ud.skiplist + ud.skiplistSize}, bankSize{ud.bankSize}, skiplistBase{ud.skiplist}, udSkipList{ud.skiplist}, udBanks{ud.banks}, maxDocID{ud.highestID}
                 {
                         if (skiplistBase != end)
                         {
@@ -99,6 +98,7 @@ namespace Trinity
                                         return true;
                                 else if (it->drained())
 				{
+					SLog("DRAINED\n");
                                         new (it) updated_documents_scanner(scanners[--rem]);
 					require(*it == scanners[rem]);
 				}	

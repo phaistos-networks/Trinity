@@ -1964,9 +1964,17 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                         // See CONCEPTS.md
                                 }
 
+#if 0
+				SLog("MATCHED ", docID, "\n");
+#endif
+
                                 ++matchedDocuments;
                         }
                 }
+#if 0
+		else
+			SLog("MASKED ", docID, "\n");
+#endif
 
                 // Advance leader tokens/decoders
                 do
@@ -1989,5 +1997,5 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 l1:
         const auto duration = Timings::Microseconds::Since(start);
 
-        SLog(dotnotation_repr(matchedDocuments), " matched in ", duration_repr(duration), "\n");
+        SLog(ansifmt::bold, ansifmt::color_red, dotnotation_repr(matchedDocuments), " matched in ", duration_repr(duration), ansifmt::reset, "\n");
 }

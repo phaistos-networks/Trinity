@@ -81,11 +81,6 @@ bool Trinity::updated_documents_scanner::test(const docid_t id) noexcept
 	if (trace)
 		SLog(ansifmt::bold, "Check for ", id, ", curBankRange = ", curBankRange, ", contains ", curBankRange.Contains(id), ansifmt::reset, "\n");
 	
-	if (!documentsRange.Contains(id))
-		return false;
-
-	// TODO: bloom filter checks
-
 	if (id >= curBankRange.start())
 	{
 		if (id < curBankRange.stop())
@@ -95,31 +90,43 @@ bool Trinity::updated_documents_scanner::test(const docid_t id) noexcept
 
 			return SwitchBitOps::Bitmap<uint64_t>::IsSet((uint64_t *)curBank, id - curBankRange.offset);
 		}
-		else if (skiplistBase == end)
+		else if (id > maxDocID)
 		{
-			if (trace)
-				SLog("Exhausted\n");
-
 			reset();
 			return false;
 		}
 		else
 		{
 			// skip ahead using binary search
-			const auto it = std::lower_bound(skiplistBase + 1, end, id);
+                        // Look for the first element in the skiplist that is <= `id`
+                        int32_t top{int32_t(end - skiplistBase) - 1};
 
-			if (it == end)
+                        for (int32_t btm{0}; btm <= top;)
+                        {
+				const auto mid = (btm + top ) / 2;
+				const auto v = skiplistBase[mid];
+
+				if (id < v)
+					top = mid - 1;
+				else if (id == v)
+				{
+					top = mid;
+					break;
+				}
+				else
+					btm = mid + 1;
+			}
+
+			if (unlikely(top == -1))
 			{
 				if (trace)
-					SLog("Done with banks\n");
-
+					SLog("Definitely not here because top = -1\n");
 				reset();
-				// WAS: skiplistBase = end; curBankRange.reset();
 				return false;
 			}
 			else
 			{
-				skiplistBase = it;
+				skiplistBase+=top;
 				curBankRange.Set(*skiplistBase, bankSize);
 				curBank = udBanks + ((skiplistBase - udSkipList) * (bankSize / 8));
 

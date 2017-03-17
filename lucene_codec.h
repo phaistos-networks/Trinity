@@ -165,7 +165,7 @@ namespace Trinity
 
                                 void finalize()
                                 {
-                                        curDocument.id = UINT32_MAX;
+                                        curDocument.id = MaxDocIDValue;
                                 }
 
 				void decode_next_block();

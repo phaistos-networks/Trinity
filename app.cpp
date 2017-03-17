@@ -317,7 +317,7 @@ int main(int argc, char *argv[])
                                         }
                                 }
 
-                                indexSess.insert(d);
+                                indexSess.update(d);
                         }
                 }
                 munmap(fileData, fileSize);
@@ -342,22 +342,40 @@ int main(int argc, char *argv[])
 		pack_updates(maskedProducts, &maskedProductsBuf);
 		auto updates = unpack_updates({(uint8_t *)maskedProductsBuf.data(), maskedProductsBuf.size()});
 		auto maskedDocsSrc = new TrivialMaskedDocumentsIndexSource(updates);
-#if 0
-		auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/100");
-#else
-		auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/1500");
-#endif
-		auto rr = masked_documents_registry::make(nullptr, 0);
 		IndexSourcesCollection sources;
 		Buffer asuc;
 
-		sources.insert(ss);
-		//sources.insert(maskedDocsSrc);
-		ss->Release();
+                if (true)
+                {
+                        auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/100");
+
+                        sources.insert(ss);
+                        ss->Release();
+                }
+
+                if (true)
+                {
+                        auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/1500");
+                        sources.insert(ss);
+                        ss->Release();
+                }
+
+                //sources.insert(maskedDocsSrc);
 		maskedDocsSrc->Release();
 
 
 		sources.commit();
+
+#if 0
+		{
+			const auto ud = sources.sources.back()->masked_documents();
+			auto reg = masked_documents_registry::make(&ud, 1);
+
+			Print(reg->test(7512491), "\n");
+			return 0;
+		}
+#endif
+
 
 
 		auto filter = std::make_unique<MatchedIndexDocumentsFilter>();
@@ -482,8 +500,8 @@ int main(int argc, char *argv[])
 
 
 		
-		//exec_query<MatchedIndexDocumentsFilter>(q, &sources);
-		auto res = exec_query<BPFilter>(q, &sources);
+		exec_query<MatchedIndexDocumentsFilter>(q, &sources);
+		//auto res = exec_query<BPFilter>(q, &sources);
 	}
 
         return 0;
