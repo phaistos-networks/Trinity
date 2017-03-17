@@ -598,6 +598,7 @@ void Trinity::Codecs::Lucene::Encoder::begin_document(const uint32_t documentID,
 		cur_block.lastDocID = lastDocID;
 		cur_block.totalHitsSoFar = sumHits + totalHits;
 		cur_block.totalDocumentsSoFar = termDocuments;
+		cur_block.curHitsBlockHits = totalHits;
 	}
 
         docDeltas[buffered] = delta;
@@ -754,7 +755,7 @@ void Trinity::Codecs::Lucene::Encoder::end_term(term_index_ctx *out)
 		auto *const __restrict__ b = &sess->indexOut;
 
 		for (const auto &it : skiplist)
-			b->pack(it.indexOffset, it.lastDocID, it.lastHitsBlockOffset, it.totalDocumentsSoFar, it.totalHitsSoFar);
+			b->pack(it.indexOffset, it.lastDocID, it.lastHitsBlockOffset, it.totalDocumentsSoFar, it.totalHitsSoFar, it.curHitsBlockHits);
 
 		skiplist.clear();
 	}
@@ -836,10 +837,13 @@ void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
 {
         if (trace)
                 SLog("SKIPPING ", n, " hits, hitsIndex = ", hitsIndex,  ", bufferedHits = ", bufferedHits, "\n");
+	
+	require(skippedHits < INT32_MAX);
 
         if (n)
         {
-                if (bufferedHits == skippedHits)
+#if 0
+                if (bufferedHits == skippedHits && n == bufferedHits)
                 {
                         // fast path
                         skippedHits = 0;
@@ -848,6 +852,7 @@ void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
                         payloadsIt = payloadsEnd;
                 }
                 else
+#endif
                 {
 			auto rem{n};
 
@@ -992,7 +997,6 @@ bool Trinity::Codecs::Lucene::Decoder::next_impl()
         return true;
 }
 
-#if 0
 uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target) const noexcept
 {
         // See Google::Decoder::skiplist_search()
@@ -1001,7 +1005,7 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target)
         for (int32_t top{int32_t(skiplist.size()) - 1}, btm{int32_t(skipListIdx)}; btm <= top;)
         {
                 const auto mid = (btm + top) / 2;
-                const auto v = skiplist[mid].first;
+                const auto v = skiplist[mid].lastDocID;
 
                 if (target < v)
                         top = mid - 1;
@@ -1021,12 +1025,13 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target)
 
         return idx;
 }
-#endif
 
 bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
 {
         // if we store (block freq, last docID in block) we can perhaps skip
         // the whole block ?
+	require(skippedHits < INT32_MAX);
+
         if (trace)
                 SLog(ansifmt::bold, ansifmt::color_blue, "SKIPPING TO ", target, ansifmt::reset, "\n");
 
@@ -1046,43 +1051,73 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                         }
                         else
 			{
-#if 0
+#if 1
 				if (skipListIdx != skiplist.size())
 				{
 					// see if we can determine where to seek to here
-					if (const auto index = skiplist_search(target); index !=UINT32_MAX)
-					{
-						// XXX: what if we point into the _current_ hits block?
+                                        if (const auto index = skiplist_search(target); index != UINT32_MAX)
+                                        {
 						const auto &it = skiplist[index];
-						auto blockPtr = postingListBase + res.indexOffset;
-						auto hitsBlockPtr = hitsBase + res.lastHitsBlockOffset;
+
+						SLog("YES to lastDocID = ", it.lastDocID, ", documentsLeft = ", totalDocuments - it.totalDocumentsSoFar, ", ", totalHits - it.totalHitsSoFar, ", ", it.curHitsBlockHits, "\n");
+
+						
+#if 1
+						// XXX: what if we point into the _current_ hits block?
+						const auto blockPtr = postingListBase + it.indexOffset;
+						const auto hitsBlockPtr = hitsBase + it.lastHitsBlockOffset;
+
+						p = blockPtr;
+						hdp = hitsBlockPtr;
 
 						lastDocID = it.lastDocID;
-						documentsLeft = it.totalDocumentsSoFar;
-						hitsLeft = uit.totalHitsSoFar;
+						docsLeft = totalDocuments - it.totalDocumentsSoFar;
+						hitsLeft = totalHits - it.totalHitsSoFar;
+
+						skippedHits = 0;
+						bufferedHits = 0;
+	require(skippedHits < INT32_MAX);
+						refill_documents();
+	require(skippedHits < INT32_MAX);
+						update_curdoc();
+	require(skippedHits < INT32_MAX);
+						if (trace)
+						SLog("SKIPPING ", it.curHitsBlockHits, "\n");
+						skippedHits = it.curHitsBlockHits;
+						skip_hits(skippedHits);
+	require(skippedHits < INT32_MAX);
+						goto l10;
+#endif
 					}
 
 				}
 #endif
 				
+	require(skippedHits < INT32_MAX);
                                 decode_next_block();
+	require(skippedHits < INT32_MAX);
 			}
                 }
-                else if (curDocument.id == target)
-                {
-                        if (trace)
-                                SLog("Found it\n");
-                        return true;
-                }
-                else if (curDocument.id > target)
-                {
-                        if (trace)
-                                SLog("Not Here, now past target\n");
-                        return false;
-                }
-                else if (!next_impl())
+		else
 		{
-                        return false;
+l10:
+	require(skippedHits < INT32_MAX);
+			if (curDocument.id == target)
+			{
+				if (trace)
+					SLog("Found it\n");
+				return true;
+			}
+			else if (curDocument.id > target)
+			{
+				if (trace)
+					SLog("Not Here, now past target\n");
+				return false;
+			}
+			else if (!next_impl())
+			{
+				return false;
+			}
 		}
         }
 }
@@ -1188,6 +1223,8 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
                 }
         }
 
+	require(skippedHits < INT32_MAX);
+
         docFreqs[docsIndex] = 0; // simplifies processing logic
 }
 
@@ -1203,7 +1240,7 @@ void Trinity::Codecs::Lucene::Decoder::init(const term_index_ctx &tctx, Trinity:
         chunkEnd = ptr + chunkSize;
         lastDocID = 0;
         lastPosition = 0;
-        docsLeft = tctx.documents;
+        totalDocuments = docsLeft = tctx.documents;
         docsIndex = hitsIndex = 0;
         bufferedDocs = bufferedHits = 0;
         skippedHits = 0;
@@ -1213,7 +1250,7 @@ void Trinity::Codecs::Lucene::Decoder::init(const term_index_ctx &tctx, Trinity:
 
         const auto hitsDataOffset = *(uint32_t *)p;
         p += sizeof(uint32_t);
-        hitsLeft = *(uint32_t *)p;
+        totalHits = hitsLeft = *(uint32_t *)p;
         p += sizeof(uint32_t);
         p += sizeof(uint32_t); // positions chunk size
 	[[maybe_unused]] const auto skiplistSize = *(uint16_t *)p; 
@@ -1222,24 +1259,29 @@ void Trinity::Codecs::Lucene::Decoder::init(const term_index_ctx &tctx, Trinity:
 	if (skiplistSize)
 	{
 		// deserialize the skiplist and maybe use it
-		static constexpr size_t skiplistEntrySize{sizeof(uint32_t) * 5};
-		const auto *it = reinterpret_cast<const uint32_t *>(ptr + chunkSize - (skiplistSize * skiplistEntrySize));
+		static constexpr size_t skiplistEntrySize{sizeof(uint32_t) * 5 + sizeof(uint16_t)};
+		const auto *sit = (ptr + chunkSize - (skiplistSize * skiplistEntrySize));
 		struct skiplist_entry e;
 
-		chunkEnd = reinterpret_cast<const uint8_t *>(it);
-		for (uint32_t i{0}; i != skiplistSize; ++i, it += 5)
+		chunkEnd = sit;
+		for (uint32_t i{0}; i != skiplistSize; ++i, sit+=skiplistEntrySize)
                 {
+                        const auto it = reinterpret_cast<const uint32_t *>(sit);
+
                         e.indexOffset = it[0];
                         e.lastDocID = it[1];
                         e.lastHitsBlockOffset = it[2];
                         e.totalDocumentsSoFar = it[3];
                         e.totalHitsSoFar = it[4];
-			skiplist.push_back(e);
+                        e.curHitsBlockHits = *(uint16_t *)(sit + skiplistEntrySize - sizeof(uint16_t));
+                        skiplist.push_back(e);
                 }
         }
 
 	skipListIdx = 0;
         hitsBase = hdp = ap->hitsDataPtr + hitsDataOffset;
+
+	SLog("skiplist.size = ", skiplist.size(), "\n");
 }
 
 Trinity::Codecs::Lucene::AccessProxy::AccessProxy(const char *bp, const uint8_t *p, const uint8_t *hd)

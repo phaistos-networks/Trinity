@@ -8,6 +8,7 @@
 #include <text.h>
 #include "merge.h"
 #include "lucene_codec.h"
+#include <crypto.h>
 
 
 using namespace Trinity;
@@ -365,6 +366,13 @@ int main(int argc, char *argv[])
 		struct BPFilter final
 			: public MatchedIndexDocumentsFilter
 		{
+			CRC32Generator crc32;
+
+			~BPFilter()
+			{
+				SLog("CRC32 = ", crc32.get(), "\n");
+			}
+		
                         ConsiderResponse consider(matched_document &doc) override final
                         {
 				doc.sort_matched_terms_by_query_index();
@@ -373,19 +381,24 @@ int main(int argc, char *argv[])
 				size_t curRun{0};
 
 
-				SLog("MATCHED ", doc.id, " https://www.bestprice.gr/item/", doc.id|(1<<31), "\n");
+				//SLog("MATCHED ", doc.id, " https://www.bestprice.gr/item/", doc.id|(1<<31), "\n");
 				for (uint32_t i{0}; i != n; ++i)
 				{
 					const auto t = doc.matchedTerms + i;
 
-					Print("Matched term ", t->queryTermInstances->term.id, " ", t->queryTermInstances->term.token, " ", t->hits->freq, " freq\n");
+					//Print("Matched term ", t->queryTermInstances->term.id, " ", t->queryTermInstances->term.token, " ", t->hits->freq, " freq\n");
 
 					for (uint32_t i{0}; i != t->hits->freq; ++i)
 					{
 						const auto &hit = t->hits->all[i];
 
-						Print(">> ", hit.pos, " ", hit.payloadLen, " => ", *(uint32_t *)&hit.payload, "\n");
+						//Print(">> ", hit.pos, " ", hit.payloadLen, " => ", *(uint32_t *)&hit.payload, "\n");
+
+						crc32.update(hit.pos);
+						crc32.update(hit.payloadLen);
+						crc32.update((uint8_t *)&hit.payload, hit.payloadLen);
 					}
+					continue;
 
 					for (uint32_t i{0}; i != t->queryTermInstances->cnt; ++i)
 					{
@@ -469,8 +482,8 @@ int main(int argc, char *argv[])
 
 
 		
-		exec_query<MatchedIndexDocumentsFilter>(q, &sources);
-		//auto res = exec_query<BPFilter>(q, &sources);
+		//exec_query<MatchedIndexDocumentsFilter>(q, &sources);
+		auto res = exec_query<BPFilter>(q, &sources);
 	}
 
         return 0;

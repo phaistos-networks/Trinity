@@ -16,7 +16,7 @@ namespace Trinity
 #else
 			static constexpr size_t BLOCK_SIZE{128};
 #endif
-			static constexpr size_t SKIPLIST_STEP{4};	 // every (4 * 128) documents
+			static constexpr size_t SKIPLIST_STEP{1};	 // every (4 * 128) documents
 
                         struct IndexSession final
                             : public Trinity::Codecs::IndexSession
@@ -59,6 +59,7 @@ namespace Trinity
                                           uint32_t lastHitsBlockOffset;
 					  uint32_t totalDocumentsSoFar;
                                           uint32_t totalHitsSoFar;
+					  uint16_t curHitsBlockHits;
                                   };
 
                                 private:
@@ -126,6 +127,7 @@ namespace Trinity
                                           uint32_t lastHitsBlockOffset;
 					  uint32_t totalDocumentsSoFar;
                                           uint32_t totalHitsSoFar;
+					  uint16_t curHitsBlockHits;
                                   };
 
                               private:
@@ -144,9 +146,10 @@ namespace Trinity
                                 std::vector<skiplist_entry> skiplist;
                                 uint32_t skipListIdx;
                                 const uint8_t *postingListBase, *hitsBase;
+				uint32_t totalDocuments, totalHits;
 
                               private:
-			      	uint32_t skiplist_entry(const docid_t) const noexcept;
+			      	uint32_t skiplist_search(const docid_t) const noexcept;
 
                                 bool next_impl();
 
