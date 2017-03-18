@@ -57,13 +57,16 @@ namespace Trinity
                         Dummy, // also semantically equivalent to both a 'true' node and a useless node. normalize_root() will deal with such nodes(GC)
                         ConstFalse,
                         // Suppose you want to match special tokens FOO|BAR and FANCY|TERM if they are found in the index, i.e treat them as optional.
-                        // That¢s easy. You can get the original query e.g [apple iphone] and transform it like so `(FOO|BAR OR FANCY|TERM) OR (apple iPhone)` and that¢d work great.
+                        // That¢s easy. You can get the original query e.g [apple iphone] and transform it like so [(FOO|BAR OR FANCY|TERM) OR (apple iPhone)] and that¢d work great.
+			//
                         // However, imagine you want to match FOO|BAR and FANCY|TERM but ONLY IF the original query also matches. You can¢t practically construct that query like the one above.
-                        // This is where you 'd use this node. When evaluated it will always return true after evaluating its expression. That is, for this use case, 
-			// if [apple iphone] matches THEN it will attempt to match [FOO|BAR OR FANCY|TERM], but even if that sub-expression fails, it won't matter.
+                        // This is where you 'd use this node. When evaluated it will always return true after evaluating its expression. 
+			// You will transform it to [(FOO|BAR OR FANCY|TERM) AND (apple iphone)]
+			// If [apple iphone] matches THEN it will attempt to match [FOO|BAR OR FANCY|TERM], but even if that sub-expression fails, it won't matter.
                         // This allows for this kind of expression and other such use cases.
 			//
-			// We need to handle those type of nodes and the equivalent exec_nodes properly for leader terms/tokens generation.
+			// The only challenge is properly handling this node(and the related exec_node) properly when capturing leading nodes. See
+			// the respective methods implementations for details.
                         ConstTrueExpr,
                 } type;
 
@@ -252,6 +255,8 @@ namespace Trinity
 
 		   * the execution engine uses a specialised such implementation for exec_nodes
 		   * for simplicity and performance.
+		   *
+		   * See also ast_node::Type::ConstTrueExpr comments
 		 */
                 void leader_nodes(std::vector<ast_node *> *const out);
 

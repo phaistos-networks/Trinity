@@ -31,6 +31,7 @@ namespace Trinity
                 }
         };
 
+
         // See IndexSourcesCollection
         class MergeCandidatesCollection final
         {

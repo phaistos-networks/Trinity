@@ -41,7 +41,8 @@ namespace Trinity
                 virtual term_index_ctx resolve_term_ctx(const str8_t term) = 0;
 
                 // factory method
-                virtual Trinity::Codecs::Decoder *new_postings_decoder(const term_index_ctx ctx) = 0;
+		// see RECIPES.md for when you should perhaps make use of the passed `term`
+                virtual Trinity::Codecs::Decoder *new_postings_decoder(const str8_t term, const term_index_ctx ctx) = 0;
 
                 // Override if you have any masked documents
                 virtual updated_documents masked_documents()
@@ -72,35 +73,34 @@ namespace Trinity
 	// Create one with an updated_documents and insert it into an IndexSourcesCollection and you are done
 	class TrivialMaskedDocumentsIndexSource
 		: public IndexSource
-	{
-		private:
-			const updated_documents maskedDocuments;
+        {
+              private:
+                const updated_documents maskedDocuments;
 
-		public:
-		TrivialMaskedDocumentsIndexSource(const updated_documents ud)
-			: maskedDocuments{ud}
-		{
-			gen = Timings::Microseconds::SysTime();
-		}
+              public:
+                TrivialMaskedDocumentsIndexSource(const updated_documents ud)
+                    : maskedDocuments{ud}
+                {
+                        gen = Timings::Microseconds::SysTime();
+                }
 
                 term_index_ctx resolve_term_ctx(const str8_t term) override final
-		{
-			// fails for every term because we are only blocking here
-			return {};
-		}
+                {
+                        // fails for every term because we are only blocking here
+                        return {};
+                }
 
-                Trinity::Codecs::Decoder *new_postings_decoder(const term_index_ctx ctx) override final
-		{
-			return nullptr;
-		}
+                // Currently, term is not really useful, but see RECIPES.md for how it could really help with some specific designs
+                Trinity::Codecs::Decoder *new_postings_decoder(const str8_t term, const term_index_ctx) override final
+                {
+                        return nullptr;
+                }
 
                 updated_documents masked_documents() override final
-		{
-			return maskedDocuments;
-		}
-	};
-
-
+                {
+                        return maskedDocuments;
+                }
+        };
 
         // A collection of IndexSource; an index of segments or other sources
         // Each index source is identified by a generation, and no two sources can share the same generation

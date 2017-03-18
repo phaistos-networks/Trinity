@@ -23,7 +23,7 @@ void Trinity::Codecs::Google::Encoder::begin_term()
         }
 }
 
-void Trinity::Codecs::Google::Encoder::begin_document(const docid_t documentID, const uint16_t hitsCnt)
+void Trinity::Codecs::Google::Encoder::begin_document(const docid_t documentID)
 {
 	require(documentID);
 	if (unlikely(documentID <= lastCommitedDocID))
@@ -41,8 +41,15 @@ void Trinity::Codecs::Google::Encoder::begin_document(const docid_t documentID, 
 void Trinity::Codecs::Google::Encoder::new_hit(const uint32_t pos, const range_base<const uint8_t *, const uint8_t> payload) 
 {
 	static constexpr bool trace{false};
-	const auto delta = pos - lastPos;
 	const uint8_t payloadSize = payload.size();
+
+	if (!pos && !payloadSize)
+	{
+		// this is perfectly valid
+		return;
+	}
+
+	const auto delta = pos - lastPos;
 
 	require(pos >= lastPos);
 
@@ -328,7 +335,7 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
 		uint64_t payload;
 		auto bytes = (uint8_t *)&payload;
 
-                encoder->begin_document(did, freq);
+                encoder->begin_document(did);
 
                 if (trace)
                         SLog("APENDING document ", did, " freq ", freq, "\n");
@@ -447,7 +454,6 @@ l1:;
 }
 
 #pragma mark DECODER
-
 uint32_t Trinity::Codecs::Google::Decoder::skiplist_search(const docid_t target) const noexcept
 {
         // we store {previous block's last ID, block's offset}
@@ -813,7 +819,6 @@ bool Trinity::Codecs::Google::Decoder::seek(const docid_t target)
                 // because in that case we 'd have finalize() and
                 // blockLastDocID would have been MaxDocIDValue
                 // and (target > blockLastDocID) would have been false
-
                 skip_remaining_block_documents();
 
                 if (unlikely(p == chunkEnd))

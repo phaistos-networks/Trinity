@@ -14,7 +14,7 @@ namespace Trinity
 		std::unique_ptr<SegmentTerms> terms; // all terms for this segment
 		range_base<const uint8_t *, uint32_t> index;
 
-                struct masked_documents_struct
+                struct masked_documents_struct final
                 {
                         updated_documents set;
                         range_base<const uint8_t *, uint32_t> fileData;
@@ -34,12 +34,22 @@ namespace Trinity
               public:
                 SegmentIndexSource(const char *basePath);
 
+		auto access_proxy()
+		{
+			return accessProxy.get();
+		}
+
                 term_index_ctx resolve_term_ctx(const str8_t term) override final
                 {
                         return terms->lookup(term);
                 }
 
-                Trinity::Codecs::Decoder *new_postings_decoder(const term_index_ctx ctx) override final
+		auto segment_terms() const
+		{
+			return terms.get();
+		}
+
+                Trinity::Codecs::Decoder *new_postings_decoder(const strwlen8_t, const term_index_ctx ctx) override final
                 {
                         return accessProxy->new_decoder(ctx);
                 }

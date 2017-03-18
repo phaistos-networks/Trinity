@@ -545,9 +545,9 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                 if (!c->maskedDocsReg->test(did))
                 {
-                        const auto freq = c->current_freq();
+                        [[maybe_unused]] const auto freq = c->current_freq();
 
-                        encoder->begin_document(did, freq);
+                        encoder->begin_document(did);
                         c->output_hits(forUtil, encoder);
                         encoder->end_document();
                 }
@@ -586,7 +586,7 @@ void Trinity::Codecs::Lucene::Encoder::begin_term()
         sess->indexOut.pack(uint32_t(termPositionsOffset), uint32_t(0), uint32_t(0), uint16_t(0)); // will fill in later. Will also track positions chunk size for efficient merge
 }
 
-void Trinity::Codecs::Lucene::Encoder::begin_document(const uint32_t documentID, const uint16_t hitsCnt)
+void Trinity::Codecs::Lucene::Encoder::begin_document(const uint32_t documentID)
 {
         require(documentID > lastDocID);
 
@@ -601,11 +601,7 @@ void Trinity::Codecs::Lucene::Encoder::begin_document(const uint32_t documentID,
 		cur_block.curHitsBlockHits = totalHits;
 	}
 
-        docDeltas[buffered] = delta;
-        docFreqs[buffered] = hitsCnt;
-        ++termDocuments;
-
-        if (unlikely(++buffered == BLOCK_SIZE))
+        if (unlikely(buffered == BLOCK_SIZE))
         {
 		if (--skiplistCountdown == 0)
 		{
@@ -628,16 +624,27 @@ void Trinity::Codecs::Lucene::Encoder::begin_document(const uint32_t documentID,
                         SLog("Encoded now ", indexOut->size(), "\n");
         }
 
+        docDeltas[buffered] = delta;
+        docFreqs[buffered] = 0;
+        ++termDocuments;
+
+
         lastDocID = documentID;
         lastPosition = 0;
 }
 
 void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_base<const uint8_t *, const uint8_t> payload)
 {
+	if (!pos && !payload)
+	{
+		return;
+	}
+
         require(pos ? pos > lastPosition : pos >= lastPosition);
 
         const auto delta = pos - lastPosition;
 
+	++docFreqs[buffered];
         hitPosDeltas[totalHits] = delta;
         hitPayloadSizes[totalHits] = payload.size();
         lastPosition = pos;
@@ -680,13 +687,7 @@ void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_b
 
 void Trinity::Codecs::Lucene::Encoder::end_document()
 {
-        if (buffered == BLOCK_SIZE)
-        {
-                // see Lucene50PostingsWriter.java#finishDoc()
-                // this faciliates skiplist generation
-                //lastBlockDocID = lastDocID;
-                buffered = 0;
-        }
+	++buffered;
 }
 
 void Trinity::Codecs::Lucene::Encoder::end_term(term_index_ctx *out)

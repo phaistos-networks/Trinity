@@ -167,7 +167,7 @@ namespace Trinity
         };
 
 	//A handy wrapper for memory mapped terms data and a skiplist from the terms index
-        class SegmentTerms
+        class SegmentTerms final
         {
 		private:
 			Switch::vector<terms_skiplist_entry> skiplist;
@@ -192,6 +192,11 @@ namespace Trinity
 			auto terms_data_access() const
 			{ 
 				return terms_data_view(termsData);
+			}
+
+			auto new_terms_view() const
+			{
+				return new IndexSourcePrefixCompressedTermsView(termsData);
 			}
 	};
 

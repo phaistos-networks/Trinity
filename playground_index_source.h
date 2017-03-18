@@ -24,7 +24,7 @@ namespace Trinity
                         return tctxMap[term];
                 }
 
-                Trinity::Codecs::Decoder *new_postings_decoder(const term_index_ctx ctx) override final
+                Trinity::Codecs::Decoder *new_postings_decoder(const str8_t, const term_index_ctx ctx) override final
                 {
                         return accessProxy->new_decoder(ctx);
                 }

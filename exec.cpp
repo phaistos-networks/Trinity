@@ -10,7 +10,7 @@ namespace // static/local this module
 
         struct runtime_ctx;
 
-        struct exec_node // 64bytes alignement seems to yield good results, but crashes if optimizer is enabled (i.e struct alignas(64) exec_node {})
+        struct exec_node final // 64bytes alignement seems to yield good results, but crashes if optimizer is enabled (i.e struct alignas(64) exec_node {})
         {
                 bool (*fp)(const exec_node &, runtime_ctx &);
 
@@ -29,30 +29,30 @@ namespace // static/local this module
 
 #pragma mark structs
                 // See compile()
-                struct binop_ctx
+                struct binop_ctx final
                 {
                         exec_node lhs;
                         exec_node rhs;
                 };
 
-                struct unaryop_ctx
+                struct unaryop_ctx final
                 {
                         exec_node expr;
                 };
 
-		struct phrase
+		struct phrase final
 		{
 			uint8_t size;
 			exec_term_id_t termIDs[0];
 		};
 
-                struct termsrun
+                struct termsrun final
                 {
                         uint16_t size;
                         exec_term_id_t terms[0];
                 };
 
-                struct phrasesrun
+                struct phrasesrun final
                 {
                         uint16_t size;
                         phrase *phrases[0];
@@ -134,7 +134,9 @@ namespace // static/local this module
 
                         if (!decode_ctx.decoders[termID])
                         {
-                                decode_ctx.decoders[termID] = idxsrc->new_postings_decoder(term_ctx(termID));
+				const auto p = tctxMap[termID];
+
+                                decode_ctx.decoders[termID] = idxsrc->new_postings_decoder(p.second, p.first);
                                 decode_ctx.termHits[termID] = new term_hits();
                         }
 
@@ -172,7 +174,7 @@ namespace // static/local this module
                 term_index_ctx term_ctx(const exec_term_id_t termID)
                 {
                         // we should have resolve_term() anyway
-                        return tctxMap[termID];
+                        return tctxMap[termID].first;
                 }
 
                 // Resolves a term to a termID relative to the runtime_ctx
@@ -196,7 +198,7 @@ namespace // static/local this module
                                 else
                                 {
                                         *ptr = termsDict.size();
-                                        tctxMap.insert({*ptr, tctx});
+                                        tctxMap.insert({*ptr, {tctx, term}});
                                 }
                         }
 
@@ -259,7 +261,7 @@ namespace // static/local this module
                 // indexed by termID
                 query_term_instances **originalQueryTermInstances;
 
-                struct decode_ctx_struct
+                struct decode_ctx_struct final
                 {
                         // decoders[](for decoding terms posting lists) and termHits[] are indexed by termID
                         Trinity::Codecs::Decoder **decoders{nullptr};
@@ -305,7 +307,7 @@ namespace // static/local this module
                 matched_document matchedDocument;
                 simple_allocator allocator;
                 simple_allocator runsAllocator{512}, ctxAllocator{1024};
-                Switch::unordered_map<exec_term_id_t, term_index_ctx> tctxMap;
+                Switch::unordered_map<exec_term_id_t, std::pair<term_index_ctx, str8_t>> tctxMap;
         };
 }
 
@@ -786,7 +788,7 @@ static exec_node reorder_execnodes(exec_node n, runtime_ctx &rctx)
 
 // Considers all binary ops, and potentiall swaps (lhs, rhs) of binary ops,
 // but not based on actual cost but on heuristics
-struct reorder_ctx
+struct reorder_ctx final
 {
         bool dirty;
 };
@@ -920,7 +922,7 @@ static auto impl_repr(const T *func)
 		return "<other>"_s8;
 }
 
-struct execnodes_collection
+struct execnodes_collection final
 {
         uint16_t size;
         exec_node a, b;
@@ -1652,7 +1654,7 @@ static exec_node compile_query(ast_node *root, runtime_ctx &rctx, std::vector<ex
 // It is also very cheap to construct those.
 void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc, masked_documents_registry *const __restrict__ maskedDocumentsRegistry, MatchedIndexDocumentsFilter *__restrict__ const matchesFilter)
 {
-        struct query_term_instance
+        struct query_term_instance final
         {
                 str8_t token;
                 // see Trinity::phrase
@@ -1997,5 +1999,5 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 l1:
         const auto duration = Timings::Microseconds::Since(start);
 
-        SLog(ansifmt::bold, ansifmt::color_red, dotnotation_repr(matchedDocuments), " matched in ", duration_repr(duration), ansifmt::reset, "\n");
+        SLog(ansifmt::bold, ansifmt::color_red, dotnotation_repr(matchedDocuments), " matched in ", duration_repr(duration), ansifmt::reset, " (", Timings::Microseconds::ToMillis(duration), " ms)\n");
 }

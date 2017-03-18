@@ -68,7 +68,7 @@ namespace Trinity
 
                                 void begin_term() override final;
 
-                                void begin_document(const docid_t documentID, const uint16_t hitsCnt) override final;
+                                void begin_document(const docid_t documentID) override final;
 
                                 void new_hit(const uint32_t pos, const range_base<const uint8_t *, const uint8_t> payload) override final;
                                 

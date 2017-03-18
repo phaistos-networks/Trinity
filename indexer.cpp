@@ -271,7 +271,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
 
 				require(documentID > prevDID);
 
-                                enc->begin_document(documentID, hitsCnt);
+                                enc->begin_document(documentID);
                                 for (uint32_t i{0}; i != hitsCnt; ++i)
                                 {
                                         const auto deltaMask = Compression::decode_varuint32(p);

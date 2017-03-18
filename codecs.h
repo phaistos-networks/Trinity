@@ -167,7 +167,7 @@ namespace Trinity
 
                         virtual void begin_term() = 0;
 
-                        virtual void begin_document(const docid_t documentID, const uint16_t totalHits) = 0;
+                        virtual void begin_document(const docid_t documentID) = 0;
 
 			// If you want to register a hit for a special token (e.g site:foo.com) where position makes no sense, 
 			// you should use position 0(or a very high position, but 0 is preferrable)

@@ -50,7 +50,7 @@ namespace Trinity
                             : public Trinity::Codecs::Encoder
                         {
 				private:
-                                  struct skiplist_entry
+                                  struct skiplist_entry final
                                   {
                                           // offset to the index relative to the term base offset
                                           uint32_t indexOffset;
@@ -86,7 +86,7 @@ namespace Trinity
 
                                 void begin_term() override final;
 
-                                void begin_document(const docid_t documentID, const uint16_t hitsCnt) override final;
+                                void begin_document(const docid_t documentID) override final;
 
                                 void new_hit(const uint32_t pos, const range_base<const uint8_t *, const uint8_t> payload) override final;
                                 
@@ -120,7 +120,7 @@ namespace Trinity
                             : public Trinity::Codecs::Decoder
                         {
 				private:
-                                  struct skiplist_entry
+                                  struct skiplist_entry final
                                   {
                                           uint32_t indexOffset;
                                           docid_t lastDocID;

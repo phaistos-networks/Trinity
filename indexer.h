@@ -8,7 +8,7 @@
 namespace Trinity
 {
 	// persists an index sesion as a segment
-	// the application is responsible for persisting the terms (see SegmentIndexSession::commit() for example)
+	// the application is responsible for persisting the terms (see SegmentIndexSession::commit() for example, and IndexSession::persist_terms())
 	void persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<uint32_t> &updatedDocumentIDs);
 
 

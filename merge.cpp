@@ -153,7 +153,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                         termHitsStorage = (term_hit *)malloc(sizeof(term_hit) * termHitsCapacity);
                                                 }
 
-                                                enc->begin_document(docID, freq);
+                                                enc->begin_document(docID);
                                                 dec->materialize_hits(1 /* dummy */, &dws /* dummy */, termHitsStorage);
 
                                                 for (uint32_t i{0}; i != freq; ++i)
@@ -262,7 +262,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                         termHitsStorage = (term_hit *)malloc(sizeof(term_hit) * termHitsCapacity);
                                                 }
 
-                                                enc->begin_document(lowestDID, freq);
+                                                enc->begin_document(lowestDID);
                                                 dec->materialize_hits(1 /* dummy */, &dws /* dummy */, termHitsStorage);
 
                                                 for (uint32_t i{0}; i != freq; ++i)

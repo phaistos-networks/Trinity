@@ -305,6 +305,7 @@ int main(int argc, char *argv[])
 						uint32_t hit{25121561};
 
                                                 d.insert(term, pos, {(uint8_t *)&hit, sizeof(uint32_t)});
+                                                //d.insert(term, 0, {});
                                                 ++pos;
 
                                                 p += len;
@@ -345,7 +346,7 @@ int main(int argc, char *argv[])
 		IndexSourcesCollection sources;
 		Buffer asuc;
 
-                if (true)
+                if (false)
                 {
                         auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/100");
 
@@ -359,6 +360,34 @@ int main(int argc, char *argv[])
                         sources.insert(ss);
                         ss->Release();
                 }
+
+#if 0
+		{
+			MergeCandidatesCollection collection;
+			simple_allocator a;
+			std::vector<std::pair<str8_t, term_index_ctx>> outTerms;
+			auto outSess = new Trinity::Codecs::Lucene::IndexSession("/tmp/TSEGMENTS/8192/");
+
+			for (const auto it : sources.sources)
+			{
+				auto ss = (SegmentIndexSource *)it;
+				auto tv = ss->segment_terms()->new_terms_view();
+
+                                collection.insert({ss->generation(), tv, ss->access_proxy(), ss->masked_documents()});
+                        }
+
+			collection.commit();
+
+			Print("MERGING\n");
+			collection.merge(outSess, &a, &outTerms);
+			outSess->persist_terms(outTerms);
+
+			std::vector<uint32_t> dids;
+			persist_segment(outSess, dids);
+			return 0;
+		}
+#endif
+
 
                 //sources.insert(maskedDocsSrc);
 		maskedDocsSrc->Release();
