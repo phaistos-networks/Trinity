@@ -123,7 +123,7 @@ namespace // static/local this module
                         }
                 }
 
-                // for simplicity's sake, we are just going to map exec_term_id_t => decoders[] without
+                // For simplicity's sake, we are just going to map exec_term_id_t => decoders[] without
                 // indirection. For each distict/resolved term, we have a decoder and
 		// term_hits in decode_ctx.decoders[] and decode_ctx.termHits[]
                 // This means you can index them using a termID
@@ -180,6 +180,7 @@ namespace // static/local this module
                 // Resolves a term to a termID relative to the runtime_ctx
                 // This id is meaningless outside this execution context
                 // and we use it because its easier to track/use integers than strings
+		// See Termspaces in CONCEPTS.md
                 exec_term_id_t resolve_term(const str8_t term)
                 {
                         exec_term_id_t *ptr;
@@ -302,7 +303,6 @@ namespace // static/local this module
 
                 DocWordsSpace docWordsSpace;
                 Switch::unordered_map<str8_t, exec_term_id_t> termsDict;
-                Switch::unordered_map<exec_term_id_t, str8_t> idToTerm; // maybe useful for tracing by the score functions
                 uint16_t *curDocQueryTokensCaptured;
                 matched_document matchedDocument;
                 simple_allocator allocator;
@@ -1503,6 +1503,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 }
                 else if (n.fp == matchanyterms_impl)
                 {
+			// There are no real benefits to sorting terms for matchanyterms_impl but we 'll do it anyway because its cheap
                         auto ctx = static_cast<runtime_ctx::termsrun *>(n.ptr);
 
                         v.clear();
@@ -1768,8 +1769,8 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
         for (const auto termID : leaderTermIDs)
         {
                 auto decoder = rctx.decode_ctx.decoders[termID];
-                require(decoder);
 
+                require(decoder);
                 decoder->begin();
                 leaderTermsDecoders.push_back(decoder);
         }
@@ -1894,7 +1895,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 
                 toAdvance[0] = 0;
 
-                for (uint32_t i{1}; i < leaderDecodersCnt; ++i)
+                for (uint32_t i{1}; i != leaderDecodersCnt; ++i)
                 {
                         const auto decoder = leaderDecoders[i];
                         const auto did = decoder->curDocument.id; // see Codecs::Decoder::curDocument comments
@@ -1925,38 +1926,12 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 
                                 rctx.matchedDocument.id = docID;
 
-#if defined(TRINITY_ENABLE_PREFETCH) && 0 // turns out we rarely match more than 8 terms so this is not a good idea although
-                                {
-                                        static constexpr uint32_t stride{64 / sizeof(allMatchedTerms[0])};
-                                        const uint32_t iterations = n / stride;
-                                        uint32_t i{0};
-
-                                        for (uint32_t k{0}; k != iterations; ++k)
-                                        {
-                                                for (const auto upto = i + stride; i != upto; ++i)
-                                                {
-                                                        const auto termID = allMatchedTerms[i].queryTermInstances->term.id;
-
-                                                        rctx.materialize_term_hits(termID);
-                                                }
-                                        }
-
-                                        while (i != n)
-                                        {
-                                                const auto termID = allMatchedTerms[i++].queryTermInstances->term.id;
-
-                                                rctx.materialize_term_hits(termID);
-                                        }
-                                }
-
-#else
                                 for (uint16_t i{0}; i != n; ++i)
                                 {
                                         const auto termID = allMatchedTerms[i].queryTermInstances->term.id;
 
                                         rctx.materialize_term_hits(termID);
                                 }
-#endif
 
                                 if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
                                 {
@@ -1966,17 +1941,9 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                         // See CONCEPTS.md
                                 }
 
-#if 0
-				SLog("MATCHED ", docID, "\n");
-#endif
-
                                 ++matchedDocuments;
                         }
                 }
-#if 0
-		else
-			SLog("MASKED ", docID, "\n");
-#endif
 
                 // Advance leader tokens/decoders
                 do

@@ -3,7 +3,7 @@ We could have tracked `query index` in DocWordsSpace instead of `term IDs`, whic
 - slower Trinity::Codecs::Decoder::materialize_hits() 
 - require a more elaborate materialize_hits() signature
 - slower phrasematch_impl()
-Given the above, and that the fact that not all consider() implementations will perform proximity checks for score computations, we settled for an alternative which doesn¢t require any changes and means that proximity checks are only trivially harder to perform. 
+Given the above, and that the fact that not all consider() implementations will perform proximity checks for score computations, we settled for an alternative which doesn't require any changes, and accept that proximity checks are only trivially harder to perform. 
 We will simply identify all distinct termIDs (usually just one) for each query index and will look up the termIDs in that list.
 */
 #pragma once
@@ -26,9 +26,9 @@ namespace Trinity
                 };
 
                 position *const positions;
-		// TODO: We could track the maximum seen position in a segment/index source and use that to create the DocWordsSpace
                 const uint32_t maxPos;
-                uint16_t curSeq{1};	 // always start with 1
+                uint16_t curSeq;
+
 
               public:
 		// allocating max + Trinity::Limits::MaxPhraseSize, because that is the theoritical maximum phrase size
@@ -38,6 +38,7 @@ namespace Trinity
                 DocWordsSpace(const uint32_t max = Trinity::Limits::MaxPosition)
 			: positions((position *)calloc(sizeof(position), max + 1 + Trinity::Limits::MaxPhraseSize)), maxPos{max} 
 		{
+			curSeq = 1; // IMPORTANT, start from (1)
 			require(max && max <= Trinity::Limits::MaxPosition);
 		}
 
@@ -48,11 +49,12 @@ namespace Trinity
 
 		void reset()
 		{
-			// in order to avoid resetting/clearing positions[] for every other document
+			// In order to avoid resetting/clearing positions[] for every other document
 			// we track a document-specific identifier in positions[] so if positions[idx].docSeq != curDocSeq
 			// then whatever is in positions[] is stale and should be considered unset.
+			//
 			// In a previous Trinity design we stored the document ID as u32 but that is excessive, we care about cache-misses
-			// so now we instead use a `uint16_t curSeq` and periodically clear. This should be more efficient.
+			// so now we instead use a `uint16_t curSeq` and periodically clear. This is more efficient
                         if (unlikely(curSeq == UINT16_MAX))
                         {
 				// we reset every 65k documents

@@ -16,7 +16,7 @@ namespace Trinity
 #else
 			static constexpr size_t BLOCK_SIZE{128};
 #endif
-			static constexpr size_t SKIPLIST_STEP{1};	 // every (4 * 128) documents
+			static constexpr size_t SKIPLIST_STEP{1};	 // every (SKIPLIST_STEP * BLOCK_SIZE) documents
 
                         struct IndexSession final
                             : public Trinity::Codecs::IndexSession
@@ -76,7 +76,8 @@ namespace Trinity
 				  skiplist_entry cur_block;
 
                               private:
-                                void commit_block();
+				void output_block();
+
 
                               public:
                                 Encoder(Trinity::Codecs::IndexSession *s)

@@ -14,10 +14,7 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
 		bp = bp.SuffixFrom(p + 1);
 
 	if (!bp.IsDigits())
-	{
-		SLog(bp, "\n");
 		throw Switch::data_error("Expected segment name to be a generation(digits)");
-	}
 
 	gen = bp.AsUint64();
 

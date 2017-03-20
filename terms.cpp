@@ -39,14 +39,14 @@ l100:
         auto prev = it.term;
 	str8_t::value_type termStorage[Limits::MaxTermLength];
 
-        memcpy(termStorage, prev.data(), prev.size());
+        memcpy(termStorage, prev.data(), prev.size() * sizeof(str8_t::value_type));
 
         for (const auto *p = termsData.offset + o, *const e = termsData.offset + termsData.size(); p != e;)
         {
                 const auto commonPrefixLen = *p++;
                 const auto suffixLen = *p++;
 
-                memcpy(termStorage + commonPrefixLen, p, suffixLen * sizeof(str8_t::value_type));
+                memcpy(termStorage + commonPrefixLen * sizeof(str8_t::value_type), p, suffixLen * sizeof(str8_t::value_type));
                 p += suffixLen * sizeof(str8_t::value_type);
 
                 const auto curTermLen = commonPrefixLen + suffixLen;
@@ -189,7 +189,7 @@ void Trinity::terms_data_view::iterator::decode_cur()
 		const auto commonPrefixLen = *p++;
 		const auto suffixLen = *p++;
 
-		memcpy(termStorage + commonPrefixLen, p, suffixLen * sizeof(str8_t::value_type));
+		memcpy(termStorage + commonPrefixLen * sizeof(str8_t::value_type), p, suffixLen * sizeof(str8_t::value_type));
 		p += suffixLen * sizeof(str8_t::value_type);
 
 		cur.term.len = commonPrefixLen + suffixLen;

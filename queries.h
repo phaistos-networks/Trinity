@@ -160,7 +160,7 @@ namespace Trinity
                 {
                 }
 
-                // you may NOT invoke parse() again on this context
+                // You may NOT invoke parse() more than once
                 // because content, allocator, distinctTokens will already be initialized and updated
                 //
                 // Make sure that the allocate you provide is not deleted or reused before you are done accessing
@@ -222,7 +222,7 @@ namespace Trinity
         // see query::normalize()
         ast_node *normalize_ast(ast_node *);
 
-        // this is really just a container for an ast root node and the allocator
+        // This is really just a container for an ast root node and the allocator
         // used to allocate the AST from.
         // It also provides a few useful methods that operate on the root and may make use of the allocator
         struct query final
@@ -343,34 +343,9 @@ namespace Trinity
                         // Now just make sure you normalize_root()
                 }
 
-                // you should _never_ process_runs() after you have invoked commit()
-                //
-                // This was initially implemented using a deque<> but turns out, because we
-                // keep track of phrase indices, its trivial and cheap to do it this way now
-                //
-                // - You can _delete_ a node by setting its type to dummy
-                // - it will be trivial to change a node/token to a binop or a series of binops e.g like [sf] = > [(sf OR "san francisco" OR "francisco")]
-                // - changing multiple tokens (a run) is easy if you:
-                //	1. set all nodes in the run you are interested in EXCEPT the first to dummy
-                // 	2. create a new dummy/expression for e.g all alternative spellings
-                //		e.g for the run [world of warcraft] you may want to replace with
-                //		[wow OR (world of warcraft) OR war-craft]
-                //		You may just want to use build_expr() to create the new expression node
-                //	3. directly replace the value of the first node with the new node
-                //		*first_node = *new_expr;
-                //
-                // 	see replace_run() utility method comments
-                //
-                // query::commit() will invoke normalize_root() so it will clean up those dummy nodes
-                // You _must_ commit() if you modify the query
+                // You should _never_ process_runs() after you have invoked commit()
                 //
                 // Make sure you check the repetition count
-                //
-                // XXX: TODO:
-                // when we rewrite queries, what phase index do we assign to all new nodes?
-                /// TODO: for e.g [amiga NOT (video game)] we probably don't care for
-                // (video game) because its in a NOT block. True for OR groups as well
-                //
                 // See also ast_node::set_alltokens_flags()
                 template <typename L>
                 void process_runs(const bool includePhrases, const bool andOnly, L &&cb)

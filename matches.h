@@ -27,7 +27,8 @@ namespace Trinity
                 uint16_t freq; 		// total hits for the term
 
 
-		// facilitates execution -- ignoring during scoring
+		// facilitates execution -- ignoredg during scoring
+		// this is internal and specific to the execution engine impl.
                 uint16_t allCapacity{0};
 		uint16_t docSeq;
 
@@ -93,17 +94,15 @@ namespace Trinity
                 uint16_t matchedTermsCnt;
                 matched_query_term *matchedTerms;
 
-		// matchedTerms[] are in no particularl order when passed to consider()
+		// matchedTerms[] are in not in a particular order when passed to consider()
 		// and so you almost never get them in order they appear in the original query
-		// this handy utility method will sort them so that they are in order they appear in the query
+		// This handy utility method will sort them so that they are in order they appear in the query
 		// which makes trivial to perform proximity checks (e.g dws.test(nextWordInQuery, pos+1))
 		// It is optimised to take as little time as possible, using sort networks, insertion sort and std::sort depending on the
 		// value of matchedTermsCnt
 		void sort_matched_terms_by_query_index();
         };
 
-	// You may for example keep the top-K matches, just count the documents, whatever else
-	// For example, you may want to track the top-K documents and then eventually merge them all together
 	struct MatchedIndexDocumentsFilter
 	{
 		const DocWordsSpace *dws;
@@ -116,19 +115,7 @@ namespace Trinity
 			// You should probably never to do that, but if you do, because for example you
 			// are only interested in the first few documents matched regardless of their scores
 			// then you can return Abort to return immediately from the execution to the callee
-			//
-			// See for example:https://blog.twitter.com/2010/twitters-new-search-architecture "efficient early query termination")
-			// where apparently they implemented a codec that stores document matches in DESC order in a term's postlist
-			// so that as soon as they find the top-K most recent tweets, they stop.
-			// You can't use that ordering without modifying Trinity::MergeCandidatesCollection::merge(), the various datastructures in docidupdates
-			// and SegmentIndexSession::commit(), and various codecs because they are designed on the assumption that document IDs are provided/ordered in ascending order.
-			// You can modify them, which shouild be easy, or just use a simple translation scheme when indexing documents and when considering them in consider()
-			// Specifically, the document IDs you index could be
-			// const auto translatedDocumentID = std::numeric_limits<docid_t>::max() - documentID; 
-			// and in your consider()
-			// const auto actualDocumentID = std::numeric_limits<docid_t>::max() - max.id;
-			// This simple translation sceheme will help you accomplish a reverse ordering without having to change anything in this codebase.
-			// See CONCEPTS.md please
+			// See RECIPES.md and CONCEPTS.md
 			Abort,
 		};
 

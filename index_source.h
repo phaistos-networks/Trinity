@@ -50,9 +50,9 @@ namespace Trinity
                         return {};
                 }
 
-		// returns the maximum position expected
+		// Returns the maximum position expected
 		// you may want to override to provide a more accurate value
-		// this is used by the execution engine when creating a new DocWordsSpace
+		// This is used by the execution engine when creating a new DocWordsSpace
 		// It cannot be higher than Limits::MaxPosition or lower than 1
 		// 
 		// For example, if you are only indexing titles, you should probably override this method
@@ -127,7 +127,7 @@ namespace Trinity
 	// A great use case would be to have one IndexSourcesCollection which retains many sources and whenever you want to reload segments/sources etc, create
 	// a new IndexSourcesCollection for them and atomically exchange pointers (old, new IndexSourcesCollection)
 	//
-	// it is very important you don't forget to invoke commit() otherwise updated/masked documents state will not be built
+	// It is very important you don't forget to invoke commit() otherwise updated/masked documents state will not be built
         class IndexSourcesCollection final
         {
               private:

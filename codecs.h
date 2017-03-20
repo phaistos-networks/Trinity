@@ -1,6 +1,3 @@
-// See http://www.dcs.gla.ac.uk/%7Ecraigm/publications/catena14compression.pdf
-// This is a survey of various posting list encoding schemes (integer encoding schemes)
-// We use PFOR for Lucene, varbyte for most codecs, etc
 #pragma once
 #include "docwordspace.h"
 #include "docidupdates.h"
@@ -8,8 +5,7 @@
 
 namespace Trinity
 {
-
-	// Information about a term's posting list and number of documents it matches
+	// Information about a term's posting list and number of documents it matches.
 	// We track the number of documents because it may be useful(and it is) to some codecs, and also
 	// is extremely useful during execution where we re-order the query nodes based on evaluation cost which
 	// is directly related to the a term's posting list size based on the number of documents it matches.
@@ -22,6 +18,7 @@ namespace Trinity
 		// for documents that contain the trerm. This is the chunk in the index that
 		// holds the posting list.
 		// This is codec specific though -- for some codecs, this could mean something else
+		// e.g for a memory-resident index source/segment, you could use inexChunk to refer to some in-memory data
 		range32_t indexChunk;
 
 		term_index_ctx(const uint32_t d, const range32_t c)
@@ -65,8 +62,8 @@ namespace Trinity
 		struct AccessProxy;
 
 		// Represents a new indexer session
-		// all indexer sessions have an indexOut that holds the index(posting lists for each distinct term)
-		// but other codecs may e.g open/track more files or buffers
+		// All indexer sessions have an `indexOut` that holds the inverted index(posting lists for each distinct term)
+		// but other codecs may e.g open/track more files or buffers depending on their needs.
 		//
 		// The base path makes sense for disk based storage, but some codecs may only operate on in-memory
 		// data so it may not be used in those designs.
@@ -76,6 +73,8 @@ namespace Trinity
 			const char *basePath;
 
 			// The segment name should be the generation
+			// e.g for path Trinity/Indices/Wikipedia/Segments/100
+			// the generation is extracted as 100
                         IndexSession(const char *bp)
 				: basePath{bp}
 			{
@@ -124,13 +123,15 @@ namespace Trinity
 			// If you have a fancy codec that you don't expect to use for merging other segments 
 			// (e.g some fancy in-memory wrapper that is
 			// really only used for queries as an IndexSource), then you can just implement this and merge() as no-ops.
+			//
+			// see MergeCandidatesCollection::merge() impl.
 			virtual range32_t append_index_chunk(const AccessProxy *src, const term_index_ctx srcTCTX) = 0;
 
 
 			// If we have multiple postng lists for the same term(i.e merging 2+ segments 
-			// and same term exists in 2+ of them) t
+			// and same term exists in 2+ of them)
 			// where we can't just use append_index_chunk() but instead we need to merge them, 
-			// we need to use this codec-specific merge function
+			// and to do that, we we need to use this codec-specific merge function
 			// that will do this for us. Use append_index_chunk() otherwise.
 			// 
 			// You are expected to have encoder->begin_term() before invoking this method, 
@@ -138,6 +139,8 @@ namespace Trinity
 			//
 			// The input pairs hold an AccessProxy for the data and a range in the the index of that data, and 
 			// the encoder the target codec encoder
+			//
+			// See MergeCandidatesCollection::merge() impl.
 			struct merge_participant
 			{
 				AccessProxy *ap;
@@ -147,6 +150,7 @@ namespace Trinity
 				
                         virtual void merge(merge_participant *participants, const uint16_t participantsCnt, Encoder *const encoder) = 0;
                 };
+
 
                 // Encoder interface for encoding a single term's posting list
                 struct Encoder
@@ -184,7 +188,7 @@ namespace Trinity
 
 		// Decoder interface for decoding a single term's posting list.
 		// If a decoder makes use of skiplist data, they are expected to be serialized in the index
-		// and the decoder is responsible for deserializing and using them from there
+		// and the decoder is responsible for deserializing and using them from there, although this is specific to the codec
                 struct Decoder
                 {
 			// We now use a curDocument structure that holds the current document and its frequency(number of hits)
@@ -240,9 +244,8 @@ namespace Trinity
 			// - If you are at the end of the documents/hits, return false
 			// - If you matched the document, return true
 			//
-			// XXX: it is important that if you fail to seek to target you stop to ONE document after target, 
-			// or if you have exhausted the documents list then 
-			// just return false and set curDocument.id  = MaxDocIDValue
+			// XXX: it is important that you *always stop* if you are past the target(advance to that document past the target, and then stop)
+			// or if you have exhausted the documents list then just return false and set curDocument.id  = MaxDocIDValue
 			// i.e if you are at curDocument.id = 50 and the ids in the list are (20, 50, 55, 70, 80, 100, 150, 200) and 
 			// you seek to 110, then you must stop at 150 (or earlier but not earlier than 50)
 			// See provided codecs implementations.
@@ -260,7 +263,7 @@ namespace Trinity
                         virtual void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) = 0;
 
 
-			// Initialised the decoding state for accessing the postings list
+			// Initialise the decoding state for accessing the postings list
 			//
 			// Not going to rely on a constructor for initialization because
 			// we want to force subclasses to define a method with this signature
@@ -283,7 +286,7 @@ namespace Trinity
 			// something other specific to the codec
 			const uint8_t *const indexPtr;
 
-			// utility function: returns a new decoder for a term's posting list
+			// utility function: returns an initialised new decoder for a term's posting list
 			// Some codecs(e.g lucene's) may need to access the filesystem and/or other codec specific state
 			// AccessProxy faciliates that (this is effectively a pointer to self)
 			//

@@ -7,14 +7,13 @@
 
 namespace Trinity
 {
-	// persists an index sesion as a segment
-	// the application is responsible for persisting the terms (see SegmentIndexSession::commit() for example, and IndexSession::persist_terms())
-	void persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<uint32_t> &updatedDocumentIDs);
+        // Persists an index sesion as a segment
+        // The application is responsible for persisting the terms (see SegmentIndexSession::commit() for example, and IndexSession::persist_terms())
+        void persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<uint32_t> &updatedDocumentIDs);
 
-
-	// A utility class suitable for indexing document terms and persisting the index and other codec specifc data into a directory
-	// It offers a simple API for adding, updating and erasing documents
-	// You should use SegmentIndexSource to load the segment(and use it for search)
+        // A utility class suitable for indexing document terms and persisting the index and other codec specifc data into a directory
+        // It offers a simple API for adding, updating and erasing documents
+        // You can use SegmentIndexSource to load the segment(and use it for search)
         class SegmentIndexSession final
         {
               private:
@@ -24,7 +23,7 @@ namespace Trinity
                 std::vector<docid_t> updatedDocumentIDs;
                 simple_allocator dictionaryAllocator;
                 Switch::unordered_map<str8_t, uint32_t> dictionary;
-		Switch::unordered_map<uint32_t, str8_t> invDict;
+                Switch::unordered_map<uint32_t, str8_t> invDict;
 
               public:
                 struct document_proxy final
@@ -46,7 +45,7 @@ namespace Trinity
 
                         void insert(const uint32_t termID, const uint32_t position, range_base<const uint8_t *, const uint8_t> payload);
 
-			// new `term` hit at `position` with `payload`(attrs.)
+                        // new `term` hit at `position` with `payload`(attrs.)
                         void insert(const str8_t term, const uint32_t position, range_base<const uint8_t *, const uint8_t> payload)
                         {
                                 insert(term_id(term), position, payload);
@@ -57,7 +56,7 @@ namespace Trinity
                                 insert(termID, position, {});
                         }
 
-			// new `term` hit at `position`
+                        // new `term` hit at `position`
                         void insert(const str8_t term, const uint32_t position)
                         {
                                 insert(term_id(term), position, {});
@@ -89,15 +88,15 @@ namespace Trinity
 
                 void erase(const docid_t documentID);
 
-		// after you have obtained a document_proxy, you can use its insert methods to register term hits
-		// and when you are done indexing a document, use insert() or update() to insert as a NEW document or update an existing
-		// document in case it is already indexed in another segment
+                // After you have obtained a document_proxy, you can use its insert methods to register term hits
+                // and when you are done indexing a document, use insert() or update() to insert as a NEW document or UPDATE an existing
+                // document in case it is already indexed in another segments.
                 document_proxy begin(const docid_t documentID);
 
                 // In the past we 'd store those in reverse, so that if we were to erase a document and then index it
-                // we 'd read the document's terms first (because we 'd read in reverse from the buffer) and would ignore
+                // We 'd read the document's terms first (because we 'd read in reverse from the buffer) and would ignore
                 // the erase (document, 0) pair
-                // it should be easy to implement that again later
+                // It should be easy to implement that again later
                 void insert(const document_proxy &proxy)
                 {
                         commit_document_impl(proxy, false);
@@ -108,8 +107,8 @@ namespace Trinity
                         commit_document_impl(proxy, true);
                 }
 
-		// Persist index and masked products into the directory s->basePath
-		// See also SegmentIndexSource::SegmentIndexSource()
+                // Persist index and masked products into the directory s->basePath
+                // See also SegmentIndexSource::SegmentIndexSource()
                 void commit(Trinity::Codecs::IndexSession *const s);
         };
 }

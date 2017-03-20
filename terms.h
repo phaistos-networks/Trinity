@@ -6,10 +6,8 @@
 #include "codecs.h"
 
 
-// prefic compressed terms dictionary
-// maps from str8_t=>term_index_ctx
-// Based in part on Lucene's prefix compression scheme
-// https://lucene.apache.org/core/2_9_4/fileformats.html#Term%20Dictionary
+// Prefic compressed terms dictionary
+// Maps from str8_t=>term_index_ctx
 namespace Trinity
 {
 
@@ -199,5 +197,4 @@ namespace Trinity
 				return new IndexSourcePrefixCompressedTermsView(termsData);
 			}
 	};
-
-};
+}

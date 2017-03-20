@@ -4,7 +4,8 @@
 #include "common.h"
 
 // Efficient, lean, fixed-size bitmaps based document IDs tracking
-// You are expected to test for document IDs in ascending order
+// You are expected to test for document IDs in ascending order, but if you need a different behavior, it should be easy to modify
+// the implementation to accomplish it.
 namespace Trinity
 {
         struct updated_documents final
@@ -98,7 +99,6 @@ namespace Trinity
                                         return true;
                                 else if (it->drained())
 				{
-					SLog("DRAINED\n");
                                         new (it) updated_documents_scanner(scanners[--rem]);
 					require(*it == scanners[rem]);
 				}	
@@ -117,6 +117,15 @@ namespace Trinity
 		{
 		}
 
+		inline auto size() const noexcept
+		{
+			return rem;
+		}
+
+		inline auto empty() const noexcept
+		{
+			return 0 == rem;
+		}
 
 		static std::unique_ptr<Trinity::masked_documents_registry> make(const updated_documents *ud, const uint8_t n)
                 {

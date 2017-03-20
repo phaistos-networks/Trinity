@@ -6,6 +6,7 @@
 namespace Trinity
 {
 	// You can use SegmentIndexSession to create a new segment
+	// This is a utility class
         class SegmentIndexSource final
             : public IndexSource
         {

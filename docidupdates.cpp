@@ -17,7 +17,7 @@ void Trinity::pack_updates(std::vector<docid_t> &updatedDocumentIDs, IOBuffer *c
                         // We can create a bitmap
                         // which will come down to about 4k that can hold 32k documents
                         // which allows for O(1) access
-                        // for 10million IDs, this comes down to about 2MBs which is not much, considering
+                        // For 10million IDs, this comes down to about 2MBs which is not much, considering
                         // how we are going to be advancing one range/time
                         const auto id = *p, base = id;
                         const auto upto = id + BANK_SIZE;
@@ -121,6 +121,7 @@ bool Trinity::updated_documents_scanner::test(const docid_t id) noexcept
 			{
 				if (trace)
 					SLog("Definitely not here because top = -1\n");
+
 				reset();
 				return false;
 			}

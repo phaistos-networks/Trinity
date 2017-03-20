@@ -181,17 +181,6 @@ void Trinity::Codecs::Google::Encoder::commit_block()
         prevBlockLastDocumentID = curDocID;
         curBlockSize = 0;
 
-#if 0
-	if (out->size() > 64)
-	{
-		if (write(indexFD, out->data(), out->size()) != out->size())
-			throw Switch::data_error("Failed to update index");
-
-		indexFileSize+=out->size();
-		out->clear();
-	}
-#endif
-
         if (trace)
                 SLog("Commited Block ", out->size(), "\n");
 }
@@ -208,8 +197,6 @@ range32_t Trinity::Codecs::Google::IndexSession::append_index_chunk(const Trinit
 void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participant *participants, const uint16_t participantsCnt, Trinity::Codecs::Encoder *encoder_)
 {
         static constexpr bool trace{false};
-        // XXX: need to be provided by more recent to the least recent
-        //require(chunksCnt > 1);
 
         struct chunk final
         {
@@ -328,7 +315,6 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
                 static constexpr bool trace{false};
                 const auto idx = c->cur_block.idx;
                 const auto did = c->cur_block.documents[idx];
-                // TODO: if `did` is ignore, skip the hits but don't forward to the encoder
                 auto freq = c->cur_block.freqs[idx];
                 auto p = c->p;
 		uint8_t payloadSize{0};
@@ -383,7 +369,7 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
                 docid_t lowestDID = chunks[0].cur_block.documents[chunks[0].cur_block.idx];
 
                 toAdvance[0] = 0;
-                for (uint32_t i{1}; i < rem; ++i)
+                for (uint32_t i{1}; i != rem; ++i)
                 {
                         if (const auto id = chunks[i].cur_block.documents[chunks[i].cur_block.idx]; id < lowestDID)
                         {
@@ -685,10 +671,12 @@ void Trinity::Codecs::Google::Decoder::unpack_next_block()
         uint32_t _v;
 
         varbyte_get32(p, _v);
+
         const auto thisBlockLastDocID = blockLastDocID + _v;
         uint32_t blockSize;
 
         varbyte_get32(p, blockSize);
+
         const auto blockDocsCnt = *p++;
 
         if (trace)

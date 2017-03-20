@@ -96,11 +96,11 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
 
 uint32_t SegmentIndexSession::term_id(const str8_t term)
 {
-	// indexer words space
+	// Indexer words space
 	// Each segment has its own terms and there is no need to maintain a global(index) or local(segment) (term=>id) dictionary
 	// but we use transient term IDs (integers) for simplicity and performance
 	// SegmentIndexSession::commit() will store actual terms, not their transient IDs.
-	// . See IMPL.md
+	// See CONCEPTS.md
         uint32_t *idp;
         str8_t *keyptr;
 
@@ -116,7 +116,6 @@ uint32_t SegmentIndexSession::term_id(const str8_t term)
 void SegmentIndexSession::erase(const docid_t documentID)
 {
         updatedDocumentIDs.push_back(documentID);
-        // NO NEED: b.pack(documentID, uint16_t(0));
 }
 
 Trinity::SegmentIndexSession::document_proxy SegmentIndexSession::begin(const docid_t documentID)
@@ -130,29 +129,9 @@ Trinity::SegmentIndexSession::document_proxy SegmentIndexSession::begin(const do
 // see SegmentIndexSession::commit()
 void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<docid_t> &updatedDocumentIDs)
 {
-        // Persist index
-        int fd = open(Buffer{}.append(sess->basePath, "/index").c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_LARGEFILE, 0775);
-
-        if (fd == -1)
+	if (Trinity::Utilities::to_file(sess->indexOut.data(), sess->indexOut.size(), Buffer{}.append(sess->basePath, "/index").c_str()) == -1)
                 throw Switch::system_error("Failed to persist index");
 
-        // respect 2GB limit
-        for (size_t o{0}; o != sess->indexOut.size();)
-        {
-                const auto upto = std::min<size_t>(o + uint32_t(2 * 1024 * 1024 * 1024) - 1, sess->indexOut.size());
-                int res = write(fd, sess->indexOut.data() + o, upto - o);
-
-                if (res == -1)
-                {
-                        close(fd);
-                        throw Switch::system_error("Failed to persist index");
-                }
-
-                o = upto;
-        }
-
-        if (close(fd) == -1)
-                throw Switch::system_error("Failed to persist index");
 
 	IOBuffer maskedDocumentsBuf;
 
@@ -161,16 +140,7 @@ void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::ve
 
         if (maskedDocumentsBuf.size())
         {
-                fd = open(Buffer{}.append(sess->basePath, "/updated_documents.ids").c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_LARGEFILE, 0775);
-
-                if (fd == -1)
-                        throw Switch::system_error("Failed to persist masked documents");
-                else if (write(fd, maskedDocumentsBuf.data(), maskedDocumentsBuf.size()) != maskedDocumentsBuf.size())
-                {
-                        close(fd);
-                        throw Switch::system_error("Failed to persist masked documents");
-                }
-                else if (close(fd) == -1)
+		if (Trinity::Utilities::to_file(maskedDocumentsBuf.data(), maskedDocumentsBuf.size(), Buffer{}.append(sess->basePath, "/updated_documents.ids").c_str()) == -1)
                         throw Switch::system_error("Failed to persist masked documents");
         }
 
@@ -298,6 +268,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         // basepath already set for IndexSession
         // begin() could open files, etc
         sess->begin();
+
 
         // IF we flushed b earlier, mmap() and scan() that mmmap()ed region first
         scan(reinterpret_cast<const uint8_t *>(b.data()), b.size());

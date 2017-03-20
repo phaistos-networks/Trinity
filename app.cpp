@@ -277,7 +277,8 @@ int main(int argc, char *argv[])
 
                         for (const auto chunkEnd = p + chunkSize; p != chunkEnd;)
                         {
-                                const auto id = *(uint32_t *)p;
+                                //const auto id = *(uint32_t *)p;
+                                const auto id = (*(uint32_t *)p) | (1<<31);
                                 p += sizeof(uint32_t);
                                 strwlen8_t title((char *)p + 1, *p);
                                 p += title.size() + sizeof(uint8_t);
@@ -302,10 +303,15 @@ int main(int argc, char *argv[])
                                                         mtp[i] = Buffer::UppercaseISO88597(p[i]);
 
                                                 const strwlen8_t term(p, len);
-						uint32_t hit{25121561};
 
-                                                d.insert(term, pos, {(uint8_t *)&hit, sizeof(uint32_t)});
-                                                //d.insert(term, 0, {});
+						//if (term.Eq(_S("1000MG")))
+                                                {
+                                                        uint32_t hit{25121561};
+
+                                                        d.insert(term, pos, {(uint8_t *)&hit, sizeof(uint32_t)});
+                                                        //d.insert(term, 0, {});
+                                                }
+
                                                 ++pos;
 
                                                 p += len;
@@ -346,7 +352,16 @@ int main(int argc, char *argv[])
 		IndexSourcesCollection sources;
 		Buffer asuc;
 
-                if (false)
+#if 1
+		{
+                        auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/8192");
+
+                        sources.insert(ss);
+                        ss->Release();
+		}
+#else
+
+                if (true)
                 {
                         auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/100");
 
@@ -361,7 +376,7 @@ int main(int argc, char *argv[])
                         ss->Release();
                 }
 
-#if 0
+#if 1
 		{
 			MergeCandidatesCollection collection;
 			simple_allocator a;
@@ -386,6 +401,7 @@ int main(int argc, char *argv[])
 			persist_segment(outSess, dids);
 			return 0;
 		}
+#endif
 #endif
 
 
@@ -509,7 +525,7 @@ int main(int argc, char *argv[])
 
 		query q(asuc.AsS32());
 
-#if 1
+#if 0
 		auto node = ast_node::make(q.allocator, ast_node::Type::BinOp);
 		auto specialTokensNode = ast_node::make(q.allocator, ast_node::Type::ConstTrueExpr);
 

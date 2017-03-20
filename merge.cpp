@@ -121,9 +121,10 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 		if (toAdvanceCnt == 1)
 		{
                         auto c = all[toAdvance[0]].candidate;
+                        auto maskedDocsReg = scanner_registry_for(all[toAdvance[0]].idx);
 
-                        if (fastPath)
-			{
+                        if (fastPath && maskedDocsReg->empty())
+                        {
 				const auto chunk = is->append_index_chunk(c.ap, selected.second);
 				
 				terms->push_back({outTerm, {selected.second.documents, chunk}});
@@ -133,7 +134,6 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 				term_index_ctx tctx;
 				std::unique_ptr<Trinity::Codecs::Encoder> enc(is->new_encoder());
 				std::unique_ptr<Trinity::Codecs::Decoder> dec(c.ap->new_decoder(selected.second));
-				auto maskedDocsReg = scanner_registry_for(all[toAdvance[0]].idx);
 
 				dec->begin();
 				enc->begin_term();

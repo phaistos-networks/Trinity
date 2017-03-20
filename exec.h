@@ -8,9 +8,10 @@ namespace Trinity
 {
 	void exec_query(const query &in, IndexSource *, masked_documents_registry *const maskedDocumentsRegistry, MatchedIndexDocumentsFilter *);
 
-	// handy utility function; executes query on all index sources in the provided collection in sequence and returns
-	// a vector with the match filters/results of each execution
-	// You are expected to merge/reduce them
+	// Handy utility function; executes query on all index sources in the provided collection in sequence and returns
+	// a vector with the match filters/results of each execution.
+	//
+	// You are expected to merge/reduce/blend them.
 	template<typename T, typename...Arg>
 		std::vector<std::unique_ptr<MatchedIndexDocumentsFilter>> exec_query(const query &in, IndexSourcesCollection *collection, Arg&&...args)
 		{
