@@ -1278,6 +1278,7 @@ void Trinity::Codecs::Lucene::Decoder::init(const term_index_ctx &tctx, Trinity:
                 struct skiplist_entry e;
 
                 chunkEnd = sit;
+		skiplist.reserve(skiplistSize);
                 for (uint32_t i{0}; i != skiplistSize; ++i, sit += skiplistEntrySize)
                 {
                         const auto it = reinterpret_cast<const uint32_t *>(sit);

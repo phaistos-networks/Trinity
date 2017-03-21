@@ -99,7 +99,7 @@ void Trinity::unpack_terms_skiplist(const range_base<const uint8_t *, const uint
 
 void Trinity::pack_terms(std::vector<std::pair<str8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index)
 {
-        static constexpr uint32_t SKIPLIST_INTERVAL{128};	 // 128 or 64 is more than fine
+        static constexpr uint32_t SKIPLIST_INTERVAL{64};	 // 128 or 64 is more than fine
         uint32_t nextSkipListEntry{1}; 	// so that we will output for the first term (required)
         str8_t prev;
 

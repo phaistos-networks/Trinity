@@ -8,9 +8,11 @@ See:
 - `reorder_execnode()`
 - `compile_node()`
 - `expand_node()`
-`normalize_root()` will not optimize the query per-se nor will it reorder it; it will identify logical issues and the final query will 'make sense'. This is important because a query
+`normalize_root()` will not optimize the query per-se nor will it reorder it; it will identify basic logical issues and the final query will 'make sense'. This is important because a query
 can be used for other purproses other than for execution by the execution engine (e.g you could use it for something else in your application).
-When you are passing a query to the executione engine, it creates a copy of it, and that may be updated by `reorder_root()` before it is compiled and the resulting exec nodes tree may be restructured and optimised.
+When you are passing a query to the executione engine, it creates a copy of it, and that may be updated by `reorder_root()` before it is compiled and the resulting exec nodes tree is optimized by `expand_node()` etc
 
 It's easy to extend and enhance the optimiser and parser though, so whenever we identify opportunities to do so, it should be trivial to implement them.
+
+Optimizations are implemented in `normalize_root()` and `expand_node()`
 

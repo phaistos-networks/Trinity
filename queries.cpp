@@ -2,6 +2,11 @@
 
 using namespace Trinity;
 
+namespace
+{
+        static constexpr bool traceParser{false};
+};
+
 static constexpr uint8_t OpPrio(const Operator op) noexcept
 {
         switch (op)
@@ -25,9 +30,9 @@ static constexpr uint8_t OpPrio(const Operator op) noexcept
 
 static str32_t parse_term(ast_parser &ctx)
 {
-	// will strip characters that are not part of a valid token
-	// and will pay attention to special group termination characters
-	for (;;)
+        // will strip characters that are not part of a valid token
+        // and will pay attention to special group termination characters
+        for (;;)
         {
                 if (const auto len = ctx.token_parser(ctx.content))
                 {
@@ -37,13 +42,13 @@ static str32_t parse_term(ast_parser &ctx)
                         return res;
                 }
                 else if (ctx.content.empty() || (ctx.groupTerm.size() && ctx.groupTerm.back() == ctx.content.front()))
-		{
-			return {};
-		}
-		else
-		{
-			ctx.content.strip_prefix(1);
-		}
+                {
+                        return {};
+                }
+                else
+                {
+                        ctx.content.strip_prefix(1);
+                }
         }
 }
 
@@ -64,16 +69,16 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
 
                         if (const auto token = parse_term(ctx))
                         {
-				if (unlikely(token.size() > Limits::MaxTermLength))
-					return ctx.alloc_node(ast_node::Type::ConstFalse);
-				
-				t.token.Set(token.data(), uint8_t(token.size()));
+                                if (unlikely(token.size() > Limits::MaxTermLength))
+                                        return ctx.alloc_node(ast_node::Type::ConstFalse);
+
+                                t.token.Set(token.data(), uint8_t(token.size()));
 
                                 if (n != sizeof_array(terms))
                                 {
                                         // silently ignore the rest
                                         // Not sure this is ideal though
-					ctx.track_term(t);
+                                        ctx.track_term(t);
                                         terms[n++] = t;
                                 }
                         }
@@ -103,17 +108,17 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
 
                 term t;
 
-		t.token.Set(token.data(), uint8_t(token.size()));
+                t.token.Set(token.data(), uint8_t(token.size()));
 
                 auto node = ctx.alloc_node(ast_node::Type::Token);
                 auto p = (phrase *)ctx.allocator.Alloc(sizeof(phrase) + sizeof(term));
 
-		ctx.track_term(t);
+                ctx.track_term(t);
 
                 p->size = 1;
                 p->terms[0] = t;
                 p->rep = 1;
-		p->flags = 0;
+                p->flags = 0;
                 node->p = p;
                 return node;
         }
@@ -144,9 +149,9 @@ static std::pair<Operator, uint8_t> parse_operator_impl(ast_parser &ctx)
                                 return {Operator::NOT, 1};
                 }
 
-		if (ctx.groupTerm.size() && ctx.groupTerm.front() == f)
+                if (ctx.groupTerm.size() && ctx.groupTerm.front() == f)
                         return {Operator::NONE, 0};
-		else
+                else
                         return {Operator::AND, 0};
 
 #if 0
@@ -265,11 +270,11 @@ void PrintImpl(Buffer &b, const Trinity::ast_node &n)
                 }
                 break;
 
-		case ast_node::Type::ConstTrueExpr:
-			b.append('<');
+                case ast_node::Type::ConstTrueExpr:
+                        b.append('<');
                         b.append(*n.expr);
-			b.append('>');
-			break;
+                        b.append('>');
+                        break;
 
                 case ast_node::Type::UnaryOp:
                         if (n.unaryop.op == Operator::AND || n.unaryop.op == Operator::STRICT_AND)
@@ -292,10 +297,10 @@ static ast_node *parse_unary(ast_parser &ctx)
         ctx.skip_ws();
 
 #if 1
-	// enable this for debugging
-	if (ctx.content.StripPrefix(_S("<")))
-	{
-		ctx.groupTerm.push_back('>');
+        // enable this for debugging
+        if (ctx.content.StripPrefix(_S("<")))
+        {
+                ctx.groupTerm.push_back('>');
 
                 auto e = parse_expr(ctx) ?: ctx.parse_failnode();
 
@@ -305,19 +310,19 @@ static ast_node *parse_unary(ast_parser &ctx)
                         if (e->type != ast_node::Type::Dummy)
                                 e = ctx.parse_failnode();
                 }
-		else
-			ctx.groupTerm.pop_back();
+                else
+                        ctx.groupTerm.pop_back();
 
-		auto res = ctx.alloc_node(ast_node::Type::ConstTrueExpr);
+                auto res = ctx.alloc_node(ast_node::Type::ConstTrueExpr);
 
-		res->expr = e;
-		return res;
-	}
+                res->expr = e;
+                return res;
+        }
 #endif
 
         if (ctx.content.StripPrefix(_S("(")))
         {
-		ctx.groupTerm.push_back(')');
+                ctx.groupTerm.push_back(')');
 
                 auto e = parse_expr(ctx) ?: ctx.parse_failnode();
 
@@ -327,8 +332,8 @@ static ast_node *parse_unary(ast_parser &ctx)
                         if (e->type != ast_node::Type::Dummy)
                                 e = ctx.parse_failnode();
                 }
-		else
-			ctx.groupTerm.pop_back();
+                else
+                        ctx.groupTerm.pop_back();
 
                 return e;
         }
@@ -410,17 +415,17 @@ ast_node *parse_expr(ast_parser &ctx)
 
 void ast_parser::track_term(term &t)
 {
-	for (const auto &it : distinctTokens)
-	{
-		if (it == t.token)
-		{
-			t.token = it;
-			return;
-		}
-	}
+        for (const auto &it : distinctTokens)
+        {
+                if (it == t.token)
+                {
+                        t.token = it;
+                        return;
+                }
+        }
 
-	t.token.p = allocator.CopyOf(t.token.data(), t.token.size());
-	distinctTokens.push_back(t.token);
+        t.token.p = allocator.CopyOf(t.token.data(), t.token.size());
+        distinctTokens.push_back(t.token);
 }
 
 ast_node *normalize_root(ast_node *root);
@@ -441,7 +446,7 @@ ast_node *ast_parser::parse()
 struct normalizer_ctx
 {
         uint32_t updates;
-	uint32_t tokensCnt{0};
+        uint32_t tokensCnt{0};
 };
 
 static void normalize(ast_node *, normalizer_ctx &);
@@ -478,33 +483,38 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                 return;
         }
 
-	if (n->binop.op == Operator::NOT && lhs->type == ast_node::Type::BinOp && lhs->binop.op == Operator::OR && lhs->binop.lhs->is_unary() && rhs->is_unary() && *lhs->binop.lhs->p == *rhs->p)
-	{
-		// [ foo OR bar NOT foo ] => [bar]
-		SLog("HERE\n");
-		*n = *lhs->binop.rhs;
-                ++ctx.updates;
-		return;
-	}
+        if (n->binop.op == Operator::NOT && lhs->type == ast_node::Type::BinOp && lhs->binop.op == Operator::OR && lhs->binop.lhs->is_unary() && rhs->is_unary() && *lhs->binop.lhs->p == *rhs->p)
+        {
+                // [ foo OR bar NOT foo ] => [bar]
+                if (traceParser)
+                        SLog("HERE\n");
 
-	if (n->binop.op == Operator::NOT && lhs->type == ast_node::Type::BinOp && lhs->binop.normalized_operator() == Operator::AND && lhs->binop.lhs->is_unary() && rhs->is_unary() && *lhs->binop.lhs->p == *rhs->p)
-	{
-		// [ foo AND bar NOT foo ] => [bar]
-		SLog("HERE\n");
-		n->set_const_false();
+                *n = *lhs->binop.rhs;
                 ++ctx.updates;
-		return;
-	}
+                return;
+        }
 
-	if (n->binop.op == Operator::NOT && lhs->type == ast_node::Type::BinOp && lhs->binop.normalized_operator() == Operator::NOT && lhs->binop.lhs->is_unary() && rhs->is_unary() && *lhs->binop.lhs->p == *rhs->p)
-	{
-		// [ foo NOT bar NOT foo ] => [bar]
-		SLog("HERE\n");
-		n->set_const_false();
+        if (n->binop.op == Operator::NOT && lhs->type == ast_node::Type::BinOp && lhs->binop.normalized_operator() == Operator::AND && lhs->binop.lhs->is_unary() && rhs->is_unary() && *lhs->binop.lhs->p == *rhs->p)
+        {
+                // [ foo AND bar NOT foo ] => [bar]
+                if (traceParser)
+                        SLog("HERE\n");
+
+                n->set_const_false();
                 ++ctx.updates;
-		return;
-	}
+                return;
+        }
 
+        if (n->binop.op == Operator::NOT && lhs->type == ast_node::Type::BinOp && lhs->binop.normalized_operator() == Operator::NOT && lhs->binop.lhs->is_unary() && rhs->is_unary() && *lhs->binop.lhs->p == *rhs->p)
+        {
+                // [ foo NOT bar NOT foo ] => [bar]
+                if (traceParser)
+                        SLog("HERE\n");
+
+                n->set_const_false();
+                ++ctx.updates;
+                return;
+        }
 
         if (lhs->is_const_false())
         {
@@ -516,8 +526,8 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                 }
                 else if (n->binop.op == Operator::OR)
                 {
-			if (rhs->is_const_false())
-				n->set_const_false();
+                        if (rhs->is_const_false())
+                                n->set_const_false();
                         else
                                 *n = *rhs;
 
@@ -526,7 +536,7 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                 }
                 else if (n->binop.op == Operator::NOT)
                 {
-			n->set_const_false();
+                        n->set_const_false();
                         ++ctx.updates;
                         return;
                 }
@@ -554,7 +564,6 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                 }
         }
 
-
         if (unary_same_type(lhs, rhs))
         {
                 // [phrase] [OP] [phrase]
@@ -571,12 +580,16 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                                 }
                                 else if (n->binop.op == Operator::NOT)
                                 {
-                                        SLog("here\n");
+                                        if (traceParser)
+                                                SLog("here\n");
+
                                         n->set_const_false();
                                 }
                                 else
                                 {
-                                        SLog("here:", *n, "\n");
+                                        if (traceParser)
+                                                SLog("here:", *n, "\n");
+
                                         if (n->binop.op == Operator::OR)
                                         {
                                                 *n = *lhs;
@@ -589,80 +602,96 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                                         }
                                 }
                                 ++ctx.updates;
-                                SLog("Now:", *n, "\n");
+
+                                if (traceParser)
+                                        SLog("Now:", *n, "\n");
                                 return;
                         }
                 }
         }
 
-	if (rhs->type == ast_node::Type::UnaryOp)
-	{
-		if ((rhs->unaryop.op == Operator::AND || rhs->unaryop.op == Operator::STRICT_AND) && lhs->is_unary() && unary_same_type(lhs, rhs->unaryop.expr) && *lhs->p == *rhs->unaryop.expr->p)
-		{
-			if (n->binop.op == Operator::NOT)
+        if (rhs->type == ast_node::Type::UnaryOp)
+        {
+                if ((rhs->unaryop.op == Operator::AND || rhs->unaryop.op == Operator::STRICT_AND) && lhs->is_unary() && unary_same_type(lhs, rhs->unaryop.expr) && *lhs->p == *rhs->unaryop.expr->p)
+                {
+                        if (n->binop.op == Operator::NOT)
                         {
-				// [APPLE NOT +APPLE]
-                                SLog("here\n");
+                                // [APPLE NOT +APPLE]
+                                if (traceParser)
+                                        SLog("here\n");
+
                                 n->set_const_false();
                                 ++ctx.updates;
                                 return;
                         }
-			else if (n->binop.op == Operator::OR)
-			{
-				// [APPLE OR +APPLE]
-				SLog("here\n");
-				*n = *rhs;
-				++ctx.updates;
-				return;
-			}
-			else 
-			{
-				// [APPLE AND +APPLE]
-				SLog("here\n");
-				*n = *rhs;
-				++ctx.updates;
-				return;
-			}
+                        else if (n->binop.op == Operator::OR)
+                        {
+                                // [APPLE OR +APPLE]
+                                if (traceParser)
+                                        SLog("here\n");
+
+                                *n = *rhs;
+                                ++ctx.updates;
+                                return;
+                        }
+                        else
+                        {
+                                // [APPLE AND +APPLE]
+                                if (traceParser)
+                                        SLog("here\n");
+
+                                *n = *rhs;
+                                ++ctx.updates;
+                                return;
+                        }
                 }
-	}
+        }
 
         if (lhs->type == ast_node::Type::UnaryOp)
         {
                 if (rhs->type == ast_node::Type::UnaryOp && lhs->unaryop.op == rhs->unaryop.op && lhs->unaryop.op == n->binop.op && unary_same_type(lhs->unaryop.expr, rhs->unaryop.expr) && *lhs->unaryop.expr->p == *rhs->unaryop.expr->p)
                 {
-                        SLog("here\n");
+                        if (traceParser)
+                                SLog("here\n");
+
                         n->type = ast_node::Type::UnaryOp;
                         n->unaryop.op = n->binop.op;
                         n->unaryop.expr = lhs->unaryop.expr;
                         ++ctx.updates;
                         return;
                 }
-		else if ((lhs->unaryop.op == Operator::AND || lhs->unaryop.op == Operator::STRICT_AND) && rhs->is_unary() && unary_same_type(rhs, lhs->unaryop.expr) && *rhs->p == *lhs->unaryop.expr->p)
-		{
-			if (n->binop.op == Operator::NOT)
+                else if ((lhs->unaryop.op == Operator::AND || lhs->unaryop.op == Operator::STRICT_AND) && rhs->is_unary() && unary_same_type(rhs, lhs->unaryop.expr) && *rhs->p == *lhs->unaryop.expr->p)
+                {
+                        if (n->binop.op == Operator::NOT)
                         {
-				// [+APPLE NOT APPLE]
-                                SLog("here\n");
+                                // [+APPLE NOT APPLE]
+                                if (traceParser)
+                                        SLog("here\n");
+
                                 n->set_const_false();
                                 ++ctx.updates;
                                 return;
                         }
-			else if (n->binop.op == Operator::OR)
-			{
-				// [+APPLE OR APPLE]
-				SLog("here\n");
-				*n = *lhs;
-				++ctx.updates;
-				return;
-			}
-			else 
-			{
-				// [+APPLE AND APPLE]
-				SLog("here\n");
-				*n = *lhs;
-				++ctx.updates;
-				return;
-			}
+                        else if (n->binop.op == Operator::OR)
+                        {
+                                // [+APPLE OR APPLE]
+                                if (traceParser)
+                                        SLog("here\n");
+
+                                *n = *lhs;
+                                ++ctx.updates;
+                                return;
+                        }
+                        else
+                        {
+                                // [+APPLE AND APPLE]
+                                if (traceParser)
+                                        SLog("here\n");
+
+                                *n = *lhs;
+                                ++ctx.updates;
+                                return;
+                        }
                 }
         }
 
@@ -670,7 +699,9 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
         {
                 if (lhs->type == ast_node::Type::UnaryOp && lhs->unaryop.op == Operator::NOT && unary_same_type(lhs->unaryop.expr, rhs) && *lhs->unaryop.expr->p == *rhs->p)
                 {
-                        SLog("here\n");
+                        if (traceParser)
+                                SLog("here\n");
+
                         // [NOT apple NOT apple]
                         n->type = lhs->type;
                         n->unaryop = lhs->unaryop;
@@ -681,7 +712,9 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
 
         if (lhs->is_dummy() && rhs->is_dummy())
         {
-                SLog("here\n");
+                if (traceParser)
+                        SLog("here\n");
+
                 n->set_dummy();
                 ++ctx.updates;
                 return;
@@ -693,7 +726,8 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                 {
                         const auto op = n->binop.op;
 
-                        SLog("here\n");
+                        if (traceParser)
+                                SLog("here\n");
 
                         n->type = ast_node::Type::UnaryOp;
                         n->unaryop.op = op;
@@ -707,7 +741,9 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
         {
                 if (rhs->type == ast_node::Type::UnaryOp && rhs->unaryop.op == Operator::NOT)
                 {
-                        SLog("here\n");
+                        if (traceParser)
+                                SLog("here\n");
+
                         n->binop.op = rhs->unaryop.op;
                         n->binop.rhs = rhs->unaryop.expr;
                         ++ctx.updates;
@@ -716,12 +752,16 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
 
                 if (lhs->type == ast_node::Type::UnaryOp && lhs->unaryop.op == Operator::NOT)
                 {
-                        SLog("here:", *n, "\n");
+                        if (traceParser)
+                                SLog("here:", *n, "\n");
+
                         n->binop.op = lhs->unaryop.op;
                         n->binop.lhs = rhs;
                         n->binop.rhs = lhs->unaryop.expr;
                         ++ctx.updates;
-                        SLog("now:", *n, "\n");
+
+                        if (traceParser)
+                                SLog("now:", *n, "\n");
                         return;
                 }
         }
@@ -729,7 +769,9 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
         if (n->binop.op == Operator::AND && rhs->is_dummy())
         {
                 // (foo AND bar)  AND dummy
-                SLog("here\n");
+                if (traceParser)
+                        SLog("here\n");
+
                 *n = *lhs;
                 ++ctx.updates;
                 return;
@@ -738,7 +780,9 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
         if (n->binop.op == Operator::AND && lhs->is_dummy())
         {
                 // (foo AND bar)  AND dummy
-                SLog("here\n");
+                if (traceParser)
+                        SLog("here\n");
+
                 *n = *rhs;
                 ++ctx.updates;
                 return;
@@ -754,7 +798,9 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                         n->unaryop.op = op;
                         n->unaryop.expr = rhs;
                         ++ctx.updates;
-                        SLog("now:", *n, "\n");
+
+                        if (traceParser)
+                                SLog("now:", *n, "\n");
                         return;
                 }
         }
@@ -765,11 +811,14 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
 
         if (lhs->type == ast_node::Type::BinOp && unary_same_type(rhs, lhs->binop.rhs) && *rhs->p == *lhs->binop.rhs->p)
         {
-                SLog("consider\n");
+                if (traceParser)
+                        SLog("consider\n");
+
                 if (lhs->binop.op == n->binop.op)
                 {
                         // [macboook OR macbook OR macbook] => [macboook OR macbook]
-                        SLog("here\n");
+                        if (traceParser)
+                                SLog("here\n");
 
                         rhs->set_dummy();
                         ++ctx.updates;
@@ -778,7 +827,8 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                 else if (lhs->binop.op == Operator::NOT && (n->binop.op == Operator::AND || n->binop.op == Operator::STRICT_AND))
                 {
                         // [macboook NOT macbook AND macbook]
-                        SLog("here\n");
+                        if (traceParser)
+                                SLog("here\n");
 
                         rhs->set_const_false();
                         ++ctx.updates;
@@ -787,7 +837,8 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                 else if (n->binop.op == Operator::NOT && (lhs->binop.op == Operator::AND || lhs->binop.op == Operator::STRICT_AND))
                 {
                         // [macboook AND macbook NOT macbook]
-                        SLog("here\n");
+                        if (traceParser)
+                                SLog("here\n");
 
                         n->set_const_false();
                         ++ctx.updates;
@@ -795,33 +846,46 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                 }
         }
 
+        if (n->binop.normalized_operator() == Operator::AND && lhs->type == ast_node::Type::BinOp && rhs->is_unary() && lhs->binop.op == Operator::OR && lhs->binop.lhs->is_unary() && *rhs->p == *lhs->binop.lhs->p)
+        {
+                // [apple OR "macbook pro" apple]  => ["macbook pro"]
+                if (traceParser)
+                        SLog("here\n");
 
-	if (n->binop.normalized_operator() == Operator::AND && lhs->type == ast_node::Type::BinOp && rhs->is_unary() && lhs->binop.op == Operator::OR && lhs->binop.lhs->is_unary() && *rhs->p == *lhs->binop.lhs->p)
-	{
-		// [apple OR "macbook pro" apple]  => ["macbook pro"]
-		SLog("here\n");
-		*lhs = *lhs->binop.rhs;
-		++ctx.updates;
-		return;
-	}
+                *lhs = *lhs->binop.rhs;
+                ++ctx.updates;
+                return;
+        }
 
-	if (n->binop.op == Operator::NOT && rhs->type == ast_node::Type::BinOp && lhs->is_unary() && rhs->binop.lhs->is_unary() && *lhs->p == *rhs->binop.lhs->p)
-	{
-		// [warcraft NOT (warcraft OR apple)] =>  []
-		SLog("here\n");
-		n->set_const_false();
-		++ctx.updates;
-		return;
-	}
+        if (n->binop.op == Operator::NOT && rhs->type == ast_node::Type::BinOp && lhs->is_unary() && rhs->binop.lhs->is_unary() && *lhs->p == *rhs->binop.lhs->p)
+        {
+                // [warcraft NOT (warcraft OR apple)] =>  []
+                if (traceParser)
+                        SLog("here\n");
 
-	if (n->binop.normalized_operator() == Operator::AND && rhs->type == ast_node::Type::BinOp && lhs->is_unary() && rhs->binop.lhs->is_unary() && *lhs->p == *rhs->binop.lhs->p)
-	{
-		// [warcraft (warcraft OR apple)] =>  [warcraft and apple]
-		SLog("here\n");
-		*n->binop.rhs = *rhs->binop.rhs;
-		++ctx.updates;
-		return;
-	}
+                n->set_const_false();
+                ++ctx.updates;
+                return;
+        }
+
+        if (n->binop.normalized_operator() == Operator::AND && rhs->type == ast_node::Type::BinOp && lhs->is_unary() && rhs->binop.lhs->is_unary() && *lhs->p == *rhs->binop.lhs->p)
+        {
+                // [warcraft (warcraft OR apple)] =>  [warcraft and apple]
+                if (traceParser)
+                        SLog("here\n");
+
+                *n->binop.rhs = *rhs->binop.rhs;
+                ++ctx.updates;
+                return;
+        }
+
+        if (n->binop.op == Operator::NOT && lhs->is_unary() && rhs->type == ast_node::Type::BinOp && rhs->binop.op == Operator::OR && ((rhs->binop.lhs->is_unary() && *lhs->p == *rhs->binop.lhs->p) || (rhs->binop.rhs->is_unary() && *lhs->p == *rhs->binop.rhs->p)))
+        {
+                // iphone NOT (ipad OR iphone)
+                n->set_const_false();
+                ++ctx.updates;
+                return;
+        }
 }
 
 static void normalize(ast_node *const n, normalizer_ctx &ctx)
@@ -830,45 +894,54 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx)
                 normalize_bin(n, ctx);
         else if (n->is_unary() && n->p->size == 0)
         {
-                SLog("here\n");
+                if (traceParser)
+                        SLog("here\n");
+
                 n->set_dummy();
                 ++ctx.updates;
         }
-	else if (n->type == ast_node::Type::ConstTrueExpr)
-	{
-		normalize(n->expr, ctx);
-		if (n->expr->is_dummy() || n->expr->is_const_false())
-		{
-			SLog("here\n");
+        else if (n->type == ast_node::Type::ConstTrueExpr)
+        {
+                normalize(n->expr, ctx);
+                if (n->expr->is_dummy() || n->expr->is_const_false())
+                {
+                        if (traceParser)
+                                SLog("here\n");
+
                         n->set_dummy();
                         ++ctx.updates;
-		}
-	}
+                }
+        }
         else if (n->type == ast_node::Type::UnaryOp)
         {
-		normalize(n->unaryop.expr, ctx);
+                normalize(n->unaryop.expr, ctx);
                 if (n->unaryop.expr->is_dummy())
                 {
-                        SLog("here\n");
+                        if (traceParser)
+                                SLog("here\n");
+
                         n->set_dummy();
                         ++ctx.updates;
                 }
                 else if (n->unaryop.op == Operator::AND)
                 {
-                        SLog("here\n");
+                        if (traceParser)
+                                SLog("here\n");
+
                         *n = *n->unaryop.expr;
                         ++ctx.updates;
                 }
                 else if (n->unaryop.op == Operator::OR)
                 {
-                        SLog("here:", *n, "\n");
+                        if (traceParser)
+                                SLog("here:", *n, "\n");
+
                         *n = *n->unaryop.expr;
                         ++ctx.updates;
-                        SLog("after:", *n, "\n");
                 }
         }
-	else if (n->type == ast_node::Type::Token || n->type == ast_node::Type::Phrase)
-		ctx.tokensCnt += n->p->size;
+        else if (n->type == ast_node::Type::Token || n->type == ast_node::Type::Phrase)
+                ctx.tokensCnt += n->p->size;
 }
 
 static void assign_phrase_index(ast_node *const n, uint32_t &nextIndex)
@@ -882,10 +955,10 @@ static void assign_phrase_index(ast_node *const n, uint32_t &nextIndex)
         {
                 assign_phrase_index(n->unaryop.expr, nextIndex);
         }
-	else if (n->type == ast_node::Type::ConstTrueExpr)
-	{
+        else if (n->type == ast_node::Type::ConstTrueExpr)
+        {
                 assign_phrase_index(n->expr, nextIndex);
-	}
+        }
         else if (n->type == ast_node::Type::BinOp)
         {
                 auto lhs = n->binop.lhs, rhs = n->binop.rhs;
@@ -922,44 +995,56 @@ ast_node *normalize_root(ast_node *root)
         do
         {
                 ctx.updates = 0;
-		ctx.tokensCnt = 0;
+                ctx.tokensCnt = 0;
                 normalize(root, ctx);
         } while (ctx.updates);
 
-	if (unlikely(ctx.tokensCnt > Limits::MaxQueryTokens))
-	{
-		SLog("Too many query tokens\n");
-		root = nullptr;
-	}
+        if (unlikely(ctx.tokensCnt > Limits::MaxQueryTokens))
+        {
+                if (traceParser)
+                        SLog("Too many query tokens\n");
+
+                root = nullptr;
+        }
         else if (root->is_dummy())
         {
-                Print("Ignoring dummy root\n");
+                if (traceParser)
+                        SLog("Ignoring dummy root\n");
+
                 root = nullptr;
         }
         else if (root->is_const_false())
         {
-                Print("Ignoring const false\n");
+                if (traceParser)
+                        SLog("Ignoring const false\n");
+
                 root = nullptr;
         }
         else if (root->type == ast_node::Type::UnaryOp)
         {
                 if (root->unaryop.op == Operator::NOT)
                 {
-                        Print("Ignoring unary NOT\n");
+                        if (traceParser)
+                                SLog("Ignoring unary NOT\n");
+
                         root = nullptr;
                 }
                 else if (root->unaryop.op == Operator::OR || root->unaryop.op == Operator::AND)
                 {
-                        SLog("From op\n");
+                        if (traceParser)
+                                SLog("From op\n");
+
                         *root = *root->unaryop.expr;
                 }
         }
-	else if (!root->any_leader_tokens())
-	{
-		// e.g [  -foo ( -bar -hello)  ] 
-		Print("No Leader Tokens\n");
-		root = nullptr;
-	}
+        else if (!root->any_leader_tokens())
+        {
+                // e.g [  -foo ( -bar -hello)  ]
+                if (traceParser)
+                        SLog("No Leader Tokens\n");
+
+                root = nullptr;
+        }
 
         if (root)
         {
@@ -982,7 +1067,7 @@ ast_node *normalize_root(ast_node *root)
 #pragma mark query utility functions
 ast_node *ast_node::copy(simple_allocator *const a)
 {
-	const ast_node *const n{this};
+        const ast_node *const n{this};
         auto res = ast_node::make(*a, n->type);
 
         switch (res->type)
@@ -992,9 +1077,9 @@ ast_node *ast_node::copy(simple_allocator *const a)
                         res->p = n->p;
                         break;
 
-		case ast_node::Type::ConstTrueExpr:
-			res->expr = n->expr->copy(a);
-			break;
+                case ast_node::Type::ConstTrueExpr:
+                        res->expr = n->expr->copy(a);
+                        break;
 
                 case ast_node::Type::UnaryOp:
                         res->unaryop.op = n->unaryop.op;
@@ -1053,7 +1138,7 @@ static void capture_leader(ast_node *const n, std::vector<ast_node *> *const out
 
 ast_node *Trinity::normalize_ast(ast_node *n)
 {
-	return normalize_root(n);
+        return normalize_root(n);
 }
 
 bool query::normalize()
@@ -1162,9 +1247,9 @@ Switch::vector<ast_node *> &query::nodes(ast_node *root, Switch::vector<ast_node
                                         res->push_back(n->unaryop.expr);
                                         break;
 
-				case ast_node::Type::ConstTrueExpr:
-					res->push_back(n->expr);
-					break;
+                                case ast_node::Type::ConstTrueExpr:
+                                        res->push_back(n->expr);
+                                        break;
 
                                 default:
                                         break;
@@ -1175,7 +1260,7 @@ Switch::vector<ast_node *> &query::nodes(ast_node *root, Switch::vector<ast_node
         return *res;
 }
 
-bool query::parse(const str32_t in, uint32_t(*tp)(const str32_t))
+bool query::parse(const str32_t in, uint32_t (*tp)(const str32_t))
 {
         ast_parser ctx{in, allocator, tp};
 
