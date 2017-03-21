@@ -304,7 +304,7 @@ int main(int argc, char *argv[])
 
                                                 const strwlen8_t term(p, len);
 
-						//if (term.Eq(_S("1000MG")))
+						//if (term.Eq(_S("BREATH")))
                                                 {
                                                         uint32_t hit{25121561};
 
@@ -352,7 +352,7 @@ int main(int argc, char *argv[])
 		IndexSourcesCollection sources;
 		Buffer asuc;
 
-#if 1
+#if 0
 		{
                         auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/8192");
 
@@ -361,7 +361,7 @@ int main(int argc, char *argv[])
 		}
 #else
 
-                if (true)
+                if (false)
                 {
                         auto ss = new SegmentIndexSource("/tmp/TSEGMENTS/100");
 
@@ -376,7 +376,7 @@ int main(int argc, char *argv[])
                         ss->Release();
                 }
 
-#if 1
+#if 0
 		{
 			MergeCandidatesCollection collection;
 			simple_allocator a;

@@ -1,6 +1,7 @@
 #include "indexer.h"
 #include "docidupdates.h"
 #include "terms.h"
+#include "utils.h"
 #include <text.h>
 
 using namespace Trinity;
@@ -146,7 +147,7 @@ void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::ve
 
 
 	// Persist codec info
-        fd = open(Buffer{}.append(sess->basePath, "/codec").c_str(), O_WRONLY | O_LARGEFILE | O_TRUNC | O_CREAT, 0775);
+        int fd = open(Buffer{}.append(sess->basePath, "/codec").c_str(), O_WRONLY | O_LARGEFILE | O_TRUNC | O_CREAT, 0775);
 
         Dexpect(fd != -1);
 

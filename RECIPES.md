@@ -31,3 +31,40 @@ Other fancier ordering schemes (e.g based on some static score / document) are a
 # Rewriting queries
 A query is essentially an AST tree, which means you can easily modify it. If you want to delete a node, you can use `set_dummy()` and next time you normalize the query, it will be GCed. If you want to replace a node, you can replace its value. If you want to replace a run of terms, you can use the handy `query::replace_run()` function to do it.
 
+
+# Optional stopwords
+You can use `ast_node::Type::ConstTrueExpr` nodes. Simply rewrite e.g [legend of zelda breath of the wild] to [legend <of> zelda breath <of the> wild], assuming "of" and "the" are stopwords and you are done.
+Note that using those nodes you can construct far more elaborate expressions.
+
+# Attempt to match special tokens only iff the original query matches a document
+If we assume you for some reason want all documents that match the original query [apple iphone] but you also want to attempt to match the query [silver OR black OR "jet black"] but only of [apple iphone] matches.
+You can rewrite the original query like so `[<silver OR black OR "jet black"> apple iphone]`. For every document that matches [apple iphone] it will try to match [silver OR black OR "jet black"] which may or may not succeed.
+This is similar to how you would would do it for making stopwords optional.
+
+# Match multi-token terms only 
+Suppose you have a category of documents called "video games", and you want to index the term "video games" to all products found in that category. That is to say, if someone is searching for [video games] or [video games skyrim] (assuming there is a document with the term Skyrim in video games), you want to match the documents in the video games category, but NOT if someone is searching for [video] or [video skyrim]. You want to match a multi-token term. There are two ways to accomplish that, one of which involves special 'compound' terms and filtering of their hits in a match method, which will not be described here(that's the way it was done with previous Trinity generations, but this other alternative described here is more elegant and doesn't bloat the index with compound terms.
+You designate a special separator character (e.g '|') and then use it to construct the composite term by joining its tokens with that character. For example, for video games you get video|games. Then, when you are pre-processing a query [video games skyrim] you identify all possible composite terms in `term runs` and collect them. For this example, those could be:
+- video|games
+- video|games|skyrim
+- games|skyrim
+and then you rewrite the `term run` as an expression like so(assuming your composite terms can be upto 3 tokens in size):
+
+video AND (video|games OR (video games)
+
+video
+video|games
+video|games|skyrim
+games|skyrim
+
+
+
+video|games OR (video games) skyrim
+video games|video OR (games video) 
+
+video|games|skyrim OR (video games skyrim)
+
+
+
+
+
+

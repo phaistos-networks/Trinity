@@ -44,12 +44,52 @@ namespace // static/local this module
 		{
 			uint8_t size;
 			exec_term_id_t termIDs[0];
+
+			auto operator==(const phrase &o) const noexcept
+                        {
+                                if (size == o.size)
+                                {
+					for (uint32_t i{0}; i != size; ++i)
+					{
+						if (termIDs[i] != o.termIDs[i])
+							return false;
+					}
+					return true;
+                                }
+                                else
+                                        return false;
+                        }
 		};
 
                 struct termsrun final
                 {
                         uint16_t size;
                         exec_term_id_t terms[0];
+
+			auto operator==(const termsrun &o) const noexcept
+                        {
+                                if (size == o.size)
+                                {
+					for (uint32_t i{0}; i != size; ++i)
+					{
+						if (terms[i] != o.terms[i])
+							return false;
+					}
+					return true;
+                                }
+                                else
+                                        return false;
+                        }
+
+			bool is_set(const exec_term_id_t id) const noexcept
+			{
+				for (uint32_t i{0}; i != size; ++i)
+				{
+					if (terms[i] == id)
+						return true;
+				}
+				return false;
+			}
                 };
 
                 struct phrasesrun final
@@ -327,6 +367,7 @@ static inline bool consttrue_impl(const exec_node &, runtime_ctx &)
 
 static bool matchallterms_impl(const exec_node &self, runtime_ctx &rctx)
 {
+	static constexpr bool trace{false};
         const auto run = static_cast<const runtime_ctx::termsrun *>(self.ptr);
         uint16_t i{0};
         const auto size = run->size;
@@ -337,10 +378,17 @@ static bool matchallterms_impl(const exec_node &self, runtime_ctx &rctx)
                 const auto termID = run->terms[i];
                 auto decoder = rctx.decode_ctx.decoders[termID];
 
+		if (trace)
+		SLog("Considering ", termID, "\n");
+
                 if (decoder->seek(did))
                         rctx.capture_matched_term(termID);
                 else
+		{
+			if (trace)
+			SLog("NO for ", termID, "\n");
                         return false;
+		}
         } while (++i != size);
 
         return true;
@@ -828,7 +876,7 @@ static void reorder(ast_node *n, reorder_ctx *const ctx)
 
                 if ((n->binop.op == Operator::AND || n->binop.op == Operator::STRICT_AND || n->binop.op == Operator::OR) && lhs->type == ast_node::Type::Phrase && lhs->p->size > 1 && rhs->type == ast_node::Type::Token)
                 {
-                        // ["video game" OR game]
+                        // ["video game" OR game] => [game OR "video game"]
                         std::swap(n->binop.lhs, n->binop.rhs);
                         ctx->dirty = true;
                         return;
@@ -840,6 +888,7 @@ static void reorder(ast_node *n, reorder_ctx *const ctx)
                         {
                                 if (rhs->is_unary())
                                 {
+					// [expr AND unary] => [unary AND expr]
                                         std::swap(n->binop.lhs, n->binop.rhs);
                                         ctx->dirty = true;
                                 }
@@ -875,6 +924,7 @@ static void reorder(ast_node *n, reorder_ctx *const ctx)
         }
 }
 
+// See: IMPLEMENTATION.md
 static ast_node *reorder_root(ast_node *r)
 {
         reorder_ctx ctx;
@@ -954,6 +1004,9 @@ static bool try_collect(exec_node &res, simple_allocator &a, T fp)
                 return false;
 }
 
+// we could defer checks for constfalse_impl for expand_node() so that we won't be doing this twice, but for performance
+// and other reason(not that much code-duplication required), we are doing it both here and in expand_node()
+// See: IMPLEMENTATION.md
 static exec_node compile_node(const ast_node *const n, runtime_ctx &rctx, simple_allocator &a)
 {
         exec_node res;
@@ -1123,20 +1176,138 @@ static exec_node compile_node(const ast_node *const n, runtime_ctx &rctx, simple
         return res;
 }
 
-static exec_node expand_node(exec_node n, runtime_ctx &rctx, simple_allocator &a, std::vector<exec_term_id_t> &terms, std::vector<const runtime_ctx::phrase *> &phrases, std::vector<exec_node> &stack)
+static bool same(const exec_node &a, const exec_node &b)
 {
-        if (n.fp == unaryand_impl || n.fp == unarynot_impl || n.fp == consttrueexpr_impl)
+	if (a.fp == matchallterms_impl && b.fp == a.fp)
+	{
+		auto runa = (runtime_ctx::termsrun *)a.ptr;
+		auto runb = (runtime_ctx::termsrun *)b.ptr;
+
+		return *runa == *runb;
+	}
+	else if (a.fp == matchterm_impl && b.fp == a.fp)
+		return a.u16 == b.u16;
+	else if (a.fp == matchphrase_impl)
+	{
+                const auto pa = (runtime_ctx::phrase *)a.ptr;
+                const auto pb = (runtime_ctx::phrase *)b.ptr;
+
+		return *pa == *pb;
+        }
+
+	return false;
+}
+
+// TODO: there are probably more opportunies here for optimizations
+// We are duplicating some logic from normalize_root() here because we have further processed the tree since we were handed the original query
+// with reordering, optimizations and other ops. It's worth it though.
+// See: IMPLEMENTATION.md
+static exec_node expand_node(exec_node n, runtime_ctx &rctx, simple_allocator &a, std::vector<exec_term_id_t> &terms, std::vector<const runtime_ctx::phrase *> &phrases, std::vector<exec_node> &stack, bool &updates)
+{
+	if (n.fp == consttrueexpr_impl)
         {
                 auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
 
-                ctx->expr = expand_node(ctx->expr, rctx, a, terms, phrases, stack);
+                ctx->expr = expand_node(ctx->expr, rctx, a, terms, phrases, stack, updates);
+                if (ctx->expr.fp == constfalse_impl)
+                {
+                        n.fp = constfalse_impl;
+                        updates = true;
+                }
+        }
+	if (n.fp == unaryand_impl)
+        {
+                auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
+
+                ctx->expr = expand_node(ctx->expr, rctx, a, terms, phrases, stack, updates);
+                if (ctx->expr.fp == constfalse_impl)
+                {
+                        n.fp = constfalse_impl;
+                        updates = true;
+                }
+        }
+        else if (n.fp == unarynot_impl)
+        {
+                auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
+
+                ctx->expr = expand_node(ctx->expr, rctx, a, terms, phrases, stack, updates);
         }
         else if (n.fp == logicaland_impl || n.fp == logicalor_impl || n.fp == logicalnot_impl)
         {
                 auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
 
-                ctx->lhs = expand_node(ctx->lhs, rctx, a, terms, phrases, stack);
-                ctx->rhs = expand_node(ctx->rhs, rctx, a, terms, phrases, stack);
+                ctx->lhs = expand_node(ctx->lhs, rctx, a, terms, phrases, stack, updates);
+                ctx->rhs = expand_node(ctx->rhs, rctx, a, terms, phrases, stack, updates);
+
+		if (n.fp == logicalor_impl)
+		{
+			if (ctx->lhs.fp == constfalse_impl)
+                        {
+                                if (ctx->rhs.fp == constfalse_impl)
+                                {
+                                        n.fp = constfalse_impl;
+                                        updates = true;
+                                }
+                                else
+                                {
+                                        n = ctx->rhs;
+                                        updates = true;
+                                }
+                        }
+			else if (ctx->rhs.fp == constfalse_impl)
+			{
+				n = ctx->lhs;
+				updates = true;
+			} 
+			else if (same(ctx->lhs, ctx->rhs))
+			{
+				n = ctx->lhs;
+				updates = true;
+			}
+		}
+		else if (n.fp == logicaland_impl)
+		{
+			if (ctx->lhs.fp == constfalse_impl || ctx->rhs.fp == constfalse_impl)
+			{
+				n.fp = constfalse_impl;
+				updates = true;
+				return n;
+			}
+			else if (same(ctx->lhs, ctx->rhs))
+			{
+				n = ctx->lhs;
+				updates = true;
+				return n;
+			}
+
+
+			// ((1 NOT 2) AND 2)
+			if (ctx->lhs.fp == logicalnot_impl && same(static_cast<runtime_ctx::binop_ctx *>(ctx->lhs.ptr)->rhs, ctx->rhs))
+			{
+				SLog("YAY:", n, "\n");
+				n.fp = constfalse_impl;
+				updates = true;
+				return n;
+			}
+		}
+		else if (n.fp == logicalnot_impl)
+		{
+			if (ctx->lhs.fp == constfalse_impl)
+			{
+				n.fp = constfalse_impl;
+				updates = true;
+			}
+			else if (ctx->rhs.fp == constfalse_impl)
+			{
+				n = ctx->lhs;
+				updates = true;
+			}
+			else if (same(ctx->lhs, ctx->rhs))
+			{
+				n.fp = constfalse_impl;
+				updates = true;
+			}
+		}
         }
         else if (n.fp == SPECIALIMPL_COLLECTION_LOGICALOR || n.fp == SPECIALIMPL_COLLECTION_LOGICALAND)
         {
@@ -1231,6 +1402,11 @@ static exec_node expand_node(exec_node n, runtime_ctx &rctx, simple_allocator &a
 			memcpy(run->terms, terms.data(), termsCnt * sizeof(exec_term_id_t));
                         runNode.fp = (n.fp == SPECIALIMPL_COLLECTION_LOGICALOR ? matchanyterms_impl : matchallterms_impl);
                         runNode.ptr = run;
+
+			// see same()
+			// we will eventually sort those terms by evaluation cost, but for now
+			// it is important to sort them by id so that we can easily check for termruns eq.
+			std::sort(run->terms, run->terms + run->size);
 
                         if (phrasesCnt == 0)
 			{
@@ -1447,6 +1623,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
         // First pass
 	// Compile from AST tree to exec_nodes tree
         auto root = compile_node(n, rctx, a);
+	bool updates;
 
 	if (root.fp == constfalse_impl)
 	{
@@ -1459,17 +1636,18 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
 
         // Second pass
 	// consider all SPECIALIMPL_COLLECTION_LOGICALOR and SPECIALIMPL_COLLECTION_LOGICALAND exec nodes; expand them
-	// to valid exec nodes.
-        root = expand_node(root, rctx, a, terms, phrases, stack);
-
-	if (root.fp == constfalse_impl)
+	// to valid exec nodes and optionally rewrites the execution tree
+	do
 	{
-		SLog("Nothing to do (false OR noop)\n");
-		return {constfalse_impl, {}};
-	}
+		updates = false;
+        	root = expand_node(root, rctx, a, terms, phrases, stack, updates);
 
-
-
+		if (root.fp == constfalse_impl)
+		{
+			SLog("Nothing to do (false OR noop)\n");
+			return {constfalse_impl, {}};
+		}
+        } while (updates);
 
         // Third pass
 	// For matchallterms_impl and matchanyterms_impl, sort the term IDs by number of documents they match
@@ -1918,6 +2096,8 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                         // now execute rootExecNode
                         // and it it returns true, compute the document's score
                         rctx.reset(docID);
+
+			//static size_t n{0}; SLog("CONSIDERING ", docID, " ", ++n, "\n");
 
                         if (eval(rootExecNode, rctx))
                         {

@@ -297,6 +297,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                                 {
                                         varbyte_get32(p, v);
 
+#if defined(LUCENE_ENCODE_FREQ1_DOCDELTA)
                                         docDeltas[i] = v >> 1;
                                         if (v & 1)
                                                 docFreqs[i] = 1;
@@ -305,6 +306,11 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                                                 varbyte_get32(p, v);
                                                 docFreqs[i] = v;
                                         }
+#else
+                                        docDeltas[i] = v;
+                                        varbyte_get32(p, v);
+                                        docFreqs[i] = v;
+#endif
                                 }
                                 index_chunk.p = p;
 
@@ -704,6 +710,7 @@ void Trinity::Codecs::Lucene::Encoder::end_term(term_index_ctx *out)
                         const auto delta = docDeltas[i];
                         const auto freq = docFreqs[i];
 
+#if defined(LUCENE_ENCODE_FREQ1_DOCDELTA)
                         if (freq == 1)
                                 indexOut->encode_varbyte32((delta << 1) | 1);
                         else
@@ -711,6 +718,10 @@ void Trinity::Codecs::Lucene::Encoder::end_term(term_index_ctx *out)
                                 indexOut->encode_varbyte32(delta << 1);
                                 indexOut->encode_varbyte32(freq);
                         }
+#else
+                                indexOut->encode_varbyte32(delta);
+                                indexOut->encode_varbyte32(freq);
+#endif
                 }
         }
 
@@ -935,6 +946,7 @@ void Trinity::Codecs::Lucene::Decoder::refill_documents()
                 {
                         varbyte_get32(p, v);
 
+#if defined(LUCENE_ENCODE_FREQ1_DOCDELTA)
                         docDeltas[i] = v >> 1;
                         if (v & 1)
                                 docFreqs[i] = 1;
@@ -943,6 +955,11 @@ void Trinity::Codecs::Lucene::Decoder::refill_documents()
                                 varbyte_get32(p, v);
                                 docFreqs[i] = v;
                         }
+#else
+                        docDeltas[i] = v;
+                        varbyte_get32(p, v);
+                        docFreqs[i] = v;
+#endif
 
                         if (trace)
                                 SLog("deltas ", docDeltas[i], " ", docFreqs[i], "\n");
@@ -1057,7 +1074,7 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                         }
                         else
                         {
-#if 1
+#if 0
 				if (skipListIdx != skiplist.size())
 				{
 					// see if we can determine where to seek to here

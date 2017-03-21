@@ -36,6 +36,31 @@ namespace Trinity
 			return *ptr;
                 }
 
+#if 0 		// This would probably be a good idea, but we don't need this, and it would make some optimisations in updated_documents_scanner::test() possible because
+		// of document IDs(global space) are always expected to be considered in ascending order would not work, and it would also require some effort to
+		// get this right everywhere we deal with document IDs (e.g merging documents).
+		//
+		// It may be a good idea to support this in the future though, with the added benefit that returning 0 would
+		// save the execution engine from eval()uating the query for the document, and that we could use e.g 32bit integers for index source-local IDs mapped to e.g 64bit integers
+		// and that could have some impact in the index size (and it would allow for e.g LUCENE_ENCODE_FREQ1_DOCDELTA).
+		// Consider it for later.
+		//
+		//
+		// Theory: two docIDs spaces. One is global, and another local to each index source/segment and irrelevant outside that context.
+		// By using 2 different document IDs spaces, we could use an e.g u32 integer for the document IDs of documents indexed in a segment, and translate them
+		// to e.g u64 global IDs during execution, prior to evaluating the query on the document. (e.g while indexing store in a file the global ID for each segment-local logical id
+		// and then mmap that file in your IndexSource and directly dereference it to get the global ID from the local ID).
+		//
+		// By default, it's an identity method -- no translation between index source and global space
+		// You can override it to return 0, if you want to ommit the document ID completely for whatever reason
+		// or otherwise translate it to global space here
+		virtual docid_t translate_docid(const docid_t indexSourceSpaceDocumentID)
+		{
+			return indexSourceSpaceDocumentID;
+		}
+#endif
+
+
 
                 // Subclasses only need to implement 3 methods
                 virtual term_index_ctx resolve_term_ctx(const str8_t term) = 0;

@@ -37,9 +37,13 @@ static str32_t parse_term(ast_parser &ctx)
                         return res;
                 }
                 else if (ctx.content.empty() || (ctx.groupTerm.size() && ctx.groupTerm.back() == ctx.content.front()))
+		{
 			return {};
+		}
 		else
+		{
 			ctx.content.strip_prefix(1);
+		}
         }
 }
 
@@ -140,10 +144,19 @@ static std::pair<Operator, uint8_t> parse_operator_impl(ast_parser &ctx)
                                 return {Operator::NOT, 1};
                 }
 
+		if (ctx.groupTerm.size() && ctx.groupTerm.front() == f)
+                        return {Operator::NONE, 0};
+		else
+                        return {Operator::AND, 0};
+
+#if 0
                 if (isalnum(f) || f == '\"' || f == '(')
                         return {Operator::AND, 0};
                 else
                         return {Operator::NONE, 0};
+#else
+                return {Operator::AND, 0};
+#endif
         }
         else
                 return {Operator::NONE, 0};
@@ -436,13 +449,8 @@ static void normalize(ast_node *, normalizer_ctx &);
 // if `n` is modified by any sub-pass, return immediately
 // so that sub-sequent passes in this method won't access `n` assuming it hasn't changed
 // since passed as an argument
-//
-// TODO:
-// 	[ (sf OR "san franscisco") sf ]
-//  	[  foo NOT (foo OR bar) ]
 static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
 {
-        // foo OR foo OR foo
         auto lhs = n->binop.lhs, rhs = n->binop.rhs;
 
         require(lhs);
@@ -470,6 +478,34 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                 return;
         }
 
+	if (n->binop.op == Operator::NOT && lhs->type == ast_node::Type::BinOp && lhs->binop.op == Operator::OR && lhs->binop.lhs->is_unary() && rhs->is_unary() && *lhs->binop.lhs->p == *rhs->p)
+	{
+		// [ foo OR bar NOT foo ] => [bar]
+		SLog("HERE\n");
+		*n = *lhs->binop.rhs;
+                ++ctx.updates;
+		return;
+	}
+
+	if (n->binop.op == Operator::NOT && lhs->type == ast_node::Type::BinOp && lhs->binop.normalized_operator() == Operator::AND && lhs->binop.lhs->is_unary() && rhs->is_unary() && *lhs->binop.lhs->p == *rhs->p)
+	{
+		// [ foo AND bar NOT foo ] => [bar]
+		SLog("HERE\n");
+		n->set_const_false();
+                ++ctx.updates;
+		return;
+	}
+
+	if (n->binop.op == Operator::NOT && lhs->type == ast_node::Type::BinOp && lhs->binop.normalized_operator() == Operator::NOT && lhs->binop.lhs->is_unary() && rhs->is_unary() && *lhs->binop.lhs->p == *rhs->p)
+	{
+		// [ foo NOT bar NOT foo ] => [bar]
+		SLog("HERE\n");
+		n->set_const_false();
+                ++ctx.updates;
+		return;
+	}
+
+
         if (lhs->is_const_false())
         {
                 if (n->binop.op == Operator::AND || n->binop.op == Operator::STRICT_AND)
@@ -480,13 +516,17 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                 }
                 else if (n->binop.op == Operator::OR)
                 {
-                        *n = *rhs;
+			if (rhs->is_const_false())
+				n->set_const_false();
+                        else
+                                *n = *rhs;
+
                         ++ctx.updates;
                         return;
                 }
                 else if (n->binop.op == Operator::NOT)
                 {
-                        *n = *rhs;
+			n->set_const_false();
                         ++ctx.updates;
                         return;
                 }
@@ -513,6 +553,7 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                         return;
                 }
         }
+
 
         if (unary_same_type(lhs, rhs))
         {
@@ -753,6 +794,34 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                         return;
                 }
         }
+
+
+	if (n->binop.normalized_operator() == Operator::AND && lhs->type == ast_node::Type::BinOp && rhs->is_unary() && lhs->binop.op == Operator::OR && lhs->binop.lhs->is_unary() && *rhs->p == *lhs->binop.lhs->p)
+	{
+		// [apple OR "macbook pro" apple]  => ["macbook pro"]
+		SLog("here\n");
+		*lhs = *lhs->binop.rhs;
+		++ctx.updates;
+		return;
+	}
+
+	if (n->binop.op == Operator::NOT && rhs->type == ast_node::Type::BinOp && lhs->is_unary() && rhs->binop.lhs->is_unary() && *lhs->p == *rhs->binop.lhs->p)
+	{
+		// [warcraft NOT (warcraft OR apple)] =>  []
+		SLog("here\n");
+		n->set_const_false();
+		++ctx.updates;
+		return;
+	}
+
+	if (n->binop.normalized_operator() == Operator::AND && rhs->type == ast_node::Type::BinOp && lhs->is_unary() && rhs->binop.lhs->is_unary() && *lhs->p == *rhs->binop.lhs->p)
+	{
+		// [warcraft (warcraft OR apple)] =>  [warcraft and apple]
+		SLog("here\n");
+		*n->binop.rhs = *rhs->binop.rhs;
+		++ctx.updates;
+		return;
+	}
 }
 
 static void normalize(ast_node *const n, normalizer_ctx &ctx)
@@ -813,6 +882,10 @@ static void assign_phrase_index(ast_node *const n, uint32_t &nextIndex)
         {
                 assign_phrase_index(n->unaryop.expr, nextIndex);
         }
+	else if (n->type == ast_node::Type::ConstTrueExpr)
+	{
+                assign_phrase_index(n->expr, nextIndex);
+	}
         else if (n->type == ast_node::Type::BinOp)
         {
                 auto lhs = n->binop.lhs, rhs = n->binop.rhs;
@@ -838,6 +911,7 @@ static void assign_phrase_index(ast_node *const n, uint32_t &nextIndex)
         }
 }
 
+// See: IMPLEMENTATION.md
 ast_node *normalize_root(ast_node *root)
 {
         if (!root)

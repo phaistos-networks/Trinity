@@ -8,9 +8,14 @@ namespace Trinity
 	{
 		namespace Lucene
 		{
-// this doesn't seem to be helping much 
+// We can't use this encoding idea because we can't handle deltas >= 
+// (MaxDocIDValue>>1), so that if e.g the first document ID for a term
+// is (1<<31) + 15, this will fail. However, see IndexSource::translate_docid() for how that would work with docIDs translations
+//#define LUCENE_ENCODE_FREQ1_DOCDELTA 1
+
+// this doesn't seem to be helping much
 // however, we are not using masked_vbyte_select_delta()/masked_vbyte_search_delta() which could been useful
-//#define LUCENE_USE_MASKEDVBYTE 1 	
+//#define LUCENE_USE_MASKEDVBYTE 1
 #ifdef LUCENE_USE_MASKEDVBYTE
 			static constexpr size_t BLOCK_SIZE{64};
 #else
