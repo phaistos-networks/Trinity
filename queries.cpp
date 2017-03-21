@@ -886,8 +886,17 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                 ++ctx.updates;
                 return;
         }
+
+	if (n->binop.op == Operator::NOT && lhs->is_unary() && rhs->type == ast_node::Type::BinOp && rhs->binop.rhs->is_unary() && *lhs->p == *rhs->binop.rhs->p)
+	{
+		// foo NOT (ipad AND foo)
+		n->set_const_false();
+		++ctx.updates;
+		return;
+	}
 }
 
+// We implement most of the rules here in expand_node(). See IMPLEMENTATION.md
 static void normalize(ast_node *const n, normalizer_ctx &ctx)
 {
         if (n->type == ast_node::Type::BinOp)
