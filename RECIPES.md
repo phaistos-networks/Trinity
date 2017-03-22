@@ -56,5 +56,6 @@ You rewrite to:
 For a 2 terms run:[Video games]
 [video|games OR (video games)]
 
-So for a <=3 tokens query, we consider all combinations of the query terms, and for a > 3 tokens query we consider the first two and the last two tokens 
+So for a <=3 tokens query, we consider all combinations of the query terms, and for a > 3 tokens query we consider the first two and the last two tokens. If for example all those composite terms are not found in the terms dictionary, the optimizer will wind up rewriting the execution nodes tree to match the original user query [call of duty modern warfare ps3].
 
+# Real Time Search
