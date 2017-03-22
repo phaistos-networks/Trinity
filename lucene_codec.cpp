@@ -152,8 +152,8 @@ void Trinity::Codecs::Lucene::IndexSession::end()
 
         expect(fd != -1);
         // XXX: use SwitchFS::writev_safe() or use multiple write() calls because if a write() is for size >= sizeof(ssize_t) it will fail with EINVAL
-	if (positionsOut.size())
-	        expect(pwrite64(fd, positionsOut.data(), positionsOut.size(), 0) == positionsOut.size());
+        if (positionsOut.size())
+                expect(pwrite64(fd, positionsOut.data(), positionsOut.size(), 0) == positionsOut.size());
         close(fd);
 }
 
@@ -327,6 +327,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                 {
                         if (!skippedHits)
                                 return;
+
                         else if (bufferedHits == skippedHits)
                         {
                                 skippedHits = 0;
@@ -574,7 +575,8 @@ void Trinity::Codecs::Lucene::Encoder::begin_term()
         termDocuments = 0;
         termIndexOffset = sess->indexOut.size();
         termPositionsOffset = static_cast<Trinity::Codecs::Lucene::IndexSession *>(sess)->positionsOut.size();
-        cur_block.lastHitsBlockOffset = 0;
+        lastHitsBlockOffset = 0;
+	lastHitsBlockTotalHits = 0;
         skiplistCountdown = SKIPLIST_STEP;
         skiplist.clear();
 
@@ -583,10 +585,10 @@ void Trinity::Codecs::Lucene::Encoder::begin_term()
 
 void Trinity::Codecs::Lucene::Encoder::output_block()
 {
-	if (trace)
-		SLog("<< BLOCK\n");
+        if (trace)
+                SLog("<< BLOCK\n");
 
-	require(buffered == BLOCK_SIZE);
+        require(buffered == BLOCK_SIZE);
 
         if (--skiplistCountdown == 0)
         {
@@ -612,8 +614,8 @@ void Trinity::Codecs::Lucene::Encoder::begin_document(const uint32_t documentID)
 {
         require(documentID > lastDocID);
 
-	if (trace)
-		SLog("INDEXING document ", documentID, "\n");
+        if (trace)
+                SLog("INDEXING document ", documentID, "\n");
 
         if (unlikely(buffered == BLOCK_SIZE))
                 output_block();
@@ -621,9 +623,14 @@ void Trinity::Codecs::Lucene::Encoder::begin_document(const uint32_t documentID)
         if (!buffered)
         {
                 cur_block.indexOffset = sess->indexOut.size() - termIndexOffset;
-                cur_block.lastDocID = lastDocID;
-                cur_block.totalHitsSoFar = sumHits + totalHits;
+                cur_block.lastDocID = lastDocID; 	// last block's last document ID
                 cur_block.totalDocumentsSoFar = termDocuments;
+
+		// Last positions/hits block when this new block is captured
+		cur_block.lastHitsBlockOffset = lastHitsBlockOffset;
+		cur_block.lastHitsBlockTotalHits = lastHitsBlockTotalHits;
+
+		// total hits of the current position/hits block
                 cur_block.curHitsBlockHits = totalHits;
         }
 
@@ -662,7 +669,9 @@ void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_b
         {
                 auto positionsOut = &static_cast<Trinity::Codecs::Lucene::IndexSession *>(sess)->positionsOut;
 
-                cur_block.lastHitsBlockOffset = positionsOut->size() - termPositionsOffset;
+                sumHits += totalHits;
+
+
                 pfor_encode(forUtil, hitPosDeltas, totalHits, *positionsOut);
                 pfor_encode(forUtil, hitPayloadSizes, totalHits, *positionsOut);
 
@@ -682,7 +691,10 @@ void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_b
                 positionsOut->serialize(payloadsBuf.data(), payloadsBuf.size());
                 payloadsBuf.clear();
 
-                sumHits += totalHits;
+
+		lastHitsBlockTotalHits = sumHits;
+                lastHitsBlockOffset = positionsOut->size() - termPositionsOffset;
+
                 totalHits = 0;
         }
 }
@@ -719,16 +731,13 @@ void Trinity::Codecs::Lucene::Encoder::end_term(term_index_ctx *out)
                                 indexOut->encode_varbyte32(freq);
                         }
 #else
-                                indexOut->encode_varbyte32(delta);
-                                indexOut->encode_varbyte32(freq);
+                        indexOut->encode_varbyte32(delta);
+                        indexOut->encode_varbyte32(freq);
 #endif
                 }
         }
 
-
         *(uint32_t *)(sess->indexOut.data() + termIndexOffset + sizeof(uint32_t)) = sumHits;
-
-
 
         if (totalHits)
         {
@@ -771,7 +780,7 @@ void Trinity::Codecs::Lucene::Encoder::end_term(term_index_ctx *out)
                 auto *const __restrict__ b = &sess->indexOut;
 
                 for (const auto &it : skiplist)
-                        b->pack(it.indexOffset, it.lastDocID, it.lastHitsBlockOffset, it.totalDocumentsSoFar, it.totalHitsSoFar, it.curHitsBlockHits);
+                        b->pack(it.indexOffset, it.lastDocID, it.lastHitsBlockOffset, it.totalDocumentsSoFar, it.lastHitsBlockTotalHits, it.curHitsBlockHits);
 
                 skiplist.clear();
         }
@@ -852,17 +861,6 @@ void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
         if (trace)
                 SLog("SKIPPING ", n, " hits, hitsIndex = ", hitsIndex, ", bufferedHits = ", bufferedHits, "\n");
 
-        if (n == bufferedHits && skippedHits == n)
-        {
-                // XXX: not sure this is the right thing to do here
-                // fast-path
-                payloadsIt = payloadsEnd;
-                skippedHits = 0;
-                bufferedHits = 0;
-                hitsIndex = 0;
-                return;
-        }
-
         if (n)
         {
                 auto rem{n};
@@ -930,8 +928,8 @@ void Trinity::Codecs::Lucene::Decoder::refill_documents()
 
         if (docsLeft >= BLOCK_SIZE)
         {
-		if (trace)
-			SLog(ansifmt::bold, ansifmt::color_brown, "REFILL ", docsLeft, ansifmt::reset, "\n");
+                if (trace)
+                        SLog(ansifmt::bold, ansifmt::color_brown, "REFILL ", docsLeft, ansifmt::reset, "\n");
 
                 p = pfor_decode(forUtil, p, docDeltas);
                 p = pfor_decode(forUtil, p, docFreqs);
@@ -968,6 +966,7 @@ void Trinity::Codecs::Lucene::Decoder::refill_documents()
                 docsLeft = 0;
         }
         docsIndex = 0;
+	update_curdoc();
 }
 
 void Trinity::Codecs::Lucene::Decoder::decode_next_block()
@@ -1003,15 +1002,15 @@ bool Trinity::Codecs::Lucene::Decoder::next_impl()
 
         if (unlikely(++docsIndex == bufferedDocs))
         {
-		if (trace)
-			SLog("End of buffered documents, ", chunkEnd - p, "\n");
-			
+                if (trace)
+                        SLog("End of buffered documents, ", chunkEnd - p, "\n");
+
                 if (p != chunkEnd)
                         decode_next_block();
                 else
                 {
-			if (trace)
-				SLog(ansifmt::bold, ansifmt::color_cyan, "FINALIZING", ansifmt::reset, "\n");
+                        if (trace)
+                                SLog(ansifmt::bold, ansifmt::color_cyan, "FINALIZING", ansifmt::reset, "\n");
 
                         finalize();
                         return false;
@@ -1069,12 +1068,13 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                         {
                                 if (trace)
                                         SLog("At the end already\n");
+
                                 finalize();
                                 return false;
                         }
                         else
                         {
-#if 0
+#if 1
 				if (skipListIdx != skiplist.size())
 				{
 					// see if we can determine where to seek to here
@@ -1099,6 +1099,7 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                                                 skippedHits = 0;
                                                 bufferedHits = 0;
                                                 refill_documents();
+						refill_hits();
                                                 update_curdoc();
                                                 if (trace)
                                                         SLog("SKIPPING ", it.curHitsBlockHits, "\n");
@@ -1124,12 +1125,14 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                         {
                                 if (trace)
                                         SLog("Found it\n");
+
                                 return true;
                         }
                         else if (curDocument.id > target)
                         {
                                 if (trace)
                                         SLog("Not Here, now past target\n");
+
                                 return false;
                         }
                         else if (!next_impl())
@@ -1278,7 +1281,7 @@ void Trinity::Codecs::Lucene::Decoder::init(const term_index_ctx &tctx, Trinity:
                 struct skiplist_entry e;
 
                 chunkEnd = sit;
-		skiplist.reserve(skiplistSize);
+                skiplist.reserve(skiplistSize);
                 for (uint32_t i{0}; i != skiplistSize; ++i, sit += skiplistEntrySize)
                 {
                         const auto it = reinterpret_cast<const uint32_t *>(sit);

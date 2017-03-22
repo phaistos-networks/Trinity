@@ -42,29 +42,19 @@ You can rewrite the original query like so `[<silver OR black OR "jet black"> ap
 This is similar to how you would would do it for making stopwords optional.
 
 # Match multi-token terms only 
-Suppose you have a category of documents called "video games", and you want to index the term "video games" to all products found in that category. That is to say, if someone is searching for [video games] or [video games skyrim] (assuming there is a document with the term Skyrim in video games), you want to match the documents in the video games category, but NOT if someone is searching for [video] or [video skyrim]. You want to match a multi-token term. There are two ways to accomplish that, one of which involves special 'compound' terms and filtering of their hits in a match method, which will not be described here(that's the way it was done with previous Trinity generations, but this other alternative described here is more elegant and doesn't bloat the index with compound terms.
-You designate a special separator character (e.g '|') and then use it to construct the composite term by joining its tokens with that character. For example, for video games you get video|games. Then, when you are pre-processing a query [video games skyrim] you identify all possible composite terms in `term runs` and collect them. For this example, those could be:
-- video|games
-- video|games|skyrim
-- games|skyrim
-and then you rewrite the `term run` as an expression like so(assuming your composite terms can be upto 3 tokens in size):
+Suppose you have a category of documents called "video games", and you want to index the term "video games" to all products found in that category. That is to say, if someone is searching for [video games] or [video games skyrim] (assuming there is a document with the term Skyrim in video games), you want to match the documents in the video games category, but NOT if someone is searching for [video] or [video skyrim]. You want to match a multi-token term. There are two ways to accomplish that, one of which involves special 'compound' terms and filtering of their hits in a match method, which will not be described here(that's the way it was done with previous Trinity generations, but this other alternative described here is more elegant and doesn't bloat the index with compound terms).
+The downside of adoption this new idea is that you are limiting the number of tokens that can make up a composite term, and that it requires some effort to rewrite the query.
+You designate a special separator character (e.g '|') and then use it to construct the composite term by joining its tokens with that character. For example, for video games you get video|games. Assuming you want to support composite terms upto 3 tokens in size, and that you want to augment first front or first back terms, then:
+For a 3 terms run: [call of duty]
+You rewrite to:
+[call|of|duty) OR  (call|of OR (call of) duty) OR (Call (of duty) OR duty)]
 
-video AND (video|games OR (video games)
+For a > 3 terms run:[Call of duty modern warfare warfare ps3]
+You rewrite to:
+[call|of OR (call of) duty modern warfare|ps3 OR (warfare ps3)]
 
-video
-video|games
-video|games|skyrim
-games|skyrim
+For a 2 terms run:[Video games]
+[video|games OR (video games)]
 
-
-
-video|games OR (video games) skyrim
-video games|video OR (games video) 
-
-video|games|skyrim OR (video games skyrim)
-
-
-
-
-
+So for a <=3 tokens query, we consider all combinations of the query terms, and for a > 3 tokens query we consider the first two and the last two tokens 
 

@@ -63,7 +63,7 @@ namespace Trinity
 					  // offset to the hits relative to the term base offset
                                           uint32_t lastHitsBlockOffset;
 					  uint32_t totalDocumentsSoFar;
-                                          uint32_t totalHitsSoFar;
+                                          uint32_t lastHitsBlockTotalHits;
 					  uint16_t curHitsBlockHits;
                                   };
 
@@ -77,7 +77,7 @@ namespace Trinity
                                   uint32_t termIndexOffset, termPositionsOffset;
                                   FastPForLib::FastPFor<4> forUtil;
                                   IOBuffer payloadsBuf;
-                                  uint32_t skiplistCountdown;
+                                  uint32_t skiplistCountdown, lastHitsBlockOffset, lastHitsBlockTotalHits;
 				  skiplist_entry cur_block;
 
                               private:
