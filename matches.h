@@ -24,7 +24,7 @@ namespace Trinity
         struct term_hits final
         {
                 term_hit *all{0};
-                uint16_t freq; 		// total hits for the term
+                tokenpos_t freq; 		// total hits for the term
 
 
 		// facilitates execution -- ignoredg during scoring
@@ -32,7 +32,7 @@ namespace Trinity
                 uint16_t allCapacity{0};
 		uint16_t docSeq;
 
-                void set_freq(const uint16_t newFreq)
+                void set_freq(const tokenpos_t newFreq)
                 {
                         if (newFreq > allCapacity)
                         {
@@ -105,7 +105,7 @@ namespace Trinity
 
 	struct MatchedIndexDocumentsFilter
 	{
-		const DocWordsSpace *dws;
+		DocWordsSpace *dws;
 		const query_index_terms **queryIndicesTerms;
 
 		enum class ConsiderResponse : uint8_t
@@ -127,7 +127,7 @@ namespace Trinity
 		}
 
 		// Invoked before the query execution begins
-		virtual void prepare(const DocWordsSpace *dws_, const query_index_terms **queryIndicesTerms_)
+		virtual void prepare(DocWordsSpace *dws_, const query_index_terms **queryIndicesTerms_)
 		{
 			dws = dws_;
 			queryIndicesTerms = queryIndicesTerms_;

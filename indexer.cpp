@@ -40,7 +40,7 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
 
         const auto offset = b.size();
 
-        b.pack(uint16_t(0));
+        b.pack(uint16_t(0));	 // XXX: should be u32 if possible, or use varint
 
         for (const auto *p = hits.data(), *const e = p + hits.size(); p != e;)
         {
@@ -54,7 +54,7 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
 
                 const auto o = b.size();
 
-                b.pack(uint16_t(0));
+                b.pack(uint16_t(0)); // XXX: should be u32 or use varint
 
                 do
                 {
@@ -87,7 +87,7 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
                 ++terms;
         }
 
-        *(uint16_t *)(b.data() + offset) = terms; // total distinct terms for (document)
+        *(uint16_t *)(b.data() + offset) = terms; // total distinct terms for (document) XXX: see earlier comments
 
         if (b.size() > 16 * 1024 * 1024)
         {
@@ -171,7 +171,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                 uint32_t termID;
                 docid_t documentID;
                 uint32_t hitsOffset;
-                uint16_t hitsCnt;
+                uint16_t hitsCnt; 	// XXX: see comments earlier
         };
 
         std::vector<uint32_t> allOffsets;
@@ -188,7 +188,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                 {
                         const auto documentID = *(docid_t *)p;
                         p += sizeof(docid_t);
-                        auto termsCnt = *(uint16_t *)p;
+                        auto termsCnt = *(uint16_t *)p; // XXX: see earlier comments
                         p += sizeof(uint16_t);
 
                         if (!termsCnt)
@@ -201,10 +201,10 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                         {
                                 const auto term = *(uint32_t *)p;
                                 p += sizeof(uint32_t);
-                                auto hitsCnt = *(uint16_t *)p;
+                                auto hitsCnt = *(uint16_t *)p; // XXX: see earlier comments
                                 const auto saved{hitsCnt};
 
-                                p += sizeof(uint16_t);
+                                p += sizeof(hitsCnt);
 
                                 const auto base{p};
                                 do

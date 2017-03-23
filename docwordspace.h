@@ -68,7 +68,7 @@ namespace Trinity
 		}
 
 		// XXX: pos must be > 0
-		[[gnu::always_inline]] void set(const exec_term_id_t termID, const uint16_t pos) noexcept
+		[[gnu::always_inline]] void set(const exec_term_id_t termID, const tokenpos_t pos) noexcept
 		{
                         positions[pos] = {curSeq, termID};
 		}
@@ -93,10 +93,22 @@ namespace Trinity
 		// Turns out with -O1 or higher, this is faster than the alternative impl
 		// based on my folly benchmarks
 		// XXX: pos must be > 0
-		inline bool test(const exec_term_id_t termID, const uint16_t pos) const noexcept
+		inline bool test(const exec_term_id_t termID, const tokenpos_t pos) const noexcept
 		{
 			return positions[pos].docSeq == curSeq && positions[pos].termID == termID;
 		}
+
+		inline bool test_and_unset(const exec_term_id_t termID, const tokenpos_t pos) noexcept
+                {
+                        if (positions[pos].docSeq == curSeq && positions[pos].termID == termID)
+                        {
+                                positions[pos].docSeq = 0;
+                                return true;
+                        }
+                        else
+                                return false;
+                }
+
 #else
 		/* 
 		 * -O1
@@ -133,6 +145,6 @@ namespace Trinity
 		// in the adjacement position for the next phrase term, and the next, and so on, but 
 		// we would need to track the offset(relative index in the phrase)
 		// This is an example/reference implementation
-		bool test_phrase(const std::vector<exec_term_id_t> &phraseTerms, const uint16_t *phraseFirstTokenPositions, const uint16_t phraseFirstTokenPositionsCnt) const;
+		bool test_phrase(const std::vector<exec_term_id_t> &phraseTerms, const tokenpos_t *phraseFirstTokenPositions, const tokenpos_t phraseFirstTokenPositionsCnt) const;
         };
 }

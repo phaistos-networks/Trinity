@@ -207,7 +207,7 @@ namespace Trinity
 			struct
 			{
 				docid_t id;
-				uint16_t freq;
+				tokenpos_t freq;
 			} curDocument;
 
 

@@ -516,13 +516,13 @@ void Trinity::Codecs::Google::Decoder::skip_block_doc()
 void Trinity::Codecs::Google::Decoder::materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out)
 {
         const auto freq = freqs[blockDocIdx];
-        uint16_t pos{0};
+        tokenpos_t pos{0};
         uint8_t curPayloadSize{0};
         uint64_t payload{0};
         auto *const bytes = (uint8_t *)&payload;
         uint32_t step;
 
-        for (uint16_t i{0}; i != freq; ++i)
+        for (tokenpos_t i{0}; i != freq; ++i)
         {
                 varbyte_get32(p, step);
 

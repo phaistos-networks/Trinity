@@ -1,6 +1,5 @@
 #pragma once
 #include <switch.h>
-#include "limits.h"
 #include <text.h>
 #define TRINITY_ENABLE_PREFETCH 1
 #ifdef TRINITY_ENABLE_PREFETCH
@@ -21,6 +20,9 @@ namespace Trinity
 	static constexpr docid_t MaxDocIDValue{std::numeric_limits<docid_t>::max()};
 
 
+	using tokenpos_t = uint16_t;
+
+
         static inline int32_t terms_cmp(const char *a, const uint8_t aLen, const char *b, const uint8_t bLen)
         {
                 // Your impl. may ignore case completely so that you can
@@ -38,3 +40,5 @@ namespace Trinity
 		return Text::TermLengthWithEnd(content.p, content.end());
 	}
 }
+
+#include "limits.h"

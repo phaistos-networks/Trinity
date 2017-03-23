@@ -1049,6 +1049,14 @@ static auto impl_repr(const T *func)
                 return "false"_s8;
         else if (fp == dummyop_impl)
                 return "<dummy>"_s8;
+	else if (fp == matchallterms_impl)
+		return "(all terms)"_s8;
+	else if (fp == matchanyterms_impl)
+		return "(any terms)"_s8;
+	else if (fp == matchallphrases_impl)
+		return "(any phrases)"_s8;
+	else if (fp == matchanyphrases_impl)
+		return "(any phrases)"_s8;
         else
                 return "<other>"_s8;
 }
@@ -1068,17 +1076,28 @@ struct execnodes_collection final
         }
 };
 
+
+template <typename T, typename T2>
+static execnodes_collection *try_collect_impl(const exec_node lhs, const exec_node rhs, simple_allocator &a, T fp, T2 fp2)
+{
+        if ((lhs.fp == matchterm_impl || lhs.fp == matchphrase_impl || lhs.fp == fp || lhs.fp == fp2) && (rhs.fp == matchterm_impl || rhs.fp == matchphrase_impl || rhs.fp == fp || rhs.fp == fp2))
+        {
+                // collect collection, will turn this into 0+ termruns and 0+ phraseruns
+                return execnodes_collection::make(a, lhs, rhs);
+        }
+        else
+                return nullptr;
+}
+
 template <typename T, typename T2>
 static bool try_collect(exec_node &res, simple_allocator &a, T fp, T2 fp2)
 {
         auto opctx = static_cast<runtime_ctx::binop_ctx *>(res.ptr);
 
-        if ((opctx->lhs.fp == matchterm_impl || opctx->lhs.fp == matchphrase_impl || opctx->lhs.fp == fp || opctx->lhs.fp == fp2) && (opctx->rhs.fp == matchterm_impl || opctx->rhs.fp == matchphrase_impl || opctx->rhs.fp == fp || opctx->rhs.fp == fp2))
+        if (auto ptr = try_collect_impl(opctx->lhs, opctx->rhs, a, fp, fp2))
         {
-                // collect collection, will turn this into 0+ termruns and 0+ phraseruns
-		SLog("Collecting:", res, "\n");
                 res.fp = reinterpret_cast<decltype(res.fp)>(fp);
-                res.ptr = execnodes_collection::make(a, opctx->lhs, opctx->rhs);
+                res.ptr = ptr;
                 return true;
         }
         else
@@ -1241,6 +1260,24 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
                                 ctx->rhs = otherCtx->rhs;
 				return;
                         }
+
+
+			if (ctx->lhs.fp == consttrueexpr_impl && ctx->rhs.fp == consttrueexpr_impl)
+			{
+                		auto lhsCtx = (runtime_ctx::unaryop_ctx *)ctx->lhs.ptr;
+                		auto rhsCtx = (runtime_ctx::unaryop_ctx *)ctx->rhs.ptr;
+
+				if (auto ptr = try_collect_impl(lhsCtx->expr, rhsCtx->expr, a, SPECIALIMPL_COLLECTION_LOGICALAND, matchallterms_impl))
+				{
+					// reuse lhsCtx
+					lhsCtx->expr.fp = reinterpret_cast<decltype(lhsCtx->expr.fp)>(SPECIALIMPL_COLLECTION_LOGICALAND);
+					lhsCtx->expr.ptr = ptr;
+
+					n.ptr = lhsCtx;
+					n.fp = consttrueexpr_impl;
+					return;
+				}
+			}
 		}
                 else if (n.fp == logicalor_impl)
                 {
@@ -1258,6 +1295,23 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
                                 ctx->rhs = otherCtx->rhs;
 				return;
                         }
+
+			if (ctx->lhs.fp == consttrueexpr_impl && ctx->rhs.fp == consttrueexpr_impl)
+			{
+                		auto lhsCtx = (runtime_ctx::unaryop_ctx *)ctx->lhs.ptr;
+                		auto rhsCtx = (runtime_ctx::unaryop_ctx *)ctx->rhs.ptr;
+
+				if (auto ptr = try_collect_impl(lhsCtx->expr, rhsCtx->expr, a, SPECIALIMPL_COLLECTION_LOGICALOR, matchanyterms_impl))
+				{
+					// reuse lhsCtx
+					lhsCtx->expr.fp = reinterpret_cast<decltype(lhsCtx->expr.fp)>(SPECIALIMPL_COLLECTION_LOGICALOR);
+					lhsCtx->expr.ptr = ptr;
+
+					n.ptr = lhsCtx;
+					n.fp = consttrueexpr_impl;
+					return;
+				}
+			}
                 }
         }
 }
@@ -1557,7 +1611,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
 			set_dirty();
 			return n;
 		}
-		else if (ctx->rhs.fp == dummyop_impl)
+		else if (ctx->lhs.fp == dummyop_impl)
 		{
 			n = ctx->rhs;
 			set_dirty();
@@ -2444,9 +2498,10 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 
                 // this facilitates access to all distict termIDs that map to the same position
                 // See docwordspace.h comments
-                queryIndicesTerms = (query_index_terms **)rctx.allocator.Alloc(sizeof(query_index_terms *) * (maxIndex + 1));
+		// we are allocated (maxIndex + 2) and memset() that to 0 in order to make some optimizations possible in consider()
+                queryIndicesTerms = (query_index_terms **)rctx.allocator.Alloc(sizeof(query_index_terms *) * (maxIndex + 2));
 
-                memset(queryIndicesTerms, 0, sizeof(query_index_terms *) * (maxIndex + 1));
+                memset(queryIndicesTerms, 0, sizeof(query_index_terms *) * (maxIndex + 2));
                 std::sort(queryInstanceTermIDsTracker.begin(), queryInstanceTermIDsTracker.end(), [](const auto &a, const auto &b) { return a.second < b.second; });
                 for (const auto *p = queryInstanceTermIDsTracker.data(), *const e = p + queryInstanceTermIDsTracker.size(); p != e;)
                 {

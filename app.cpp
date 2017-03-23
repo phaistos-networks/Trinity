@@ -428,99 +428,116 @@ int main(int argc, char *argv[])
 		auto filter = std::make_unique<MatchedIndexDocumentsFilter>();
 
 
+#if 0
 		struct BPFilter final
 			: public MatchedIndexDocumentsFilter
-		{
-			CRC32Generator crc32;
+                {
+                        CRC32Generator crc32;
 
-			~BPFilter()
-			{
-				SLog("CRC32 = ", crc32.get(), "\n");
-			}
-		
-                        ConsiderResponse consider(matched_document &doc) override final
+                        ~BPFilter()
                         {
-				doc.sort_matched_terms_by_query_index();
-#if 1
-				const auto n = doc.matchedTermsCnt;
-				size_t curRun{0};
+                                SLog("CRC32 = ", crc32.get(), "\n");
+                        }
 
-
-				//SLog("MATCHED ", doc.id, " https://www.bestprice.gr/item/", doc.id|(1<<31), "\n");
-				for (uint32_t i{0}; i != n; ++i)
-				{
-					const auto t = doc.matchedTerms + i;
-
-					//Print("Matched term ", t->queryTermInstances->term.id, " ", t->queryTermInstances->term.token, " ", t->hits->freq, " freq\n");
-
-					for (uint32_t i{0}; i != t->hits->freq; ++i)
-					{
-						const auto &hit = t->hits->all[i];
-
-						//Print(">> ", hit.pos, " ", hit.payloadLen, " => ", *(uint32_t *)&hit.payload, "\n");
-
-						crc32.update(hit.pos);
-						crc32.update(hit.payloadLen);
-						crc32.update((uint8_t *)&hit.payload, hit.payloadLen);
-					}
-					continue;
-
-					for (uint32_t i{0}; i != t->queryTermInstances->cnt; ++i)
-					{
-						const auto &it = t->queryTermInstances->instances[i];
-
-						Print("INSTANCE ", it.index, ", ", it.rep, ", ", it.flags, "\n");
-					}
-
-					if (i)
-					{
-						bool seq{false};
-
-						for (uint32_t k{0}; k != t->queryTermInstances->cnt; ++k)
-						{
-							const auto idx = t->queryTermInstances->instances[k].index;
-
-							if (idx)
-							{
-								if (auto ptr = queryIndicesTerms[idx - 1])
-								{
-									for (uint32_t j{0}; j != ptr->cnt; ++j)
-									{
-										const auto id = ptr->termIDs[j];
-
-										for (uint32_t l{0}; l != t->hits->freq; ++l)
-										{
-											if (const auto pos = t->hits->all[l].pos)
-											{
-												if (dws->test(id, pos -1))
-													seq = true;
-											}
-										}
-									}
-								}
-							}
-						}
-
-                                                if (seq)
-                                                {
-							++curRun;
-						}
-						else if (curRun)
-						{
-							SLog("Ending run ", curRun, "\n");
-							
-							curRun = 0;
-						}
-					}
-
-				}
-#endif
-				return ConsiderResponse::Continue;
+			void consider_sequence(matched_document &match)
+			{
 
 			}
-		};
 
-		asuc.append(argv[1]);
+                        ConsiderResponse consider(matched_document &match) override final
+                        {
+                                const auto cnt = match.matchedTermsCnt;
+                                const auto matchedTerms = match.matchedTerms;
+                                const auto qit = queryIndicesTerms;
+                                uint64_t bm{0};
+
+
+                                const auto adjacent_term_match = [&bm](const uint8_t idx) noexcept
+                                {
+					SLog("Set ", idx, "\n");
+                                        bm |= uint64_t(3) << (idx - 1);
+                                };
+
+				match.sort_matched_terms_by_query_index();
+
+                                for (uint32_t i{0}; i != cnt; ++i)
+                                {
+                                        const auto mt = matchedTerms + i;
+                                        const auto qti = mt->queryTermInstances;
+                                        const auto qtiCnt = qti->cnt;
+                                        const auto hits = mt->hits;
+                                        const auto totalHits = hits->freq;
+                                        const auto allHits = hits->all;
+
+                                        for (uint32_t k{0}; k != totalHits; ++k)
+                                        {
+                                                const auto hit = allHits + k;
+
+                                                if (const auto pos = hit->pos)
+                                                {
+							SLog("For pos = ", pos, ", qtiCnt = ", qtiCnt, "\n");
+
+                                                        for (uint32_t j{0}; j != qtiCnt; ++j)
+                                                        {
+                                                                const auto inst = qti->instances + j;
+                                                                const auto idx = inst->index;
+                                                                uint32_t span;
+
+                                                                for (span = 1; span != 64; ++span)
+                                                                {
+                                                                        const auto adjacentPos{pos + span};
+                                                                        const auto adjacentIdx = idx + span;
+
+									SLog("span = ", span, ", adjacentPos = ", adjacentPos, "\n");
+
+                                                                        if (const auto adjacent = qit[adjacentIdx])
+                                                                        {
+                                                                                const auto cnt = adjacent->cnt;
+                                                                                bool anyMatches{false};
+
+										SLog(cnt, " adjacent terms\n");
+                                                                                for (uint32_t l{0}; l != cnt; ++l)
+                                                                                {
+                                                                                        const auto tid = adjacent->termIDs[l];
+
+                                                                                        if (dws->test(tid, adjacentPos)) 
+                                                                                        {
+												// unset later, not here
+												// because e.g world of warcraft
+												// worlds of warcrafts
+												// do not want to unset here
+												SLog("Matched (", tid, " ", adjacentPos, ")\n");
+                                                                                                anyMatches = true;
+                                                                                        }
+                                                                                }
+
+                                                                                if (!anyMatches)
+                                                                                        goto nextHit;
+                                                                        }
+                                                                        else
+									{
+										SLog("No adjacent terms\n");
+                                                                                goto nextHit;
+									}
+                                                                }
+                                                        }
+                                                }
+                                                else
+                                                {
+                                                        // looks like this is a special hit. Check hit->payload
+                                                }
+nextHit: ;
+                                        }
+                                }
+
+
+
+                                return ConsiderResponse::Continue;
+                        }
+                };
+#endif
+
+                asuc.append(argv[1]);
 
 		for (uint32_t i{0}; i != asuc.size(); ++i)
 			asuc.data()[i] = Buffer::UppercaseISO88597(asuc.data()[i]);
@@ -548,7 +565,7 @@ int main(int argc, char *argv[])
 
 		
 		exec_query<MatchedIndexDocumentsFilter>(q, &sources);
-		//auto res = exec_query<BPFilter>(q, &sources);
+		//exec_query<BPFilter>(q, &sources);
 	}
 
         return 0;

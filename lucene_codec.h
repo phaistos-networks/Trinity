@@ -73,7 +73,7 @@ namespace Trinity
                                   uint32_t docDeltas[BLOCK_SIZE], docFreqs[BLOCK_SIZE], hitPayloadSizes[BLOCK_SIZE], hitPosDeltas[BLOCK_SIZE];
                                   uint32_t buffered, totalHits, sumHits;
                                   uint32_t termDocuments;
-                                  uint16_t lastPosition;
+                                  tokenpos_t lastPosition;
                                   uint32_t termIndexOffset, termPositionsOffset;
                                   FastPForLib::FastPFor<4> forUtil;
                                   IOBuffer payloadsBuf;

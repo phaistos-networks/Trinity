@@ -1,6 +1,5 @@
 #pragma once
-#include <stdint.h>
-#include <stddef.h>
+#include "common.h"
 
 namespace Trinity
 {
@@ -22,5 +21,6 @@ namespace Trinity
 		static_assert(MaxTermLength < 250 && MaxTermLength > 8);
 		static_assert(MaxPhraseSize < 128);
 		static_assert(MaxQueryTokens < 2048);
+		static_assert(MaxPosition <= std::numeric_limits<tokenpos_t>::max());
 	}
 }

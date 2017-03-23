@@ -355,7 +355,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                 {
                         auto freq = docFreqs[cur_block.i];
                         uint64_t payload;
-                        uint16_t pos{0};
+                        tokenpos_t pos{0};
 
                         if (trace)
                                 SLog("Will output hits for ", cur_block.i, " ", freq, ", skippedHits = ", skippedHits, "\n");
@@ -1159,7 +1159,7 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
         // fast-path; can satisfy directly from the current hits block
         if (const auto upto = hitsIndex + freq; upto <= bufferedHits)
         {
-                uint16_t pos{0};
+                tokenpos_t pos{0};
 
                 if (trace)
                         SLog("fast-path\n");
@@ -1192,7 +1192,7 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
         }
         else
         {
-                uint16_t pos{0};
+                tokenpos_t pos{0};
 
                 if (trace)
                         SLog("slow path, freq = ", freq, ", hitsIndex =", hitsIndex, ", bufferedHits = ", bufferedHits, "\n");

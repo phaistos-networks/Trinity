@@ -1,5 +1,5 @@
 #pragma once
-#include <switch.h>
+#include "common.h"
 
 namespace Trinity
 {
@@ -9,8 +9,18 @@ namespace Trinity
 	struct term_hit final
         {
                 uint64_t payload;
-                uint16_t pos;
+                tokenpos_t pos;
                 uint8_t payloadLen;
+
+		auto bytes() const noexcept
+		{
+			return reinterpret_cast<const uint8_t *>(&payload);
+		}
+
+		auto bytes() noexcept
+		{
+			return reinterpret_cast<uint8_t *>(&payload);
+		}
         };
 }
 
