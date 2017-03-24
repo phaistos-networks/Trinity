@@ -256,7 +256,7 @@ int main(int argc, char *argv[])
 {
 	if (argc == 1)
         {
-#if 1
+#if 0
                 const auto index_document = [](auto &documentSess, const strwlen32_t input) {
                         uint32_t pos{1};
 
@@ -502,7 +502,7 @@ int main(int argc, char *argv[])
 
                         void consider_sequence(const tokenpos_t pos, const uint16_t queryIndex, uint16_t *__restrict__ const span)
                         {
-                                static constexpr bool trace{true};
+                                static constexpr bool trace{false};
 
                                 if (auto adjacent = queryIndicesTerms[queryIndex])
                                 {
@@ -535,11 +535,15 @@ int main(int argc, char *argv[])
                         }
 
 			// TODO: use insertion sort or sorting networks to sort instead of std::sort<>()
+			// TODO: demonostrate how instance_struct::rep can be used
+			// TODO: demonostrate how position can be used e.g if its a title hit/sequence
                         ConsiderResponse consider(const matched_document &match) override final
                         {
-                                static constexpr bool trace{true};
+                                //static constexpr bool trace{false};
+				const bool trace=match.id == 2154901776;
                                 const auto totalMatchedTerms{match.matchedTermsCnt};
                                 uint16_t rem{0}, remQTH{0};
+				uint32_t score{0};
 
 				// We need to consider all possible combinations of (starting query index, toNextSpan)
 				// consider the query: [world of warcraft game is warcraft of blizzard].
@@ -623,7 +627,9 @@ int main(int argc, char *argv[])
                                                                 uint16_t span{1};
 
                                                                 if (trace)
+								{
                                                                         SLog(ansifmt::bold, ansifmt::color_blue, "START OFF AT index(", it->index, ") pos(", pos, ") term = ", it->termID, ansifmt::reset, "\n");
+								}
 
                                                                 consider_sequence(pos + 1, it->index + it->toNextSpan, &span);
                                                                 if (span != 1)
@@ -637,12 +643,14 @@ int main(int argc, char *argv[])
 								}
                                                         }
 
-							if (th->considered)
+							if (!th->considered)
 							{
 								// first termID to consider for this hit (if we have the same term in multiple query indices
 								// we need to guard against that)
 								th->considered = true;
 								//  check payload etc here
+
+								++score;
 							}
 
                                                         ++i;
@@ -670,6 +678,18 @@ int main(int argc, char *argv[])
 						{
                                                 	Print("ACCEPTING SPAN ", span, " at position ", pos, "\n");
 						}
+
+						if (span > 4)
+							score+=25;
+						else
+						{
+							static constexpr uint8_t v[] = {0, 0, 5, 8, 14, 20 };
+
+							score+=v[span];
+						}
+
+
+
 
 						// this is important
                                                 for (uint32_t i{0}; i != span; ++i)
@@ -701,7 +721,23 @@ int main(int argc, char *argv[])
                                         }
                                 }
 
+
                         l10:;
+
+
+				if (trace)
+					SLog("score ", score, "\n");
+
+				static uint32_t bestDocument{0};
+				static uint32_t bestScore{0};
+
+                                if (score > bestScore)
+                                {
+                                        bestScore = score;
+                                        bestDocument = match.id;
+
+                                        SLog("FOR ", bestDocument, " ", bestScore, "\n");
+                                }
 
                                 return ConsiderResponse::Continue;
                         }

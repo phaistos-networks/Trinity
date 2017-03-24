@@ -2519,7 +2519,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                         {
                                 const auto pair = p->second;
 
-				SLog("pair = ", pair, "\n");
+				//SLog("pair = ", pair, "\n");
 
                                 list.push_back(pair);
                                 do
