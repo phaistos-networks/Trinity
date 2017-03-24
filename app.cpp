@@ -464,11 +464,11 @@ int main(int argc, char *argv[])
 
 
 #if 1
-
                 struct BPFilter final
                     : public MatchedIndexDocumentsFilter
                 {
 
+			// A unique term's hits
                         struct query_term_hits
                         {
                                 const term_hit *it;
@@ -476,39 +476,37 @@ int main(int argc, char *argv[])
 				bool considered; 	// XXX: maybe there is a way to avoid the extra ivar
                         };
 
+			// distinct (query index, toNextSpan) among all matched terms
                         struct tracked
                         {
                                 query_term_hits *th;
                                 uint16_t index;
+				uint8_t toNextSpan;
                                 exec_term_id_t termID;
                         };
 
+			// A sequence of span  > 1 that we either accept or reject
                         struct tracked_span
                         {
+				uint16_t queryTokenIndex;
                                 exec_term_id_t termID;
                                 tokenpos_t pos;
                                 uint16_t span;
                         };
 
-                        CRC32Generator crc32;
                         query_term_hits qthStorage[Trinity::Limits::MaxQueryTokens];
                         tracked allTracked[Trinity::Limits::MaxQueryTokens];
                         query_term_hits *allQTH[Trinity::Limits::MaxQueryTokens];
                         std::vector<tracked_span> trackedSpans;
 
-                        ~BPFilter()
-                        {
-                                SLog("CRC32 = ", crc32.get(), "\n");
-                        }
 
-                        void consider_sequence(const tokenpos_t pos, const uint16_t queryIndex, uint16_t *const span)
+                        void consider_sequence(const tokenpos_t pos, const uint16_t queryIndex, uint16_t *__restrict__ const span)
                         {
                                 static constexpr bool trace{true};
 
                                 if (auto adjacent = queryIndicesTerms[queryIndex])
                                 {
                                         const auto nextPos = pos + 1;
-                                        const auto nextQueryIndex = queryIndex + 1;
                                         const auto cnt = adjacent->cnt;
 
                                         if (trace)
@@ -516,7 +514,8 @@ int main(int argc, char *argv[])
 
                                         for (uint32_t i{0}; i != cnt; ++i)
                                         {
-                                                const auto termID = adjacent->termIDs[i];
+						const auto &pair = adjacent->uniques[i];
+                                                const auto termID = pair.first;
 
                                                 if (trace)
                                                         SLog("CHECK term ", termID, " AT pos = ", pos, ":", dws->test(termID, pos), " (span = ", *span, ")\n");
@@ -524,7 +523,7 @@ int main(int argc, char *argv[])
                                                 if (dws->test(termID, pos))
                                                 {
                                                         (*span)++;
-                                                        consider_sequence(nextPos, nextQueryIndex, span);
+                                                        consider_sequence(nextPos, queryIndex + pair.second, span);
                                                 }
                                         }
                                 }
@@ -535,39 +534,76 @@ int main(int argc, char *argv[])
                                 }
                         }
 
+			// TODO: use insertion sort or sorting networks to sort instead of std::sort<>()
                         ConsiderResponse consider(const matched_document &match) override final
                         {
                                 static constexpr bool trace{true};
-                                const auto totalMatchedTerms = match.matchedTermsCnt;
+                                const auto totalMatchedTerms{match.matchedTermsCnt};
                                 uint16_t rem{0}, remQTH{0};
 
+				// We need to consider all possible combinations of (starting query index, toNextSpan)
+				// consider the query: [world of warcraft game is warcraft of blizzard].
+				// We have two ocurrences of [of] in the query, and we need to consider
+				// [of warcraft...] first, and then [warcraft of..] and then [of blizzard..]
+				//
+				// If we were to process of occurrences first, then we 'd process
+				// [of warcraft ..] and then [of blizzard..] but because we dws->unset() accepted sequences,  if we were
+				// to process [of blizzard..] before [warcraft is blizzard] we 'd miss that 3 token sequence.
+				//
+				// This is also about query tokens where the adjacent token is not found at query token index + 1. e.g
+				// [world of (warcraft OR (war craft)) mists  warcraft is a blizzard game]
+				// for [warcraft] at index 1, its next logical token is [mists] and its not found at [warcraft] index + 1, whereas
+				// for the next [warcraft] token in the query, its next logical token is right next to it ([is]).
+				// Trinity::phrase decl.comments
                                 for (uint32_t i{0}; i != totalMatchedTerms; ++i)
                                 {
                                         const auto mt = match.matchedTerms + i;
-                                        auto p = qthStorage + i;
                                         const auto qi = mt->queryCtx;
+                                        auto p = qthStorage + i;
+					const auto instancesCnt = qi->instancesCnt;
 
                                         p->it = mt->hits->all;
                                         p->end = p->it + mt->hits->freq;
 					p->considered = false;
+					
+					if (trace)
+                                        {
+                                                SLog("FOR ", qi->term.token, "\n");
+                                                for (uint32_t i{0}; i != mt->hits->freq; ++i)
+                                                {
+                                                        Print("POSITION:", mt->hits->all[i].pos, "\n");
+                                                }
+                                        }
 
                                         allQTH[remQTH++] = p;
-                                        for (uint32_t i{0}; i != qi->instancesCnt; ++i)
-                                        {
-                                                if (trace)
-                                                        SLog("Tracking ", mt->queryCtx->term.id, " ", mt->queryCtx->instances[i].index, "\n");
-                                                allTracked[rem++] = {p, qi->instances[i].index, qi->term.id};
-                                        }
+                                        for (uint32_t i{0}; i != instancesCnt; ++i)
+                                                allTracked[rem++] = {p, qi->instances[i].index, qi->instances[i].toNextSpan, qi->term.id};
                                 }
 
                                 std::sort(allTracked, allTracked + rem, [](const auto &a, const auto &b) {
                                         return a.index < b.index;
                                 });
 
+                                if (trace)
+                                {
+                                        for (uint32_t i{0}; i != rem; ++i)
+                                        {
+                                                const auto &it = allTracked[i];
+
+                                                SLog("Tracking index = ", it.index, ", toNextSpan = ", it.toNextSpan, ", termID = ", it.termID, "\n");
+                                        }
+                                }
+
                                 for (;;)
                                 {
                                         trackedSpans.clear();
 
+					// It is important that we consider all query tokens
+					// and then advance hits iterator for all matched terms afterwards,
+					// because e.g for query [world OF warcraft mists OF pandaria]
+					// [of] is found twice in the query and we want to check at position X
+					// for both [OF pandaria] and [OF warcraft mists..], but we can't do that one term at a time because
+					// of reasons described earlier
                                         for (uint32_t i{0}; i < rem;)
                                         {
                                                 const auto it = allTracked + i;
@@ -577,7 +613,8 @@ int main(int argc, char *argv[])
                                                 {
                                                         if (--rem == 0)
                                                                 goto l10;
-                                                        memmove(it, it + 1, (rem - i) * sizeof(allTracked[0]));
+                                                        else
+                                                                memmove(it, it + 1, (rem - i) * sizeof(allTracked[0]));
                                                 }
                                                 else
                                                 {
@@ -586,11 +623,18 @@ int main(int argc, char *argv[])
                                                                 uint16_t span{1};
 
                                                                 if (trace)
-                                                                        SLog(ansifmt::bold, ansifmt::color_blue, "START OFF AT index(", it->index, ") pos(", pos, ")", ansifmt::reset, "\n");
+                                                                        SLog(ansifmt::bold, ansifmt::color_blue, "START OFF AT index(", it->index, ") pos(", pos, ") term = ", it->termID, ansifmt::reset, "\n");
 
-                                                                consider_sequence(pos + 1, it->index + 1, &span);
+                                                                consider_sequence(pos + 1, it->index + it->toNextSpan, &span);
                                                                 if (span != 1)
-                                                                        trackedSpans.push_back({it->termID, pos, span});
+                                                                        trackedSpans.push_back({it->index, it->termID, pos, span});
+								else
+								{
+									// XXX:
+									// for e.g query [barrack obama]
+									// check if obama is found _two_ positions ahead of barrack
+									// so that we can e.g boost barrack HUSSEIN obama matches
+								}
                                                         }
 
 							if (th->considered)
@@ -598,36 +642,47 @@ int main(int argc, char *argv[])
 								// first termID to consider for this hit (if we have the same term in multiple query indices
 								// we need to guard against that)
 								th->considered = true;
+								//  check payload etc here
 							}
 
                                                         ++i;
                                                 }
                                         }
 
-					// TODO: sort and filter only if required
                                         std::sort(trackedSpans.begin(), trackedSpans.end(), [](const auto &a, const auto &b) {
-                                                return (a.termID < b.termID) || (a.termID == b.termID && b.span < a.span);
+						return a.pos < b.pos  || (a.pos == b.pos && b.span < a.span);
                                         });
 
                                         if (trace)
                                         {
-                                                Print("===============================================\n");
+                                                Print("===============================================termID:\n");
                                                 for (const auto &it : trackedSpans)
-                                                        Print(it.termID, " ", " ", it.pos, " ", it.span, "\n");
+                                                        Print("termID:", it.termID, " ", " pos:", it.pos, " span:", it.span, ", query index:", it.queryTokenIndex, "\n");
                                         }
-
+				
                                         for (const auto *p = trackedSpans.data(), *const e = p + trackedSpans.size(); p != e;)
                                         {
-                                                const auto termID = p->termID;
+                                                const auto pos = p->pos;
+                                                const auto span = p->span;
+                                                const auto l = pos + span;
 
-                                                if (trace)
-                                                        SLog("Accepting span ", p->span, "\n");
-                                                for (uint32_t i{0}; i != p->span; ++i)
-                                                        dws->unset(p->pos + i);
+						if (trace)
+						{
+                                                	Print("ACCEPTING SPAN ", span, " at position ", pos, "\n");
+						}
 
-                                                for (++p; p != e && p->termID == termID; ++p)
+						// this is important
+                                                for (uint32_t i{0}; i != span; ++i)
+                                                        dws->unset(pos + i);
+
+                                                // Ignore overlaps
+                                                for (++p; p != e && p->pos < l; ++p)
                                                         continue;
                                         }
+
+
+
+
 
                                         for (uint32_t i{0}; i < remQTH;)
                                         {
@@ -635,7 +690,8 @@ int main(int argc, char *argv[])
                                                 {
                                                         if (--remQTH == 0)
                                                                 goto l10;
-                                                        memmove(allQTH + i, allQTH + i + 1, (rem - i) * sizeof(allQTH[0]));
+                                                        else
+								allQTH[i] = allQTH[remQTH];
                                                 }
                                                 else
 						{
@@ -651,6 +707,11 @@ int main(int argc, char *argv[])
                         }
                 };
 #endif
+
+
+
+
+
 
                 asuc.append(argv[1]);
 

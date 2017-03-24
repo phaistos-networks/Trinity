@@ -6,29 +6,34 @@
 
 namespace Trinity
 {
-	// Used to track for each query index(i.e index in the query terms) the distinct termIDs that map to it
-	// That will usually be one term, except when there are OR sequences
-	// e.g  [apple laptop OR "macbook pro"]
-	// both laptop and macbook will be map to the query index(1)
+	// We assign an index (base 0) to each token in the query, which is monotonically increasing, except
+	// when we are assigning to tokens in OR expressions, where we need to do more work and it gets more complicated (see assign_query_indices() for how that works).
+	//
+	// Long story short, we track all distinct (termIDs, to_next) combinations for each query index, where
+	// termID is the term ID (execution space) and to_next is how many indices ahead to advance to get
+	// to the net term (1 unless specific OR queries are processed).
+	// Please see Trinity::phrase comments
 	//
 	// This is built by exec_query() and passed to MatchedIndexDocumentsFilter::prepare()
 	// It is useful for proximity checks in conjuction with DocWordsSpace
 	struct query_index_terms final
 	{
 		uint16_t cnt;
-		exec_term_id_t termIDs[0];
+		// all distinct (termID, toNextSpan) pairs
+		std::pair<exec_term_id_t, uint8_t> uniques[0];
 	};
 
         // Materialized hits for a term and the current document
-        // this is used both for evaluation and for scoring documents
+        // This is used both for evaluation and for scoring documents
         struct term_hits final
         {
+		// total hits for the term
+                tokenpos_t freq; 		
                 term_hit *all{0};
-                tokenpos_t freq; 		// total hits for the term
 
 
-		// facilitates execution -- ignoredg during scoring
-		// this is internal and specific to the execution engine impl.
+		// Facilitates execution -- ignored during scoring
+		// This is internal and specific to the execution engine impl.
                 uint16_t allCapacity{0};
 		uint16_t docSeq;
 
@@ -54,13 +59,11 @@ namespace Trinity
 
 	// We record an instance for each term instances in a original/input query
 	// you can e.g use this information to determine if adjacent terms in the original query are both matched
-	// e.g for query [apple iphone] (this is not a phrase), if we match both apple and iphone in a document, but
-	// in one document they are next to each other while on another they are far apart, we could rank that first document higher
         struct query_term_ctx final
         {
 		// Information about the term itself
-		// this is mostly for debugging during score consideration, but having access to
-		// the distinct termID may be used to facilitate fancy tracking schemes
+		// This is mostly for debugging during score consideration, but having access to
+		// the distinct termID may be used to facilitate fancy tracking schemes in your MatchedIndexDocumentsFilter::consider()
 		struct 
 		{
 			exec_term_id_t id;
@@ -70,9 +73,11 @@ namespace Trinity
                 uint8_t instancesCnt; // i.e if your query is [world of warcraft mists of pandaria] then you will have 2 instances for token "of" in the query, with rep = 1
                 struct instance_struct
                 {
+			// see Trinity::phrase decl. comments
                         uint16_t index;
                         uint8_t rep;
 			uint8_t flags;
+			uint8_t toNextSpan;
                 } instances[0];
         };
 

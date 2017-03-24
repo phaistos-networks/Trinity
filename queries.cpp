@@ -96,6 +96,7 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                         p->size = n;
                         std::copy(terms, terms + n, p->terms);
                         p->rep = 1;
+			p->toNextSpan = n;
                         p->flags = 0;
                         node->p = p;
                         return node;
@@ -118,6 +119,7 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                 p->size = 1;
                 p->terms[0] = t;
                 p->rep = 1;
+		p->toNextSpan = 1;
                 p->flags = 0;
                 node->p = p;
                 return node;
@@ -219,7 +221,7 @@ static void print_phrase(Buffer &b, const phrase *const p)
         b.append('"');
         if (p->rep > 1)
                 b.append('(', p->rep, ')');
-        b.append('[', p->index, ']');
+        b.append('[', p->index, ',', p->toNextSpan, ']');
 }
 
 static void print_token(Buffer &b, const phrase *const p)
@@ -227,7 +229,7 @@ static void print_token(Buffer &b, const phrase *const p)
         b.append(p->terms[0].token);
         if (p->rep > 1)
                 b.append('(', p->rep, ')');
-        b.append('[', p->index, ']');
+        b.append('[', p->index, ',', p->toNextSpan, ']');
 }
 
 void PrintImpl(Buffer &b, const Trinity::ast_node &n)
@@ -953,43 +955,63 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx)
                 ctx.tokensCnt += n->p->size;
 }
 
-static void assign_phrase_index(ast_node *const n, uint32_t &nextIndex)
+static void assign_query_indices(ast_node *const n, uint32_t &nextIndex, std::vector<phrase *> phrasesStack, phrase *&lastPhrase)
 {
         if (n->is_unary())
         {
+		lastPhrase = n->p;
                 n->p->index = nextIndex;
                 nextIndex += n->p->size;
         }
         else if (n->type == ast_node::Type::UnaryOp)
         {
-                assign_phrase_index(n->unaryop.expr, nextIndex);
+                assign_query_indices(n->unaryop.expr, nextIndex, phrasesStack, lastPhrase);
         }
         else if (n->type == ast_node::Type::ConstTrueExpr)
         {
-                assign_phrase_index(n->expr, nextIndex);
+                assign_query_indices(n->expr, nextIndex, phrasesStack, lastPhrase);
         }
         else if (n->type == ast_node::Type::BinOp)
         {
                 auto lhs = n->binop.lhs, rhs = n->binop.rhs;
 
-                assign_phrase_index(lhs, nextIndex);
-
                 if (n->binop.op == Operator::OR)
                 {
-                        if (lhs->is_unary())
-                                nextIndex -= lhs->p->size;
-                        else if (lhs->type == ast_node::Type::BinOp && lhs->binop.op == Operator::OR && lhs->binop.rhs->is_unary())
-                                nextIndex -= lhs->binop.rhs->p->size;
-                }
-                else if (n->binop.op == Operator::NOT)
-                        nextIndex += 8;
-                else if (n->binop.op == Operator::AND || n->binop.op == Operator::STRICT_AND)
-                {
-                        if (lhs->type == ast_node::Type::BinOp && (lhs->binop.op != Operator::AND && lhs->binop.op != Operator::STRICT_AND && lhs->binop.op != Operator::OR))
-                                nextIndex += 4;
-                }
+			// this is a bit more involved because of the semantics we are trying to enforce
+                        const auto saved{nextIndex};
 
-                assign_phrase_index(rhs, nextIndex);
+                        assign_query_indices(lhs, nextIndex, phrasesStack, lastPhrase);
+			SLog("LAST LHS:", lastPhrase->terms[0].token, "\n");
+
+			phrasesStack.push_back(lastPhrase);
+                        nextIndex = saved;
+	                assign_query_indices(rhs, nextIndex, phrasesStack, lastPhrase);
+
+			phrasesStack.push_back(lastPhrase);
+
+			SLog("LAST RHS:", lastPhrase->terms[0].token, "\n");
+
+			Print("============================================\n");
+			for (const auto it : phrasesStack)
+                        {
+                                it->toNextSpan = nextIndex - it->index;
+                                SLog("Assign to ", it->index, " ", it->terms[0].token, " ", it->toNextSpan, "\n");
+                        }
+
+                        phrasesStack.pop_back();
+                }
+		else if (n->binop.op == Operator::NOT)
+		{
+                        assign_query_indices(lhs, nextIndex, phrasesStack, lastPhrase);
+			// we do not care for the RHS(not)
+			// but we need to advance nextIndex by 4 so that we won't consider whatever's on the RHS adjacent to whatever was before the LHS
+			nextIndex+=4;
+		}
+		else
+                {
+                        assign_query_indices(lhs, nextIndex, phrasesStack, lastPhrase);
+	                assign_query_indices(rhs, nextIndex, phrasesStack, lastPhrase);
+                }
         }
 }
 
@@ -1057,17 +1079,24 @@ ast_node *normalize_root(ast_node *root)
 
         if (root)
         {
-                // We are assining phrase indices here
+                // We are assigning phrase indices here
                 // We originally assigned indices when we parsed the query, but this
                 // is not optimal, because the query can be updated, or we can just build
                 // the query ourselves programmatically, and whatever the case, we need
                 // to get those phrase indices properly
+		//
                 // Because we are going to normalize_root() whenever we update the query structure and
                 // when we are committing the changes, we are guaranteed to get this right
-                // Keeping this simpler is a great side-effect
+		//
+		// This is very tricky because of OR expressions, and because multiple OR expresions starting from the same 'index' can be of variable length in terms of tokens
+		// we need to also track a skip/jump value.
+		// See Trinity::phrase decl. comments 
                 uint32_t nextIndex{0};
+		phrase *lastPhrase{nullptr};
+		std::vector<phrase *> phrasesStack;
 
-                assign_phrase_index(root, nextIndex);
+                assign_query_indices(root, nextIndex, phrasesStack, lastPhrase);
+		Print("AFTER ASSIGNING INDICES:", *root, "\n"); 
         }
 
         return root;

@@ -190,12 +190,38 @@ namespace Trinity
                 uint8_t size;
 
                 // repetition; e.g for [APPLE APPLE APPLE APPLE] repetition is 5
-                // This is important; we need to capture e.g tom tom (the manufucacturer) and boing boing
-                // but we don't want to capture the same phrase/word twice if in order
+                // This is important; we need to capture e.g [tom tom] (the manufucacturer) and [boing boing]
+                // but we don't want to capture the same phrase/word twice if in order.
+		// This is useful in MatchedIndexDocumentsFilter::consider() implementations for scoring documents based
+		// on the query structure and the matched terms
                 uint8_t rep;
 
                 // index in the query
                 uint16_t index;
+		// See assign_query_indices() for how this is assigned
+		//
+		// This is how many terms/tokens to advance from this index(i.e query token) to get to the next term in the query and skip
+		// all other tokens in the same OR group as this token.
+		//
+		// This is useful in MatchedIndexDocumentsFilter::consider()
+		//
+		// For example:
+		// [world of warcraft OR (war craft) mists of pandaria]
+		//---------------------------------------------
+		// INDEX 	|TOKEN 		|TONEXTSPAN
+		//---------------------------------------------
+		// 0 		WORLD 	 	1
+		// 1 		OF 		1
+		// 2 		WARCRAFT 	2
+		// 2 		WAR 		1
+		// 3 		CRAFT 		1
+		// 4 		MISTS 		1
+		// 5 		OF 		1
+		// 5 		PANDARIA 	1
+		// If you are going to try to match a sequence for matched term  'WARCRAFT'
+		// the only query instance of it is at index 2 and the next term in the query past
+		// any other 'equivalent' OR groups(in this case there is only one other OR expression matching warcraft, [war craft]) is 2 positions ahead to 4 (i.e to mists)
+		uint8_t toNextSpan;
 
                 // flags. Usually 0, but e.g if you are rewritting a [wow] to [wow OR "world of warcraft"] you
                 // maybe want "world of warcraft" flags to be 1 (i.e derived)

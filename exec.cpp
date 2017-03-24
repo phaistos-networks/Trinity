@@ -2314,6 +2314,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                 uint16_t index;
                 uint8_t rep;
                 uint8_t flags;
+		uint8_t toNextSpan;
         };
 
         if (!in)
@@ -2335,7 +2336,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 
         // We need to collect all term instances in the query
         // so that we the score function will be able to take that into account (See matched_document::queryTermInstances)
-        // We only need to do this for specific AST branches and node types
+        // We only need to do this for specific AST branches and node types(i.e we ignore all RHS expressions of logical NOT nodes)
         //
         // This must be performed before any query optimizations, for otherwise because the optimiser will most definitely rearrange the query, doing it after
         // the optimization passes will not capture the original, input query tokens instances information.
@@ -2384,10 +2385,11 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                 for (const auto it : collected)
                 {
                         const uint8_t rep = it->size == 1 ? it->rep : 1;
+			auto toNextSpan = it->toNextSpan;
                         const auto flags = it->flags;
 
-                        for (uint16_t pos{it->index}, i{0}; i != it->size; ++i, ++pos)
-                                originalQueryTokenInstances.push_back({it->terms[i].token, pos, rep, flags});
+                        for (uint16_t pos{it->index}, i{0}; i != it->size; ++i, ++pos, ++toNextSpan)
+                                originalQueryTokenInstances.push_back({it->terms[i].token, pos, rep, flags, toNextSpan});
                 }
         }
 
@@ -2433,8 +2435,8 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 
         {
                 std::vector<const query_term_instance *> collected;
-                std::vector<std::pair<uint16_t, exec_term_id_t>> queryInstanceTermIDsTracker;
-                std::vector<exec_term_id_t> termIDs;
+                std::vector<std::pair<uint16_t, std::pair<exec_term_id_t, uint8_t>>> originalQueryTokensTracker;	 // query index => (termID, toNextSpan)
+                std::vector<std::pair<exec_term_id_t, uint8_t>> list;
                 uint16_t maxIndex{0};
 
                 // Build rctx.originalQueryTermInstances
@@ -2476,9 +2478,10 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                         p->instances[i].index = it->index;
                                         p->instances[i].rep = it->rep;
                                         p->instances[i].flags = it->flags;
+					p->instances[i].toNextSpan = it->toNextSpan;
 
                                         maxIndex = std::max(maxIndex, it->index);
-                                        queryInstanceTermIDsTracker.push_back({termID, it->index});
+                                        originalQueryTokensTracker.push_back({it->index, {termID, it->toNextSpan}});
                                 }
 
                                 rctx.originalQueryTermCtx[termID] = p;
@@ -2496,32 +2499,40 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                         }
                 }
 
-                // this facilitates access to all distict termIDs that map to the same position
                 // See docwordspace.h comments
-		// we are allocated (maxIndex + 2) and memset() that to 0 in order to make some optimizations possible in consider()
-                queryIndicesTerms = (query_index_terms **)rctx.allocator.Alloc(sizeof(query_index_terms *) * (maxIndex + 2));
+                // we are allocated (maxIndex + 8) and memset() that to 0 in order to make some optimizations possible in consider()
+                queryIndicesTerms = (query_index_terms **)rctx.allocator.Alloc(sizeof(query_index_terms *) * (maxIndex + 8));
 
-                memset(queryIndicesTerms, 0, sizeof(query_index_terms *) * (maxIndex + 2));
-                std::sort(queryInstanceTermIDsTracker.begin(), queryInstanceTermIDsTracker.end(), [](const auto &a, const auto &b) { return a.second < b.second; });
-                for (const auto *p = queryInstanceTermIDsTracker.data(), *const e = p + queryInstanceTermIDsTracker.size(); p != e;)
+                memset(queryIndicesTerms, 0, sizeof(queryIndicesTerms[0]) * (maxIndex + 8));
+                std::sort(originalQueryTokensTracker.begin(), originalQueryTokensTracker.end(), [](const auto &a, const auto &b) 
+			{ return a.second.first < b.second.first || (a.second.first == b.second.first && a.second.second < b.second.second); });
+
+                for (const auto *p = originalQueryTokensTracker.data(), *const e = p + originalQueryTokensTracker.size(); p != e;)
                 {
-                        const auto idx = p->second;
+			const auto idx = p->first;
 
-                        termIDs.clear();
+			SLog("idx = ", idx, "\n");
+
+			// unique pairs(token, toNextSpan) for idx
+                        list.clear();
                         do
                         {
-                                termIDs.push_back(p->first);
-                        } while (++p != e && p->second == idx);
+                                const auto pair = p->second;
 
-                        // We need the distict terms for the same index
-                        std::sort(termIDs.begin(), termIDs.end());
-                        termIDs.resize(std::unique(termIDs.begin(), termIDs.end()) - termIDs.begin());
+				SLog("pair = ", pair, "\n");
 
-                        const uint16_t cnt = termIDs.size();
-                        auto ptr = (query_index_terms *)rctx.allocator.Alloc(sizeof(query_index_terms) + cnt * sizeof(exec_term_id_t));
+                                list.push_back(pair);
+                                do
+                                {
+                                        ++p;
+                                } while (p != e && p->first == idx && p->second == pair);
+                        } while (p != e && p->first == idx);
+
+                        const uint16_t cnt = list.size();
+                        auto ptr = (query_index_terms *)rctx.allocator.Alloc(sizeof(query_index_terms) + cnt * sizeof(std::pair<exec_term_id_t, uint8_t>));
 
                         ptr->cnt = cnt;
-                        memcpy(ptr->termIDs, termIDs.data(), cnt * sizeof(exec_term_id_t));
+                        memcpy(ptr->uniques, list.data(), cnt * sizeof(std::pair<exec_term_id_t, uint8_t>));
                         queryIndicesTerms[idx] = ptr;
                 }
         }
