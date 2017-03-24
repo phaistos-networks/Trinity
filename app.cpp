@@ -251,10 +251,42 @@ int main(int argc, char *argv[])
 
 
 #if 1
+
 int main(int argc, char *argv[])
 {
 	if (argc == 1)
         {
+#if 1
+                const auto index_document = [](auto &documentSess, const strwlen32_t input) {
+                        uint32_t pos{1};
+
+                        for (const auto *p = input.data(), *const e = p + input.size(); p != e;)
+                        {
+                                if (const auto len = Text::TermLengthWithEnd(p, e))
+                                {
+                                        documentSess.insert(strwlen8_t(p, len), pos++);
+                                        p += len;
+                                }
+                                else
+                                {
+                                        if (!isblank(*p))
+                                                ++pos;
+                                        ++p;
+                                }
+                        }
+                };
+
+                SegmentIndexSession sess;
+		auto doc = sess.begin(1);
+                auto is = new Trinity::Codecs::Lucene::IndexSession("/tmp/TSEGMENTS/1500");
+
+                index_document(doc, "WORLD OF WARCRAFT GAME MISTS OF PANDARIA GAME AND EVEN MORE MIST OF PANDARIAS HELLOW OF MISTS OF MOUNTAINS IPOD MIST OF HILLTOPS"_s32);
+															     // 17
+		sess.insert(doc);
+		sess.commit(is);
+		delete is;
+
+#else
                 int fd = open("/home/system/Data/BestPrice/SERVICE/clusters.data", O_RDONLY | O_LARGEFILE);
 
                 require(fd != -1);
@@ -267,7 +299,7 @@ int main(int argc, char *argv[])
                 close(fd);
                 require(fileData != MAP_FAILED);
 
-		Print("INDEXING\n");
+                Print("INDEXING\n");
                 for (const auto *p = static_cast<const uint8_t *>(fileData), *const e = p + fileSize; p != e;)
                 {
                         p += sizeof(uint16_t);
@@ -278,7 +310,7 @@ int main(int argc, char *argv[])
                         for (const auto chunkEnd = p + chunkSize; p != chunkEnd;)
                         {
                                 //const auto id = *(uint32_t *)p;
-                                const auto id = (*(uint32_t *)p) | (1<<31);
+                                const auto id = (*(uint32_t *)p) | (1 << 31);
                                 p += sizeof(uint32_t);
                                 strwlen8_t title((char *)p + 1, *p);
                                 p += title.size() + sizeof(uint8_t);
@@ -288,7 +320,8 @@ int main(int argc, char *argv[])
 
                                 p += n * sizeof(uint32_t);
 
-				//if(id != 2152925656 && id != 2154740801 && id != 2153883399 && id != 2151148486) continue;
+                                //if(id != 2152925656 && id != 2154740801 && id != 2153883399 && id != 2151148486) continue;
+                                //if (id != 2152925656) continue;
 
                                 title.p = a.CopyOf(title.data(), title.size());
 
@@ -306,7 +339,7 @@ int main(int argc, char *argv[])
 
                                                 const strwlen8_t term(p, len);
 
-						//if (term.Eq(_S("BREATH")))
+                                                //if (term.Eq(_S("BREATH")))
                                                 {
                                                         uint32_t hit{25121561};
 
@@ -342,6 +375,7 @@ int main(int argc, char *argv[])
 
 #endif
                 delete is;
+#endif
         }
 	else
 	{
@@ -428,109 +462,190 @@ int main(int argc, char *argv[])
 		auto filter = std::make_unique<MatchedIndexDocumentsFilter>();
 
 
-#if 0
-		struct BPFilter final
-			: public MatchedIndexDocumentsFilter
+
+#if 1
+
+                struct BPFilter final
+                    : public MatchedIndexDocumentsFilter
                 {
+
+                        struct query_term_hits
+                        {
+                                const term_hit *it;
+                                const term_hit *end;
+				bool considered; 	// XXX: maybe there is a way to avoid the extra ivar
+                        };
+
+                        struct tracked
+                        {
+                                query_term_hits *th;
+                                uint16_t index;
+                                exec_term_id_t termID;
+                        };
+
+                        struct tracked_span
+                        {
+                                exec_term_id_t termID;
+                                tokenpos_t pos;
+                                uint16_t span;
+                        };
+
                         CRC32Generator crc32;
+                        query_term_hits qthStorage[Trinity::Limits::MaxQueryTokens];
+                        tracked allTracked[Trinity::Limits::MaxQueryTokens];
+                        query_term_hits *allQTH[Trinity::Limits::MaxQueryTokens];
+                        std::vector<tracked_span> trackedSpans;
 
                         ~BPFilter()
                         {
                                 SLog("CRC32 = ", crc32.get(), "\n");
                         }
 
-			void consider_sequence(matched_document &match)
-			{
-
-			}
-
-                        ConsiderResponse consider(matched_document &match) override final
+                        void consider_sequence(const tokenpos_t pos, const uint16_t queryIndex, uint16_t *const span)
                         {
-                                const auto cnt = match.matchedTermsCnt;
-                                const auto matchedTerms = match.matchedTerms;
-                                const auto qit = queryIndicesTerms;
-                                uint64_t bm{0};
+                                static constexpr bool trace{true};
 
-
-                                const auto adjacent_term_match = [&bm](const uint8_t idx) noexcept
+                                if (auto adjacent = queryIndicesTerms[queryIndex])
                                 {
-					SLog("Set ", idx, "\n");
-                                        bm |= uint64_t(3) << (idx - 1);
-                                };
+                                        const auto nextPos = pos + 1;
+                                        const auto nextQueryIndex = queryIndex + 1;
+                                        const auto cnt = adjacent->cnt;
 
-				match.sort_matched_terms_by_query_index();
+                                        if (trace)
+                                                SLog(adjacent->cnt, " at query index ", queryIndex, "\n");
 
-                                for (uint32_t i{0}; i != cnt; ++i)
-                                {
-                                        const auto mt = matchedTerms + i;
-                                        const auto qti = mt->queryTermInstances;
-                                        const auto qtiCnt = qti->cnt;
-                                        const auto hits = mt->hits;
-                                        const auto totalHits = hits->freq;
-                                        const auto allHits = hits->all;
-
-                                        for (uint32_t k{0}; k != totalHits; ++k)
+                                        for (uint32_t i{0}; i != cnt; ++i)
                                         {
-                                                const auto hit = allHits + k;
+                                                const auto termID = adjacent->termIDs[i];
 
-                                                if (const auto pos = hit->pos)
+                                                if (trace)
+                                                        SLog("CHECK term ", termID, " AT pos = ", pos, ":", dws->test(termID, pos), " (span = ", *span, ")\n");
+
+                                                if (dws->test(termID, pos))
                                                 {
-							SLog("For pos = ", pos, ", qtiCnt = ", qtiCnt, "\n");
-
-                                                        for (uint32_t j{0}; j != qtiCnt; ++j)
-                                                        {
-                                                                const auto inst = qti->instances + j;
-                                                                const auto idx = inst->index;
-                                                                uint32_t span;
-
-                                                                for (span = 1; span != 64; ++span)
-                                                                {
-                                                                        const auto adjacentPos{pos + span};
-                                                                        const auto adjacentIdx = idx + span;
-
-									SLog("span = ", span, ", adjacentPos = ", adjacentPos, "\n");
-
-                                                                        if (const auto adjacent = qit[adjacentIdx])
-                                                                        {
-                                                                                const auto cnt = adjacent->cnt;
-                                                                                bool anyMatches{false};
-
-										SLog(cnt, " adjacent terms\n");
-                                                                                for (uint32_t l{0}; l != cnt; ++l)
-                                                                                {
-                                                                                        const auto tid = adjacent->termIDs[l];
-
-                                                                                        if (dws->test(tid, adjacentPos)) 
-                                                                                        {
-												// unset later, not here
-												// because e.g world of warcraft
-												// worlds of warcrafts
-												// do not want to unset here
-												SLog("Matched (", tid, " ", adjacentPos, ")\n");
-                                                                                                anyMatches = true;
-                                                                                        }
-                                                                                }
-
-                                                                                if (!anyMatches)
-                                                                                        goto nextHit;
-                                                                        }
-                                                                        else
-									{
-										SLog("No adjacent terms\n");
-                                                                                goto nextHit;
-									}
-                                                                }
-                                                        }
+                                                        (*span)++;
+                                                        consider_sequence(nextPos, nextQueryIndex, span);
                                                 }
-                                                else
-                                                {
-                                                        // looks like this is a special hit. Check hit->payload
-                                                }
-nextHit: ;
+                                        }
+                                }
+                                else
+                                {
+                                        if (trace)
+                                                SLog("No queryIndicesTerms[", queryIndex, "]\n");
+                                }
+                        }
+
+                        ConsiderResponse consider(const matched_document &match) override final
+                        {
+                                static constexpr bool trace{true};
+                                const auto totalMatchedTerms = match.matchedTermsCnt;
+                                uint16_t rem{0}, remQTH{0};
+
+                                for (uint32_t i{0}; i != totalMatchedTerms; ++i)
+                                {
+                                        const auto mt = match.matchedTerms + i;
+                                        auto p = qthStorage + i;
+                                        const auto qi = mt->queryCtx;
+
+                                        p->it = mt->hits->all;
+                                        p->end = p->it + mt->hits->freq;
+					p->considered = false;
+
+                                        allQTH[remQTH++] = p;
+                                        for (uint32_t i{0}; i != qi->instancesCnt; ++i)
+                                        {
+                                                if (trace)
+                                                        SLog("Tracking ", mt->queryCtx->term.id, " ", mt->queryCtx->instances[i].index, "\n");
+                                                allTracked[rem++] = {p, qi->instances[i].index, qi->term.id};
                                         }
                                 }
 
+                                std::sort(allTracked, allTracked + rem, [](const auto &a, const auto &b) {
+                                        return a.index < b.index;
+                                });
 
+                                for (;;)
+                                {
+                                        trackedSpans.clear();
+
+                                        for (uint32_t i{0}; i < rem;)
+                                        {
+                                                const auto it = allTracked + i;
+						auto th = it->th;
+
+                                                if (unlikely(th->it == th->end))
+                                                {
+                                                        if (--rem == 0)
+                                                                goto l10;
+                                                        memmove(it, it + 1, (rem - i) * sizeof(allTracked[0]));
+                                                }
+                                                else
+                                                {
+                                                        if (const auto pos = th->it->pos)
+                                                        {
+                                                                uint16_t span{1};
+
+                                                                if (trace)
+                                                                        SLog(ansifmt::bold, ansifmt::color_blue, "START OFF AT index(", it->index, ") pos(", pos, ")", ansifmt::reset, "\n");
+
+                                                                consider_sequence(pos + 1, it->index + 1, &span);
+                                                                if (span != 1)
+                                                                        trackedSpans.push_back({it->termID, pos, span});
+                                                        }
+
+							if (th->considered)
+							{
+								// first termID to consider for this hit (if we have the same term in multiple query indices
+								// we need to guard against that)
+								th->considered = true;
+							}
+
+                                                        ++i;
+                                                }
+                                        }
+
+					// TODO: sort and filter only if required
+                                        std::sort(trackedSpans.begin(), trackedSpans.end(), [](const auto &a, const auto &b) {
+                                                return (a.termID < b.termID) || (a.termID == b.termID && b.span < a.span);
+                                        });
+
+                                        if (trace)
+                                        {
+                                                Print("===============================================\n");
+                                                for (const auto &it : trackedSpans)
+                                                        Print(it.termID, " ", " ", it.pos, " ", it.span, "\n");
+                                        }
+
+                                        for (const auto *p = trackedSpans.data(), *const e = p + trackedSpans.size(); p != e;)
+                                        {
+                                                const auto termID = p->termID;
+
+                                                if (trace)
+                                                        SLog("Accepting span ", p->span, "\n");
+                                                for (uint32_t i{0}; i != p->span; ++i)
+                                                        dws->unset(p->pos + i);
+
+                                                for (++p; p != e && p->termID == termID; ++p)
+                                                        continue;
+                                        }
+
+                                        for (uint32_t i{0}; i < remQTH;)
+                                        {
+                                                if (++allQTH[i]->it == allQTH[i]->end)
+                                                {
+                                                        if (--remQTH == 0)
+                                                                goto l10;
+                                                        memmove(allQTH + i, allQTH + i + 1, (rem - i) * sizeof(allQTH[0]));
+                                                }
+                                                else
+						{
+							allQTH[i]->considered = false;
+                                                        ++i;
+						}
+                                        }
+                                }
+
+                        l10:;
 
                                 return ConsiderResponse::Continue;
                         }
@@ -564,8 +679,8 @@ nextHit: ;
 
 
 		
-		exec_query<MatchedIndexDocumentsFilter>(q, &sources);
-		//exec_query<BPFilter>(q, &sources);
+		//exec_query<MatchedIndexDocumentsFilter>(q, &sources);
+		exec_query<BPFilter>(q, &sources);
 	}
 
         return 0;

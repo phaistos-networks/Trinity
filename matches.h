@@ -56,9 +56,9 @@ namespace Trinity
 	// you can e.g use this information to determine if adjacent terms in the original query are both matched
 	// e.g for query [apple iphone] (this is not a phrase), if we match both apple and iphone in a document, but
 	// in one document they are next to each other while on another they are far apart, we could rank that first document higher
-        struct query_term_instances final
+        struct query_term_ctx final
         {
-		// information about the term itself
+		// Information about the term itself
 		// this is mostly for debugging during score consideration, but having access to
 		// the distinct termID may be used to facilitate fancy tracking schemes
 		struct 
@@ -67,7 +67,7 @@ namespace Trinity
 			str8_t token;
 		} term;
 
-                uint8_t cnt; // i.e if your query is [world of warcraft mists of pandaria] then you will have 2 instances for token "of" in the query, with rep = 1
+                uint8_t instancesCnt; // i.e if your query is [world of warcraft mists of pandaria] then you will have 2 instances for token "of" in the query, with rep = 1
                 struct instance_struct
                 {
                         uint16_t index;
@@ -78,11 +78,8 @@ namespace Trinity
 
         struct matched_query_term final
         {
-                // Every instance of the term in the query
-                // the token may be used more than once
-                // and each time a different rep/index may be set
-                const query_term_instances *queryTermInstances;	// see runtime_ctx.originalQueryTermInstances
-                term_hits *hits;     				// all hits in current document for this term. See runtime_ctx.termHits
+                const query_term_ctx *queryCtx;
+                term_hits *hits; 
         };
 
 
@@ -93,14 +90,6 @@ namespace Trinity
                 docid_t id; // document ID
                 uint16_t matchedTermsCnt;
                 matched_query_term *matchedTerms;
-
-		// matchedTerms[] are in not in a particular order when passed to consider()
-		// and so you almost never get them in order they appear in the original query
-		// This handy utility method will sort them so that they are in order they appear in the query
-		// which makes trivial to perform proximity checks (e.g dws.test(nextWordInQuery, pos+1))
-		// It is optimised to take as little time as possible, using sort networks, insertion sort and std::sort depending on the
-		// value of matchedTermsCnt
-		void sort_matched_terms_by_query_index();
         };
 
 	struct MatchedIndexDocumentsFilter
@@ -120,8 +109,7 @@ namespace Trinity
 		};
 
 		// You can query_term_instances::term.id with dws
-		// `match` is not const because you may want to match.sort_matched_terms_by_query_index()
-		virtual ConsiderResponse consider(matched_document &match)
+		virtual ConsiderResponse consider(const matched_document &match)
 		{
 			return ConsiderResponse::Continue;
 		}

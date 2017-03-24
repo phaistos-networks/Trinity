@@ -219,7 +219,7 @@ namespace // static/local this module
                         if (trace)
                                 SLog("Capturing matched term ", termID, "\n");
 
-                        if (const auto qti = originalQueryTermInstances[termID])
+                        if (const auto qti = originalQueryTermCtx[termID])
                         {
                                 // If this not nullptr, it means this was not in a NOT branch so we should track it
                                 // We exclude all tokens in NOT rhs branches when we collect the original query tokens
@@ -233,7 +233,7 @@ namespace // static/local this module
                                                 SLog("Not captured yet, capturing now [", qti->term.token, "]\n");
 
                                         curDocQueryTokensCaptured[termID] = curDocSeq;
-                                        p->queryTermInstances = qti;
+                                        p->queryCtx = qti;
                                         p->hits = th;
                                 }
                                 else if (trace)
@@ -376,7 +376,7 @@ namespace // static/local this module
                 uint16_t curDocSeq;
 
                 // indexed by termID
-                query_term_instances **originalQueryTermInstances;
+                query_term_ctx **originalQueryTermCtx;
 
                 struct decode_ctx_struct final
                 {
@@ -2442,9 +2442,9 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                 // to capture the original query instances before we optimise
                 //
                 // We need access to that information for scoring documents -- see matches.h
-                rctx.originalQueryTermInstances = (query_term_instances **)rctx.allocator.Alloc(sizeof(query_term_instances *) * maxQueryTermIDPlus1);
+                rctx.originalQueryTermCtx = (query_term_ctx **)rctx.allocator.Alloc(sizeof(query_term_ctx *) * maxQueryTermIDPlus1);
 
-                memset(rctx.originalQueryTermInstances, 0, sizeof(query_term_instances *) * maxQueryTermIDPlus1);
+                memset(rctx.originalQueryTermCtx, 0, sizeof(query_term_ctx *) * maxQueryTermIDPlus1);
                 std::sort(originalQueryTokenInstances.begin(), originalQueryTokenInstances.end(), [](const auto &a, const auto &b) { return terms_cmp(a.token.data(), a.token.size(), b.token.data(), b.token.size()) < 0; });
                 for (const auto *p = originalQueryTokenInstances.data(), *const e = p + originalQueryTokenInstances.size(); p != e;)
                 {
@@ -2462,9 +2462,9 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                 } while (++p != e && p->token == token);
 
                                 const auto cnt = collected.size();
-                                auto p = (query_term_instances *)rctx.allocator.Alloc(sizeof(query_term_instances) + cnt * sizeof(query_term_instances::instance_struct));
+                                auto p = (query_term_ctx *)rctx.allocator.Alloc(sizeof(query_term_ctx) + cnt * sizeof(query_term_ctx::instance_struct));
 
-                                p->cnt = cnt;
+                                p->instancesCnt = cnt;
                                 p->term.id = termID;
                                 p->term.token = token;
 
@@ -2481,7 +2481,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                         queryInstanceTermIDsTracker.push_back({termID, it->index});
                                 }
 
-                                rctx.originalQueryTermInstances[termID] = p;
+                                rctx.originalQueryTermCtx[termID] = p;
                         }
                         else
                         {
@@ -2584,7 +2584,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 
                                 for (uint16_t i{0}; i != n; ++i)
                                 {
-                                        const auto termID = allMatchedTerms[i].queryTermInstances->term.id;
+                                        const auto termID = allMatchedTerms[i].queryCtx->term.id;
 
                                         rctx.materialize_term_hits(termID);
                                 }

@@ -98,16 +98,6 @@ namespace Trinity
 			return positions[pos].docSeq == curSeq && positions[pos].termID == termID;
 		}
 
-		inline bool test_and_unset(const exec_term_id_t termID, const tokenpos_t pos) noexcept
-                {
-                        if (positions[pos].docSeq == curSeq && positions[pos].termID == termID)
-                        {
-                                positions[pos].docSeq = 0;
-                                return true;
-                        }
-                        else
-                                return false;
-                }
 
 #else
 		/* 
@@ -139,6 +129,13 @@ namespace Trinity
 			return ((uint32_t(termID) << 16) | curSeq) == *(uint32_t *)&positions[pos];
 		}
 #endif
+
+
+		// This can facilitate tracking sequences(e.g 2+ qeury terms matches in a document) of a MatchedIndexDocumentsFilter::consider()  impl.
+		inline void unset(const tokenpos_t pos) noexcept
+                {
+                        positions[pos].docSeq = 0;
+                }
 
 		// We can probably just sort all phrase terms by freq asc
 		// and iterate across all hits, and for each hit, see if it is set
