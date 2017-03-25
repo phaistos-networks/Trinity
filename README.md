@@ -1,7 +1,1 @@
-`TRINITY`  (trinity of)
-
-1. Query
-2. Index
-3. Search
-
-This is a fast, elegant and modern search engine infrastructure.
+Trinity is a modern C++ information-retrieval library for building queries, indexing documents and other content, running queries and scoring documents matching them. It facilitates the development of search engines and other systems and applications that depend on that functionality, and has been designed with simplicity, performance, modularity and extensibility, and elegance in mind. [Read More](https://github.com/phaistos-networks/Trinity/wiki/Trinity)
