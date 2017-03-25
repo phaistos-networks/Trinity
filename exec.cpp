@@ -2385,11 +2385,14 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                 for (const auto it : collected)
                 {
                         const uint8_t rep = it->size == 1 ? it->rep : 1;
-			auto toNextSpan = it->toNextSpan;
+			const auto toNextSpan = it->toNextSpan;
                         const auto flags = it->flags;
 
-                        for (uint16_t pos{it->index}, i{0}; i != it->size; ++i, ++pos, ++toNextSpan)
-                                originalQueryTokenInstances.push_back({it->terms[i].token, pos, rep, flags, toNextSpan});
+                        for (uint16_t pos{it->index}, i{0}; i != it->size; ++i, ++pos)
+			{
+				SLog("Collected instance: ", it->terms[i].token, " index:", pos, " rep:", rep, " toNextSpan:", i == (it->size - 1) ? toNextSpan : 1, "\n");
+                                originalQueryTokenInstances.push_back({it->terms[i].token, pos, rep, flags, uint8_t(i == (it->size - 1) ? toNextSpan : 1)});	 // need to be careful to get this right for phrases
+                        }
                 }
         }
 

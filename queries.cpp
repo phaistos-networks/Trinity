@@ -955,7 +955,8 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx)
                 ctx.tokensCnt += n->p->size;
 }
 
-static void assign_query_indices(ast_node *const n, uint32_t &nextIndex, std::vector<phrase *> phrasesStack, phrase *&lastPhrase)
+// This is somewhat complicated because it takes into account phrases and OR groups
+static void assign_query_indices(ast_node *const n, uint32_t &nextIndex, std::vector<std::vector<phrase *> *> &phrasesStack, phrase *&lastPhrase)
 {
         if (n->is_unary())
         {
@@ -978,27 +979,40 @@ static void assign_query_indices(ast_node *const n, uint32_t &nextIndex, std::ve
                 if (n->binop.op == Operator::OR)
                 {
 			// this is a bit more involved because of the semantics we are trying to enforce
+			// re: OR groups and phrases
                         const auto saved{nextIndex};
+			auto u = std::make_unique<std::vector<phrase *>>();
+
+			phrasesStack.push_back(u.get());
 
                         assign_query_indices(lhs, nextIndex, phrasesStack, lastPhrase);
 			SLog("LAST LHS:", lastPhrase->terms[0].token, "\n");
 
-			phrasesStack.push_back(lastPhrase);
+			const auto maxL{nextIndex};
+
+			for (auto it : phrasesStack) it->push_back(lastPhrase);
+
                         nextIndex = saved;
 	                assign_query_indices(rhs, nextIndex, phrasesStack, lastPhrase);
 
-			phrasesStack.push_back(lastPhrase);
+			const auto maxR{nextIndex};
+			for (auto it : phrasesStack) it->push_back(lastPhrase);
 
-			SLog("LAST RHS:", lastPhrase->terms[0].token, "\n");
+			SLog("LAST RHS:", lastPhrase->terms[0].token, " maxL = ", maxL, ", ", maxR, "\n");
 
-			Print("============================================\n");
-			for (const auto it : phrasesStack)
+			nextIndex = std::max(maxL, maxR);
+
+			Print("============================================ ", phrasesStack.size(), "\n");
+			for (auto v : phrasesStack)
                         {
-                                it->toNextSpan = nextIndex - it->index;
-                                SLog("Assign to ", it->index, " ", it->terms[0].token, " ", it->toNextSpan, "\n");
+                                for (const auto it : *v)
+                                {
+                                        it->toNextSpan = nextIndex - it->index;
+                                        SLog("Assign to ", it->index, " token ", it->terms[0].token, " toNextSpan = ", it->toNextSpan, "\n");
+                                }
                         }
 
-                        phrasesStack.pop_back();
+			phrasesStack.pop_back();
                 }
 		else if (n->binop.op == Operator::NOT)
 		{
@@ -1093,10 +1107,11 @@ ast_node *normalize_root(ast_node *root)
 		// See Trinity::phrase decl. comments 
                 uint32_t nextIndex{0};
 		phrase *lastPhrase{nullptr};
-		std::vector<phrase *> phrasesStack;
+		std::vector<std::vector<phrase *> *> phrasesStack;
 
                 assign_query_indices(root, nextIndex, phrasesStack, lastPhrase);
 		Print("AFTER ASSIGNING INDICES:", *root, "\n"); 
+		exit(0);
         }
 
         return root;

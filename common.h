@@ -22,8 +22,7 @@ namespace Trinity
 
 	using tokenpos_t = uint16_t;
 
-
-        static inline int32_t terms_cmp(const char *a, const uint8_t aLen, const char *b, const uint8_t bLen)
+        static inline int32_t terms_cmp(const str8_t::value_type *a, const uint8_t aLen, const str8_t::value_type *b, const uint8_t bLen)
         {
                 // Your impl. may ignore case completely so that you can
                 // index and query without having to care for distinctions between lower and upper case (e.g use Text::StrnncasecmpISO88597() )
