@@ -1,4 +1,6 @@
 // A codec based on Google's "Challenges in Building Large-Scale Information Retrieval Systems"
+// Not using rice/gamma encoding here, though it should be trivial to support that encoding
+// See https://github.com/powturbo/TurboPFor for Elias Fano encoding (for other Elias encoding, Rice, gamma etc, the impl. is trivial)
 #pragma once
 #include "codecs.h"
 

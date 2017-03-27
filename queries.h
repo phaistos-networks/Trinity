@@ -79,6 +79,11 @@ namespace Trinity
                         type = Type::Dummy;
                 }
 
+                constexpr bool is_binop() const noexcept
+                {
+                        return type == Type::BinOp;
+                }
+
                 constexpr bool is_unary() const noexcept
                 {
                         return type == Type::Phrase || type == Type::Token;
@@ -438,6 +443,7 @@ namespace Trinity
 }
 
 void PrintImpl(Buffer &b, const Trinity::ast_node &n);
+void PrintImpl(Buffer &b, const Trinity::phrase &);
 inline void PrintImpl(Buffer &b, const Trinity::query &q)
 {
         if (q.root)

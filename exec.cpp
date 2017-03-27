@@ -1551,7 +1551,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
 {
 #define set_dirty() do { if (traceCompile) SLog("HERE\n"); updates = true;} while (0)
 
-	SLog("EXPANDING:", n, "\n");
+	//SLog("EXPANDING:", n, "\n");
 
         if (n.fp == consttrueexpr_impl)
         {

@@ -502,7 +502,7 @@ int main(int argc, char *argv[])
 
                         void consider_sequence(const tokenpos_t pos, const uint16_t queryIndex, uint16_t *__restrict__ const span)
                         {
-                                static constexpr bool trace{false};
+                                static constexpr bool trace{true};
 
                                 if (auto adjacent = queryIndicesTerms[queryIndex])
                                 {
@@ -510,7 +510,7 @@ int main(int argc, char *argv[])
                                         const auto cnt = adjacent->cnt;
 
                                         if (trace)
-                                                SLog(adjacent->cnt, " at query index ", queryIndex, "\n");
+                                                SLog(adjacent->cnt, " adjacent at query index ", queryIndex, "\n");
 
                                         for (uint32_t i{0}; i != cnt; ++i)
                                         {
@@ -540,7 +540,7 @@ int main(int argc, char *argv[])
                         ConsiderResponse consider(const matched_document &match) override final
                         {
                                 //static constexpr bool trace{false};
-				const bool trace=match.id == 2154901776;
+				const bool trace=match.id == 2152925656;
                                 const auto totalMatchedTerms{match.matchedTermsCnt};
                                 uint16_t rem{0}, remQTH{0};
 				uint32_t score{0};
@@ -572,7 +572,7 @@ int main(int argc, char *argv[])
 					
 					if (trace)
                                         {
-                                                SLog("FOR ", qi->term.token, "\n");
+                                                SLog("FOR [", qi->term.token, "] ", qi->term.id, "\n");
                                                 for (uint32_t i{0}; i != mt->hits->freq; ++i)
                                                 {
                                                         Print("POSITION:", mt->hits->all[i].pos, "\n");
