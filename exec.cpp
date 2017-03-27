@@ -192,8 +192,6 @@ namespace // static/local this module
                         auto *const __restrict__ dec = decode_ctx.decoders[termID];
                         const auto docHits = dec->curDocument.freq; // see Codecs::Decoder::curDocument comments
 
-			//SLog(ansifmt::bold, ansifmt::color_blue, "MATERIALISING FOR ", termID, " (", curDocID, ")", ansifmt::reset, "\n");
-
                         th->docSeq = curDocSeq;
                         th->set_freq(docHits);
                         dec->materialize_hits(termID, &docWordsSpace, th->all);
@@ -922,6 +920,8 @@ struct reorder_ctx final
 
 static void reorder(ast_node *n, reorder_ctx *const ctx)
 {
+	static constexpr bool trace{false};
+
         if (n->type == ast_node::Type::UnaryOp)
                 reorder(n->unaryop.expr, ctx);
         else if (n->type == ast_node::Type::ConstTrueExpr)
@@ -939,7 +939,8 @@ static void reorder(ast_node *n, reorder_ctx *const ctx)
                 if (rhs->is_unary() && rhs->p->size == 1 && lhs->type == ast_node::Type::BinOp && lhs->binop.normalized_operator() == n->binop.normalized_operator() && lhs->binop.rhs->is_unary() && lhs->binop.rhs->p->size > 1)
                 {
                         // (ipad OR "apple ipad") OR ipod => (ipad OR ipod) OR "apple ipad"
-                        SLog("rolling:", *rhs, ",", *lhs->binop.rhs, "\n");
+			if (trace)
+	                        SLog("rolling:", *rhs, ",", *lhs->binop.rhs, "\n");
                         std::swap(*rhs, *lhs->binop.rhs);
                         ctx->dirty = true;
                         return;
@@ -988,6 +989,7 @@ static void reorder(ast_node *n, reorder_ctx *const ctx)
                                         // => (pizza NOT onions) AND (sf OR "san francisco")
                                         const auto saved = lhs->binop.op;
 
+					if (trace)
                                         SLog("here\n");
 
                                         lhs->binop.rhs = rhs;
@@ -1551,8 +1553,6 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
 {
 #define set_dirty() do { if (traceCompile) SLog("HERE\n"); updates = true;} while (0)
 
-	//SLog("EXPANDING:", n, "\n");
-
         if (n.fp == consttrueexpr_impl)
         {
                 auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
@@ -2052,6 +2052,7 @@ static void capture_leader(const exec_node n, std::vector<exec_node> *const out,
 
 static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allocator &a, std::vector<exec_term_id_t> *leaderTermIDs)
 {
+	static constexpr bool traceMetrics{false};
         std::vector<exec_term_id_t> terms;
         std::vector<const runtime_ctx::phrase *> phrases;
         std::vector<exec_node> stack;
@@ -2065,12 +2066,14 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
         auto root = compile_node(n, rctx, a);
         bool updates;
 
+	if (traceMetrics)
 	SLog(duration_repr(Timings::Microseconds::Since(before)), " to compile\n");
 
         if (root.fp == constfalse_impl)
         {
                 if (traceCompile)
                         SLog("Nothing to do, compile_node() compiled away the expr.\n");
+
                 return {constfalse_impl, {}};
         }
 
@@ -2094,6 +2097,8 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                         return {constfalse_impl, {}};
                 }
         } while (updates);
+
+	if (traceMetrics)
 	SLog(duration_repr(Timings::Microseconds::Since(before)), " to expand\n");
 
         // Third pass
@@ -2166,12 +2171,16 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                         stack.push_back(ctx->expr);
                 }
         } while (stack.size());
+	
+	if (traceMetrics)
 	SLog(duration_repr(Timings::Microseconds::Since(before)), " to sort runs, ", dotnotation_repr(totalNodes), " exec_nodes\n");
 
         // Fourth Pass
         // Reorder logicaland_impl nodes (lhs, rhs) so that the least expensive to evaluate is always found in the lhs branch
 	before = Timings::Microseconds::Tick();
         root = reorder_execnodes(root, rctx);
+
+	if (traceMetrics)
 	SLog(duration_repr(Timings::Microseconds::Since(before)), " to reorder exec nodes\n");
 
 
@@ -2254,6 +2263,8 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
 
         std::sort(leaderTermIDs->begin(), leaderTermIDs->end());
         leaderTermIDs->resize(std::unique(leaderTermIDs->begin(), leaderTermIDs->end()) - leaderTermIDs->begin());
+
+	if (traceMetrics)
 	SLog(duration_repr(Timings::Microseconds::Since(before)), " to capture leaders\n");
 
         if (traceCompile)
@@ -2274,6 +2285,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
 		rctx.prepare_decoder(termID);
 	}
 
+	if (traceMetrics)
 	SLog(duration_repr(Timings::Microseconds::Since(before)), " ", Timings::Microseconds::ToMillis(Timings::Microseconds::Since(before)), " ms  to initialize all decoders ", rctx.tctxMap.size(), "\n");
 
         return root;
@@ -2285,6 +2297,7 @@ static exec_node compile_query(ast_node *root, runtime_ctx &rctx, std::vector<ex
 
         if (!root)
         {
+		if (traceCompile)
                 SLog("No root node\n");
                 return {constfalse_impl, {}};
         }
@@ -2319,6 +2332,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 
         if (!in)
         {
+		if (traceCompile)
                 SLog("No root node\n");
                 return;
         }
@@ -2330,6 +2344,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
         // Normalize just in case
         if (!q.normalize())
         {
+		if (traceCompile)
                 SLog("No root node after normalization\n");
                 return;
         }
@@ -2390,12 +2405,15 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 
                         for (uint16_t pos{it->index}, i{0}; i != it->size; ++i, ++pos)
 			{
+				if (traceCompile)
 				SLog("Collected instance: ", it->terms[i].token, " index:", pos, " rep:", rep, " toNextSpan:", i == (it->size - 1) ? toNextSpan : 1, "\n");
+
                                 originalQueryTokenInstances.push_back({it->terms[i].token, pos, rep, flags, uint8_t(i == (it->size - 1) ? toNextSpan : 1)});	 // need to be careful to get this right for phrases
                         }
                 }
         }
 
+	if (traceCompile)
         SLog("Compiling:", q, "\n");
 
         runtime_ctx rctx(idxsrc);
@@ -2404,10 +2422,12 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 
         const auto rootExecNode = compile_query(q.root, rctx, &leaderTermIDs);
 
+	if (traceCompile)
         SLog(duration_repr(Timings::Microseconds::Since(before)), " to compile\n");
 
         if (unlikely(rootExecNode.fp == constfalse_impl))
         {
+		if (traceCompile)
                 SLog("Nothing to do\n");
                 return;
         }
@@ -2493,6 +2513,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                         {
                                 // this original query token is not used in the optimised query
 
+				if (traceCompile)
                                 SLog("Ignoring ", token, "\n");
 
                                 do
@@ -2520,8 +2541,6 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                         {
                                 const auto pair = p->second;
 
-				//SLog("pair = ", pair, "\n");
-
                                 list.push_back(pair);
                                 do
                                 {
@@ -2542,6 +2561,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
         rctx.matchedDocument.matchedTerms = (matched_query_term *)rctx.allocator.Alloc(sizeof(matched_query_term) * maxQueryTermIDPlus1);
         rctx.curDocSeq = UINT16_MAX; // IMPORTANT
 
+	if (traceCompile)
         SLog("RUNNING\n");
 
         uint32_t matchedDocuments{0};
@@ -2585,7 +2605,6 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                         // and it it returns true, compute the document's score
                         rctx.reset(docID);
 
-                        //static size_t n{0}; SLog("CONSIDERING ", docID, " ", ++n, "\n");
 
                         if (eval(rootExecNode, rctx))
                         {
@@ -2634,5 +2653,6 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 l1:
         const auto duration = Timings::Microseconds::Since(start);
 
+	if (traceCompile)
         SLog(ansifmt::bold, ansifmt::color_red, dotnotation_repr(matchedDocuments), " matched in ", duration_repr(duration), ansifmt::reset, " (", Timings::Microseconds::ToMillis(duration), " ms)\n");
 }

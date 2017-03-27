@@ -28,7 +28,7 @@ void Trinity::Codecs::Google::Encoder::begin_document(const docid_t documentID)
 	require(documentID);
 	if (unlikely(documentID <= lastCommitedDocID))
 	{
-		SLog("Unexpected documentID(", documentID, ") <= lastCommitedDocID(", lastCommitedDocID, ")\n");
+		Print("Unexpected documentID(", documentID, ") <= lastCommitedDocID(", lastCommitedDocID, ")\n");
 		std::abort();
 	}
 
