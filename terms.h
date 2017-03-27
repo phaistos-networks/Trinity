@@ -1,30 +1,29 @@
 #pragma once
+#include "codecs.h"
+#include <compress.h>
 #include <switch.h>
 #include <switch_mallocators.h>
 #include <switch_vector.h>
-#include <compress.h>
-#include "codecs.h"
-
 
 // Prefic compressed terms dictionary
 // Maps from str8_t=>term_index_ctx
 namespace Trinity
 {
 
-// We can no longer ommit (term, term_index_ctx) from the terms data file and keep
-// that just in the index, beause while it works great for lookups, it means we can't trivially iterate
-// over all terms in the terms data file (see terms_data_view struct), and this is important for merging segments.
-// For other applications that do not need to access to all terms, one couild get those structures, make sure TRINITY_TERMS_FAT_INDEX is defined
-// and use it .
-//#define TRINITY_TERMS_FAT_INDEX 
-	struct terms_skiplist_entry final
+        // We can no longer ommit (term, term_index_ctx) from the terms data file and keep
+        // that just in the index, beause while it works great for lookups, it means we can't trivially iterate
+        // over all terms in the terms data file (see terms_data_view struct), and this is important for merging segments.
+        // For other applications that do not need to access to all terms, one couild get those structures, make sure TRINITY_TERMS_FAT_INDEX is defined
+        // and use it .
+        //#define TRINITY_TERMS_FAT_INDEX
+        struct terms_skiplist_entry final
         {
                 str8_t term;
 #ifdef TRINITY_TERMS_FAT_INDEX
-                uint32_t blockOffset; 	// offset in the terms datafile
-                term_index_ctx tctx;	// payload
+                uint32_t blockOffset; // offset in the terms datafile
+                term_index_ctx tctx;  // payload
 #else
-                uint32_t blockOffset; 	// offset in the terms datafile
+                uint32_t blockOffset; // offset in the terms datafile
 #endif
         };
 
@@ -34,27 +33,26 @@ namespace Trinity
 
         void pack_terms(std::vector<std::pair<str8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index);
 
-	// An abstract index source terms access wrapper
-	// For segments, you will likely use the prefix-compressed terms infra. but you may have
-	// an index source that is e.g storing all those terms in an in-memory std::unordered_map<> or whatever else
-	// for some reason and you can just write an IndexSourceTermsView subclass to access that.
-	//
-	// IndexSourceTermsView subclasses are used while merging index sources
-	//
-	// see merge.h
-	struct IndexSourceTermsView
-	{
-		virtual std::pair<str8_t, term_index_ctx> cur() = 0;
+        // An abstract index source terms access wrapper
+        // For segments, you will likely use the prefix-compressed terms infra. but you may have
+        // an index source that is e.g storing all those terms in an in-memory std::unordered_map<> or whatever else
+        // for some reason and you can just write an IndexSourceTermsView subclass to access that.
+        //
+        // IndexSourceTermsView subclasses are used while merging index sources
+        //
+        // see merge.h
+        struct IndexSourceTermsView
+        {
+                virtual std::pair<str8_t, term_index_ctx> cur() = 0;
 
-		virtual void next() = 0;
+                virtual void next() = 0;
 
-		virtual bool done() = 0;
-	};
+                virtual bool done() = 0;
+        };
 
-
-	// iterator access to the terms data
-	// this is very useful for merging terms dictionaries (see IndexSourcePrefixCompressedTermsView)
-	struct terms_data_view final
+        // iterator access to the terms data
+        // this is very useful for merging terms dictionaries (see IndexSourcePrefixCompressedTermsView)
+        struct terms_data_view final
         {
               public:
                 struct iterator final
@@ -74,7 +72,7 @@ namespace Trinity
                             : p{ptr}
                         {
                                 cur.term.p = termStorage;
-				cur.term.len = 0;
+                                cur.term.len = 0;
                         }
 
                         inline bool operator==(const iterator &o) const noexcept
@@ -135,9 +133,9 @@ namespace Trinity
                 }
         };
 
-	// A specialised IndexSourceTermsView for accessing prefix-encoded terms dictionaries
-	struct IndexSourcePrefixCompressedTermsView final
-		: public IndexSourceTermsView
+        // A specialised IndexSourceTermsView for accessing prefix-encoded terms dictionaries
+        struct IndexSourcePrefixCompressedTermsView final
+            : public IndexSourceTermsView
         {
               private:
                 terms_data_view::iterator it, end;
@@ -164,37 +162,36 @@ namespace Trinity
                 }
         };
 
-	//A handy wrapper for memory mapped terms data and a skiplist from the terms index
+        //A handy wrapper for memory mapped terms data and a skiplist from the terms index
         class SegmentTerms final
         {
-		private:
-			Switch::vector<terms_skiplist_entry> skiplist;
-			simple_allocator allocator;
-			range_base<const uint8_t *, uint32_t> termsData;
+              private:
+                Switch::vector<terms_skiplist_entry> skiplist;
+                simple_allocator allocator;
+                range_base<const uint8_t *, uint32_t> termsData;
 
+              public:
+                SegmentTerms(const char *segmentBasePath);
 
-                      public:
-			SegmentTerms(const char *segmentBasePath);
+                ~SegmentTerms()
+                {
+                        if (auto ptr = (void *)(termsData.offset))
+                                munmap(ptr, termsData.size());
+                }
 
-			~SegmentTerms()
-			{
-                                if (auto ptr = (void *)(termsData.offset))
-                                        munmap(ptr, termsData.size());
-			}
+                term_index_ctx lookup(const str8_t term)
+                {
+                        return lookup_term(termsData, term, skiplist);
+                }
 
-			term_index_ctx lookup(const str8_t term)
-			{
-				return lookup_term(termsData, term, skiplist);
-			}
+                auto terms_data_access() const
+                {
+                        return terms_data_view(termsData);
+                }
 
-			auto terms_data_access() const
-			{ 
-				return terms_data_view(termsData);
-			}
-
-			auto new_terms_view() const
-			{
-				return new IndexSourcePrefixCompressedTermsView(termsData);
-			}
-	};
+                auto new_terms_view() const
+                {
+                        return new IndexSourcePrefixCompressedTermsView(termsData);
+                }
+        };
 }

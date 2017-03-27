@@ -12,6 +12,10 @@ namespace Trinity
 	// a vector with the match filters/results of each execution.
 	//
 	// You are expected to merge/reduce/blend them.
+	// It's trivial to do this in parallel using e.g std::async() or any other means of scheduling exec_query() for each index source in 
+	// a different thread. Such a utility method will be provided in subsequent releases.
+	// Note that execution of sources does not depend on state of other sources - they are isolated so parallel processing them requires
+	// no coordination.
 	template<typename T, typename...Arg>
 		std::vector<std::unique_ptr<MatchedIndexDocumentsFilter>> exec_query(const query &in, IndexSourcesCollection *collection, Arg&&...args)
 		{

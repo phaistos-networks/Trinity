@@ -102,6 +102,8 @@ namespace Trinity
                         commit_document_impl(proxy, false);
                 }
 
+		// Use this method instead of insert() when you are updating a document.
+		// If you are not, you should (but are not required to) use insert()
                 void update(const document_proxy &proxy)
                 {
                         commit_document_impl(proxy, true);

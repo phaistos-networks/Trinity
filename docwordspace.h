@@ -1,11 +1,3 @@
-/*
-We could have tracked `query index` in DocWordsSpace instead of `term IDs`, which would have made it trivial to perform proximity checks in MatchedIndexDocumentsFilter::consider(), but the downsides make it a bad ideal;
-- slower Trinity::Codecs::Decoder::materialize_hits() 
-- require a more elaborate materialize_hits() signature
-- slower phrasematch_impl()
-Given the above, and that the fact that not all consider() implementations will perform proximity checks for score computations, we settled for an alternative which doesn't require any changes, and accept that proximity checks are only trivially harder to perform. 
-We will simply identify all distinct termIDs (usually just one) for each query index and will look up the termIDs in that list.
-*/
 #pragma once
 #include "common.h"
 #include "runtime.h"
@@ -15,8 +7,8 @@ namespace Trinity
 	class DocWordsSpace final
         {
               private:
-	      	// just 4 bytes/position
-		// we could have separated docSeq and termID into different arrays(as in, not in the same struct) so that reset()
+	      	// Just 4 bytes/position.
+		// We could have separated docSeq and termID into different arrays(as in, not in the same struct) so that reset()
 		// would only memset() the docSeq array(2 bytes vs 4 bytes) * maxPos
 		// but that 'd make access somewhat slower for set() and test() because we 'd get more cache misses so we optimise for it
                 struct position
@@ -31,7 +23,7 @@ namespace Trinity
 
 
               public:
-		// allocating max + Trinity::Limits::MaxPhraseSize, because that is the theoritical maximum phrase size
+		// Allocating max + Trinity::Limits::MaxPhraseSize, because that is the theoritical maximum phrase size
 		// and if we are going to test starting from maxPos extending to 10 positions ahead, we want to
 		// make sure we won't read outside positions. 
 		// The extra positions will be always initialized to 0 and we won't need to reset those in reset()

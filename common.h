@@ -12,8 +12,11 @@ namespace Trinity
         using str8_t = strwlen8_t;
         using str32_t = strwlen32_t;
 
-	// you should be able to set docid_t to uint64_t, recompile and get 64bit document identifiers - though it hasn't been tested and there may be edge cases
+	// You should be able to set docid_t to uint64_t, recompile and get 64bit document identifiers - though it hasn't been tested and there may be edge cases
 	// where this won't work but will likely be trivial to fix/implement whatever's required(Please file a GH issue)
+	//
+	// The bundled codecs(google, lucene) will not properly work if docid_it 64bits or longer, so you 'd have to modify them or create a new codec
+	// that supports longer document IDs in the index.(should be simple enough)
 	using docid_t = uint32_t;
 
 	// magic value; signifies end of document

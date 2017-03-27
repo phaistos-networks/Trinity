@@ -956,13 +956,15 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx)
 }
 
 // This is somewhat complicated because it takes into account phrases and OR groups
-struct query_assign_ctx
+// In fact, this here function took longer than to implement than most if not all other functions and systems here. It just didn't feel right until it did.
+struct query_assign_ctx final
 {
 	uint32_t nextIndex;
         std::vector<std::vector<phrase *> *> stack;
 };
 
 #if 0
+// debug impl.
 static void assign_query_indices(ast_node *const n, query_assign_ctx &ctx, phrase *&firstPhrase, phrase *&lastPhrase)
 {
         if (n->is_unary())
@@ -1089,14 +1091,10 @@ static void assign_query_indices(ast_node *const n, query_assign_ctx &ctx)
                 }
                 else if (op == Operator::NOT)
                 {
-                        if (op == Operator::NOT)
-                        {
-                                // We do not care for the RHS(not)
-                                // but we need to advance nextIndex by 4 so that we won't consider whatever's on the RHS adjacent to whatever was before the LHS
-                                ctx.nextIndex += 4;
-                        }
-
-                        assign_query_indices(rhs, ctx);
+                        // We do not care for the RHS(not)
+                        // but we need to advance nextIndex by 4 so that we won't consider whatever's on the RHS adjacent to whatever was before the LHS
+                        assign_query_indices(lhs, ctx);
+                        ctx.nextIndex += 4;
                 }
                 else
                 {
@@ -1194,8 +1192,8 @@ ast_node *normalize_root(ast_node *root)
 		//
 		// This is very tricky because of OR expressions, and because multiple OR expresions starting from the same 'index' can be of variable length in terms of tokens
 		// we need to also track a skip/jump value.
+		//
 		// See Trinity::phrase decl. comments 
-
 		query_assign_ctx ctx;
 
 		ctx.nextIndex = 0;
@@ -1206,11 +1204,13 @@ ast_node *normalize_root(ast_node *root)
                 assign_query_indices(root, ctx);
 #endif
 
+#if 0
 		if (traceParser || true)
 		{
 			Print("AFTER ASSIGNING INDICES:", *root, "\n"); 
 			exit(0);
 		}
+#endif
 
         }
 

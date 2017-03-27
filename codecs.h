@@ -74,7 +74,7 @@ namespace Trinity
 
 			// The segment name should be the generation
 			// e.g for path Trinity/Indices/Wikipedia/Segments/100
-			// the generation is extracted as 100
+			// the generation is extracted as 100, but, again, this is codec specific
                         IndexSession(const char *bp)
 				: basePath{bp}
 			{
@@ -86,7 +86,7 @@ namespace Trinity
 
 			}
 
-			// handy utility function
+			// Handy utility function
 			// see SegmentIndexSession::commit()
 			void persist_terms(std::vector<std::pair<str8_t, term_index_ctx>> &);
 
@@ -103,8 +103,8 @@ namespace Trinity
 			virtual strwlen8_t codec_identifier() = 0;
 
 			
-			// constructs a new encoder 
-			// handy utility function
+			// Constructs a new encoder 
+			// Handy utility function
 			virtual Encoder *new_encoder() = 0;
 
 
@@ -286,7 +286,7 @@ namespace Trinity
 			// something other specific to the codec
 			const uint8_t *const indexPtr;
 
-			// utility function: returns an initialised new decoder for a term's posting list
+			// Utility function: returns an initialised new decoder for a term's posting list
 			// Some codecs(e.g lucene's) may need to access the filesystem and/or other codec specific state
 			// AccessProxy faciliates that (this is effectively a pointer to self)
 			//

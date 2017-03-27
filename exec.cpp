@@ -2514,8 +2514,6 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                 {
 			const auto idx = p->first;
 
-			SLog("idx = ", idx, "\n");
-
 			// unique pairs(token, toNextSpan) for idx
                         list.clear();
                         do

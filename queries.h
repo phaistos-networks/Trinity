@@ -20,6 +20,7 @@ namespace Trinity
 
         struct phrase;
 
+	// A query is an ASTree
         struct ast_node final
         {
                 union {
@@ -79,17 +80,17 @@ namespace Trinity
                         type = Type::Dummy;
                 }
 
-                constexpr bool is_binop() const noexcept
+                constexpr bool is_binop() noexcept
                 {
                         return type == Type::BinOp;
                 }
 
-                constexpr bool is_unary() const noexcept
+                constexpr bool is_unary() noexcept
                 {
                         return type == Type::Phrase || type == Type::Token;
                 }
 
-                constexpr bool is_dummy() const noexcept
+                constexpr bool is_dummy() noexcept
                 {
                         return type == Type::Dummy;
                 }
@@ -99,7 +100,7 @@ namespace Trinity
                         type = Type::ConstFalse;
                 }
 
-                constexpr bool is_const_false() const noexcept
+                constexpr bool is_const_false() noexcept
                 {
                         return type == Type::ConstFalse;
                 }
@@ -198,7 +199,7 @@ namespace Trinity
                 // This is important; we need to capture e.g [tom tom] (the manufucacturer) and [boing boing]
                 // but we don't want to capture the same phrase/word twice if in order.
 		// This is useful in MatchedIndexDocumentsFilter::consider() implementations for scoring documents based
-		// on the query structure and the matched terms
+		// on the query structure and the matched terms.
                 uint8_t rep;
 
                 // index in the query
@@ -222,14 +223,17 @@ namespace Trinity
 		// 3 		CRAFT 		1
 		// 4 		MISTS 		1
 		// 5 		OF 		1
-		// 5 		PANDARIA 	1
+		// 6 		PANDARIA 	1
 		// If you are going to try to match a sequence for matched term  'WARCRAFT'
 		// the only query instance of it is at index 2 and the next term in the query past
 		// any other 'equivalent' OR groups(in this case there is only one other OR expression matching warcraft, [war craft]) is 2 positions ahead to 4 (i.e to mists)
+		//
+		// The semantics of (index, toNextSpan) are somewhat complicated, but it's only because it is required for accurately and relatively effortlessly being able to
+		// capture sequences. A sequence is a 2+ consequtive tokens in a query.
 		uint8_t toNextSpan;
 
                 // flags. Usually 0, but e.g if you are rewritting a [wow] to [wow OR "world of warcraft"] you
-                // maybe want "world of warcraft" flags to be 1 (i.e derived)
+                // maybe want "world of warcraft" flags to be 1 (i.e derived). This can be very useful for scoring matches
                 //
                 // See ast_node::set_alltokens_flags()
                 uint8_t flags;
@@ -275,8 +279,8 @@ namespace Trinity
                 /*
 		   A query can have an AND token so that we can consume documents from its docslist and check the query against that, 
 		   but it can also be a simple OR query (e.g [apple OR imac OR macbook]), in which case we don¢t have a single token 
-		   to consume from. Instead, we need to identify the ¡lead tokens¢ (in the case of an ¡AND¢ that¢s token, but in 
-		   the case of an OR sequence, that¢s all the distinct tokens in that OR sequence), and then use a merge-scan to get 
+		   to consume from. Instead, we need to identify the "lead tokens" (in the case of an AND that's token, but in 
+		   the case of an OR sequence, that's all the distinct tokens in that OR sequence), and then use a merge-scan to get 
 		   the lowest next ID from those, and then execute the query based on that query and then advance all lowest such tokens.
 
 		   It is a bit more complicated than that, but capture_leader() will properly identify the lead nodes

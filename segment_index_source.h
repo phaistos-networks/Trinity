@@ -22,7 +22,7 @@ namespace Trinity
 
                         ~masked_documents_struct()
                         {
-                                if (auto ptr = (void *)fileData.offset)
+                                if (auto ptr = reinterpret_cast<void *>(fileData.offset))
                                         munmap(ptr, fileData.size());
                         }
 
@@ -66,5 +66,4 @@ namespace Trinity
 				munmap(ptr, index.size());
 		}
         };
-
 }

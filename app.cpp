@@ -502,7 +502,7 @@ int main(int argc, char *argv[])
 
                         void consider_sequence(const tokenpos_t pos, const uint16_t queryIndex, uint16_t *__restrict__ const span)
                         {
-                                static constexpr bool trace{true};
+                                static constexpr bool trace{false};
 
                                 if (auto adjacent = queryIndicesTerms[queryIndex])
                                 {
@@ -539,14 +539,15 @@ int main(int argc, char *argv[])
 			// TODO: demonostrate how position can be used e.g if its a title hit/sequence
                         ConsiderResponse consider(const matched_document &match) override final
                         {
-                                //static constexpr bool trace{false};
-				const bool trace=match.id == 2152925656;
+                                static constexpr bool trace{false};
+				//const bool trace=match.id == 2152925656;
                                 const auto totalMatchedTerms{match.matchedTermsCnt};
                                 uint16_t rem{0}, remQTH{0};
 				uint32_t score{0};
 
 				// We need to consider all possible combinations of (starting query index, toNextSpan)
-				// consider the query: [world of warcraft game is warcraft of blizzard].
+				// Consider the query: 
+				//		 [world of warcraft game is warcraft of blizzard]
 				// We have two ocurrences of [of] in the query, and we need to consider
 				// [of warcraft...] first, and then [warcraft of..] and then [of blizzard..]
 				//
@@ -555,10 +556,11 @@ int main(int argc, char *argv[])
 				// to process [of blizzard..] before [warcraft is blizzard] we 'd miss that 3 token sequence.
 				//
 				// This is also about query tokens where the adjacent token is not found at query token index + 1. e.g
-				// [world of (warcraft OR (war craft)) mists  warcraft is a blizzard game]
+				// 		[world of (warcraft OR (war craft)) mists  warcraft is a blizzard game]
 				// for [warcraft] at index 1, its next logical token is [mists] and its not found at [warcraft] index + 1, whereas
 				// for the next [warcraft] token in the query, its next logical token is right next to it ([is]).
-				// Trinity::phrase decl.comments
+				//
+				// Trinity::phrase decl.comments. assign_query_indices() is responsible for assinging indices and toNextSpan
                                 for (uint32_t i{0}; i != totalMatchedTerms; ++i)
                                 {
                                         const auto mt = match.matchedTerms + i;
@@ -607,7 +609,7 @@ int main(int argc, char *argv[])
 					// because e.g for query [world OF warcraft mists OF pandaria]
 					// [of] is found twice in the query and we want to check at position X
 					// for both [OF pandaria] and [OF warcraft mists..], but we can't do that one term at a time because
-					// of reasons described earlier
+					// of reasons described earlier.
                                         for (uint32_t i{0}; i < rem;)
                                         {
                                                 const auto it = allTracked + i;
