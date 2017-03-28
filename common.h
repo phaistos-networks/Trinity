@@ -11,6 +11,7 @@ namespace Trinity
         // We will support unicode, so more appropriate string types will be better suited to the task
         using str8_t = strwlen8_t;
         using str32_t = strwlen32_t;
+	using char_t = str8_t::value_type;
 
 	// You should be able to set docid_t to uint64_t, recompile and get 64bit document identifiers - though it hasn't been tested and there may be edge cases
 	// where this won't work but will likely be trivial to fix/implement whatever's required(Please file a GH issue)
@@ -25,7 +26,7 @@ namespace Trinity
 
 	using tokenpos_t = uint16_t;
 
-        static inline int32_t terms_cmp(const str8_t::value_type *a, const uint8_t aLen, const str8_t::value_type *b, const uint8_t bLen)
+        static inline int32_t terms_cmp(const char_t *a, const uint8_t aLen, const char_t *b, const uint8_t bLen)
         {
                 // Your impl. may ignore case completely so that you can
                 // index and query without having to care for distinctions between lower and upper case (e.g use Text::StrnncasecmpISO88597() )

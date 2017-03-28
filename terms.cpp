@@ -37,17 +37,17 @@ l100:
         const auto &it = skipList[top];
         const auto o = it.blockOffset;
         auto prev = it.term;
-	str8_t::value_type termStorage[Limits::MaxTermLength];
+	char_t termStorage[Limits::MaxTermLength];
 
-        memcpy(termStorage, prev.data(), prev.size() * sizeof(str8_t::value_type));
+        memcpy(termStorage, prev.data(), prev.size() * sizeof(char_t));
 
         for (const auto *p = termsData.offset + o, *const e = termsData.offset + termsData.size(); p != e;)
         {
                 const auto commonPrefixLen = *p++;
                 const auto suffixLen = *p++;
 
-                memcpy(termStorage + commonPrefixLen * sizeof(str8_t::value_type), p, suffixLen * sizeof(str8_t::value_type));
-                p += suffixLen * sizeof(str8_t::value_type);
+                memcpy(termStorage + commonPrefixLen * sizeof(char_t), p, suffixLen * sizeof(char_t));
+                p += suffixLen * sizeof(char_t);
 
                 const auto curTermLen = commonPrefixLen + suffixLen;
                 const auto r = terms_cmp(q.data(), q.size(), termStorage, curTermLen);
@@ -83,8 +83,8 @@ void Trinity::unpack_terms_skiplist(const range_base<const uint8_t *, const uint
 	for (const auto *p = reinterpret_cast<const uint8_t *>(termsIndex.start()), *const e = p + termsIndex.size(); p != e;)
 	{
 		auto t = skipList->PushEmpty();
-		const str8_t term((char *)p + 1, *p);
-		p += (term.size() * sizeof(str8_t::value_type)) + sizeof(uint8_t);
+		const str8_t term((char_t *)p + 1, *p);
+		p += (term.size() * sizeof(char_t)) + sizeof(uint8_t);
 #ifdef TRINITY_TERMS_FAT_INDEX
 		{
 			t->tctx.documents = Compression::decode_varuint32(p);
@@ -118,7 +118,7 @@ void Trinity::pack_terms(std::vector<std::pair<str8_t, term_index_ctx>> &terms, 
                         nextSkipListEntry = SKIPLIST_INTERVAL;
 
                         index->pack(uint8_t(cur.size()));
-                        index->serialize(cur.data(), cur.size() * sizeof(str8_t::value_type));
+                        index->serialize(cur.data(), cur.size() * sizeof(char_t));
 #ifdef TRINITY_TERMS_FAT_INDEX
                         {
                                 index->encode_varuint32(it.second.documents);
@@ -137,7 +137,7 @@ void Trinity::pack_terms(std::vector<std::pair<str8_t, term_index_ctx>> &terms, 
                         const auto suffix = cur.SuffixFrom(commonPrefix);
 
                         data->pack(uint8_t(commonPrefix), uint8_t(suffix.size()));
-                        data->serialize(suffix.data(), suffix.size() * sizeof(str8_t::value_type));
+                        data->serialize(suffix.data(), suffix.size() * sizeof(char_t));
                         {
                                 data->encode_varuint32(it.second.documents);
                                 data->encode_varuint32(it.second.indexChunk.len);
@@ -189,8 +189,8 @@ void Trinity::terms_data_view::iterator::decode_cur()
 		const auto commonPrefixLen = *p++;
 		const auto suffixLen = *p++;
 
-		memcpy(termStorage + commonPrefixLen * sizeof(str8_t::value_type), p, suffixLen * sizeof(str8_t::value_type));
-		p += suffixLen * sizeof(str8_t::value_type);
+		memcpy(termStorage + commonPrefixLen * sizeof(char_t), p, suffixLen * sizeof(char_t));
+		p += suffixLen * sizeof(char_t);
 
 		cur.term.len = commonPrefixLen + suffixLen;
 		cur.tctx.documents = Compression::decode_varuint32(p);
