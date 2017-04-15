@@ -30,23 +30,34 @@ static constexpr uint8_t OpPrio(const Operator op) noexcept
 
 static str32_t parse_term(ast_parser &ctx)
 {
-        // will strip characters that are not part of a valid token
+        // Will strip characters that are not part of a valid token
         // and will pay attention to special group termination characters
         for (;;)
         {
-                if (const auto len = ctx.token_parser(ctx.content))
+                if (const auto pair = ctx.token_parser(ctx.content, ctx.lastParsedToken); pair.second)
                 {
-                        const str32_t res(ctx.content.p, len);
+                        ctx.content.strip_prefix(pair.first);
 
-                        ctx.content.strip_prefix(len);
-                        return res;
+                        if (unlikely(pair.second > Trinity::Limits::MaxTermLength))
+			{
+				// TODO: what's the right thing to do here?
+				return {};
+			}
+			else
+                                return {ctx.lastParsedToken, pair.second};
                 }
-                else if (ctx.content.empty() || (ctx.groupTerm.size() && ctx.groupTerm.back() == ctx.content.front()))
+		else if (pair.first)
                 {
-                        return {};
+                        // We may still have skipped past some content  if we didn't consume any
+                        ctx.content.strip_prefix(pair.first);
+                        continue;
                 }
+
+                if (ctx.content.empty() || (ctx.groupTerm.size() && ctx.groupTerm.back() == ctx.content.front()))
+                        return {};
                 else
                 {
+			// whitespace or other content here
                         ctx.content.strip_prefix(1);
                 }
         }
@@ -1413,7 +1424,7 @@ Switch::vector<ast_node *> &query::nodes(ast_node *root, Switch::vector<ast_node
         return *res;
 }
 
-bool query::parse(const str32_t in, uint32_t (*tp)(const str32_t))
+bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *))
 {
         ast_parser ctx{in, allocator, tp};
 

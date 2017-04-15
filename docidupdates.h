@@ -66,7 +66,7 @@ namespace Trinity
 		}
 
 
-                constexpr bool drained() noexcept
+                constexpr bool drained() const noexcept
                 {
                         return curBankRange.offset == UINT32_MAX;
                 }

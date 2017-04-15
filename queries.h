@@ -80,17 +80,17 @@ namespace Trinity
                         type = Type::Dummy;
                 }
 
-                constexpr bool is_binop() noexcept
+                constexpr bool is_binop() const noexcept
                 {
                         return type == Type::BinOp;
                 }
 
-                constexpr bool is_unary() noexcept
+                constexpr bool is_unary() const noexcept
                 {
                         return type == Type::Phrase || type == Type::Token;
                 }
 
-                constexpr bool is_dummy() noexcept
+                constexpr bool is_dummy() const noexcept
                 {
                         return type == Type::Dummy;
                 }
@@ -100,7 +100,7 @@ namespace Trinity
                         type = Type::ConstFalse;
                 }
 
-                constexpr bool is_const_false() noexcept
+                constexpr bool is_const_false() const noexcept
                 {
                         return type == Type::ConstFalse;
                 }
@@ -153,17 +153,18 @@ namespace Trinity
                 str32_t content;
                 simple_allocator &allocator;
                 term terms[Trinity::Limits::MaxPhraseSize];
-                uint32_t (*token_parser)(const str32_t);
+                std::pair<uint32_t, uint8_t>(*token_parser)(const str32_t, char_t *);
                 std::vector<str8_t> distinctTokens;
 		// facilitates parsing
-		std::vector<str8_t::value_type> groupTerm;
+		std::vector<char_t> groupTerm;
+		char_t lastParsedToken[255];
 
                 auto *alloc_node(const ast_node::Type t)
                 {
                         return ast_node::make(allocator, t);
                 }
 
-                ast_parser(const str32_t input, simple_allocator &a, uint32_t (*p)(const str32_t) = default_token_parser_impl)
+                ast_parser(const str32_t input, simple_allocator &a, std::pair<uint32_t, uint8_t> (*p)(const str32_t, char_t *) = default_token_parser_impl)
                     : content{input}, allocator{a}, token_parser{p}
                 {
                 }
@@ -297,7 +298,7 @@ namespace Trinity
 		 */
                 void leader_nodes(std::vector<ast_node *> *const out);
 
-                bool parse(const str32_t in, uint32_t (*tp)(const str32_t) = default_token_parser_impl);
+                bool parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *) = default_token_parser_impl);
 
                 query() = default;
 
@@ -306,7 +307,7 @@ namespace Trinity
                         return root;
                 }
 
-                query(const str32_t in, uint32_t (*tp)(const str32_t) = default_token_parser_impl)
+                query(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *) = default_token_parser_impl)
                 {
                         if (!parse(in, tp))
                                 throw Switch::data_error("Failed to parse query");

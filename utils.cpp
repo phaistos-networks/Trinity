@@ -1,4 +1,5 @@
 #include "utils.h"
+#include "common.h"
 
 int8_t Trinity::Utilities::to_file(const char *p, uint64_t len, const char *path)
 {
@@ -39,4 +40,54 @@ int8_t Trinity::Utilities::to_file(const char *p, uint64_t len, const char *path
 
         // TODO: as per Jeff Praisance's recommendation, we should open() the directory, fsync() its fd, and close() it
         return 0;
+}
+
+std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::str32_t content, Trinity::char_t *out)
+{
+        const auto *p = content.begin(), *const e = content.end(), *const b{p};
+
+        if (p != e && isalnum(*p))
+        {
+		// e.g site:google.com
+                while (p != e && isalpha(*p))
+			++p;
+
+                if (p + 1 < e && *p == ':' && isalnum(p[1]))
+                {
+                        for (p += 2; p != e && (isalnum(*p) || *p == '.'); ++p)
+                                continue;
+                        goto l10;
+                }
+        }
+
+        for (;;)
+        {
+                while (p != e && isalnum(*p))
+                        ++p;
+
+                if (p != b && p != e)
+                {
+                        if (*p == '-')
+                        {
+                                ++p;
+                                continue;
+                        }
+                        else if (*p == '+' && isalpha(p[-1]) && (p + 1 == e || !isalnum(p[1])))
+                        {
+                                // C++
+                                for (++p; p != e && *p == '+'; ++p)
+                                        continue;
+                                continue;
+                        }
+                }
+
+                break;
+        }
+
+l10:
+        const uint32_t consumed = p - b;
+        const uint8_t stored = std::min<uint32_t>(consumed, 0xff);
+
+        memcpy(out, b, stored * sizeof(char_t));
+        return {consumed, stored};
 }
