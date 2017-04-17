@@ -1432,7 +1432,9 @@ bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str
 {
         ast_parser ctx{in, allocator, tp};
 
+	tokensParser = tp; // May come in handy later
         root = parse_expr(ctx);
+
         if (!root)
         {
                 Print("Failed to parse\n");

@@ -1,10 +1,16 @@
 #pragma once
 #include "queries.h"
 
+// This is important so that we will disregard dupes, and also, if e.g 
+// (united, states, of, america) => [usa]
+// and (united, states) => [usa]
+// we will ignore the second (united, states) rule because we already matched it earlier (we process by match span descending)
+#define REWRITE_FILTER_ALTS 1
+
 namespace Trinity
 {
         template <typename L>
-        static auto run_next(simple_allocator &allocator, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l)
+        static auto run_next(query &q, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l)
         {
                 static constexpr bool trace{false};
                 require(i < run.size());
@@ -15,6 +21,8 @@ namespace Trinity
                 auto &altAllocator = altAllocatorInstance;
                 strwlen8_t tokens[maxSpan];
                 std::vector<std::pair<Trinity::ast_node *, uint8_t>> expressions;
+		auto tokensParser = q.tokensParser;
+		auto &allocator = q.allocator;
 
                 if (trace)
                         SLog(ansifmt::bold, ansifmt::color_green, "AT ", i, " ", token, ansifmt::reset, "\n");
@@ -29,17 +37,18 @@ namespace Trinity
                         alts.clear();
                         l(tokens, ++n, altAllocator, &alts);
 
-			if (trace)
-			{
-				SLog("Starting from ", run[i]->p->terms[0].token, " ", n, "\n");
-				for (const auto &it : alts)
-					SLog("[", it.first, "] ", it.second, "\n");
-			}
+                        if (trace)
+                        {
+                                SLog("Starting from ", run[i]->p->terms[0].token, " ", n, "\n");
+                                for (const auto &it : alts)
+                                        SLog("[", it.first, "] ", it.second, "\n");
+                        }
 
                         for (const auto &it : alts)
                                 v.push_back({{it.first, it.second}, n});
                 }
 
+#if !defined(REWRITE_FILTER_ALTS)
                 std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) {
                         return a.second < b.second;
                 });
@@ -58,14 +67,14 @@ namespace Trinity
 
                         if (alts.size() > 1)
                         {
-                                auto lhs = ast_parser(alts.front().first, allocator).parse();
+                                auto lhs = ast_parser(alts.front().first, allocator, tokensParser).parse();
 
-				if (const auto flags = alts.front().second)
-				{
-					if (trace)
-						SLog("FLAGS:", flags, "\n");
-					lhs->set_alltokens_flags(flags);
-				}
+                                if (const auto flags = alts.front().second)
+                                {
+                                        if (trace)
+                                                SLog("FLAGS:", flags, "\n");
+                                        lhs->set_alltokens_flags(flags);
+                                }
 
                                 for (uint32_t i{1}; i != alts.size(); ++i)
                                 {
@@ -74,33 +83,116 @@ namespace Trinity
                                         n->type = ast_node::Type::BinOp;
                                         n->binop.op = Operator::OR;
                                         n->binop.lhs = lhs;
-                                        n->binop.rhs = ast_parser(alts[i].first, allocator).parse();
+                                        n->binop.rhs = ast_parser(alts[i].first, allocator, tokensParser).parse();
                                         lhs = n;
 
-					if (const auto flags = alts[i].second)
-					{
-						if (trace)
-							SLog("FLAGS:", flags, "\n");
-						n->binop.rhs->set_alltokens_flags(flags);
-					}
+                                        if (const auto flags = alts[i].second)
+                                        {
+                                                if (trace)
+                                                        SLog("FLAGS:", flags, "\n");
+                                                n->binop.rhs->set_alltokens_flags(flags);
+                                        }
                                 }
 
                                 node = lhs;
                         }
                         else
                         {
-                                node = Trinity::ast_parser(alts.front().first, allocator).parse();
+                                node = Trinity::ast_parser(alts.front().first, allocator, tokensParser).parse();
 
-				if (const auto flags = alts.front().second)
-				{
-					if (trace)
-						SLog("FLAGS:", flags, "\n");
-					node->set_alltokens_flags(flags);
-				}
+                                if (const auto flags = alts.front().second)
+                                {
+                                        if (trace)
+                                                SLog("FLAGS:", flags, "\n");
+                                        node->set_alltokens_flags(flags);
+                                }
                         }
 
                         expressions.push_back({node, span});
                 }
+#else
+                std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) {
+                        return b.second < a.second;
+                });
+
+                expressions.clear();
+                alts.clear();
+                for (const auto *p = v.data(), *const e = p + v.size(); p != e;)
+                {
+                        const auto span = p->second;
+                        ast_node *node;
+                        const auto saved = alts.size();
+
+                        do
+                        {
+                                uint32_t k{0};
+                                const auto s = p->first.first;
+
+                                while (k != alts.size() && alts[k].first != s)
+                                        ++k;
+
+                                if (k == alts.size())
+                                {
+                                        // ignore duplicates or already seen
+                                        alts.push_back({s, p->first.second});
+                                }
+                        } while (++p != e && p->second == span);
+
+                        const auto n = alts.size() - saved;
+
+                        if (0 == n)
+                                continue;
+
+                        if (n > 1)
+                        {
+                                auto lhs = ast_parser(alts[saved].first, allocator, tokensParser).parse();
+
+                                if (const auto flags = alts[saved].second)
+                                {
+                                        if (trace)
+                                                SLog("FLAGS:", flags, "\n");
+                                        lhs->set_alltokens_flags(flags);
+                                }
+
+                                for (uint32_t i = 1; i != n; ++i)
+                                {
+                                        auto n = allocator.Alloc<ast_node>();
+
+                                        n->type = ast_node::Type::BinOp;
+                                        n->binop.op = Operator::OR;
+                                        n->binop.lhs = lhs;
+                                        n->binop.rhs = ast_parser(alts[i + saved].first, allocator, tokensParser).parse();
+                                        lhs = n;
+
+                                        if (const auto flags = alts[i + saved].second)
+                                        {
+                                                if (trace)
+                                                        SLog("FLAGS:", flags, "\n");
+                                                n->binop.rhs->set_alltokens_flags(flags);
+                                        }
+                                }
+
+                                node = lhs;
+                        }
+                        else
+                        {
+                                node = Trinity::ast_parser(alts[saved].first, allocator, tokensParser).parse();
+
+                                if (const auto flags = alts[saved].second)
+                                {
+                                        if (trace)
+                                                SLog("FLAGS:", flags, "\n");
+                                        node->set_alltokens_flags(flags);
+                                }
+                        }
+
+                        expressions.push_back({node, span});
+
+			if (trace) 
+				SLog("<<<<<< [", *node, "] ", span, "\n");
+                }
+
+#endif
 
                 if (trace)
                 {
@@ -113,10 +205,11 @@ namespace Trinity
         }
 
         template <typename L>
-        static std::pair<ast_node *, uint8_t> run_capture(simple_allocator &allocator, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan)
+        static std::pair<ast_node *, uint8_t> run_capture(query &q,  const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan)
         {
                 static constexpr bool trace{false};
-                auto expressions = run_next(allocator, run, i, maxSpan, l);
+		auto &allocator = q.allocator;
+                auto expressions = run_next(q, run, i, maxSpan, l);
 
                 if (expressions.size() == 1)
                 {
@@ -125,24 +218,26 @@ namespace Trinity
                         return {expressions.front().first, i + 1};
                 }
 
-                // This is a bit complicated, but it produces optimal results in optimal amount of time
+// This is a bit complicated, but it produces optimal results in optimal amount of time
+#if !defined(REWRITE_FILTER_ALTS)
                 const auto max = expressions.back().second;
+                const auto upto = i + max;
                 auto _lhs = expressions.back().first;
                 size_t maxIdx{i + 1};
 
                 expressions.pop_back();
 
                 if (trace)
-                        SLog("Last:", *_lhs, "\n");
+                        SLog("Last:", *_lhs, ", max = ", max, "\n");
 
                 for (auto &it : expressions)
                 {
-                        const auto upto = i + max;
+                        const auto span = it.second;
                         auto lhs = it.first;
 
-                        for (uint32_t k = i + 1; k != upto; ++k)
+                        for (uint32_t k = i + span; k != upto; ++k)
                         {
-                                const auto pair = run_capture(allocator, run, k, l, maxSpan);
+                                const auto pair = run_capture(q, run, k, l, maxSpan);
                                 const auto expr = pair.first;
                                 auto n = allocator.Alloc<ast_node>();
 
@@ -152,6 +247,9 @@ namespace Trinity
                                 n->binop.lhs = lhs;
                                 n->binop.rhs = expr;
                                 lhs = n;
+
+                                if (trace)
+                                        SLog("GOT for expr [", *lhs, "] [", *expr, "], from ", k, "\n");
                         }
 
                         if (trace)
@@ -165,6 +263,50 @@ namespace Trinity
                         n->binop.rhs = lhs;
                         _lhs = n;
                 }
+#else
+                const auto max = expressions.front().second;
+                auto _lhs = expressions.front().first;
+                size_t maxIdx{i + 1};
+
+                if (trace)
+                        SLog("Last:", *_lhs, ", max = ", max, "\n");
+
+                for (uint32_t _i{1}; _i != expressions.size(); ++_i)
+                {
+                        auto &it = expressions[_i];
+                        const auto upto = i + max;
+                        const auto span = it.second;
+                        auto lhs = it.first;
+
+                        for (uint32_t k = i + span; k != upto; ++k)
+                        {
+                                const auto pair = run_capture(q, run, k, l, maxSpan);
+                                const auto expr = pair.first;
+                                auto n = allocator.Alloc<ast_node>();
+
+                                maxIdx = std::max<size_t>(maxIdx, pair.second);
+                                n->type = ast_node::Type::BinOp;
+                                n->binop.op = Operator::STRICT_AND;
+                                n->binop.lhs = lhs;
+                                n->binop.rhs = expr;
+                                lhs = n;
+
+                                if (trace)
+                                        SLog("GOT for expr [", *lhs, "] [", *expr, "], from ", k, "\n");
+                        }
+
+                        if (trace)
+                                SLog("LHS:", *lhs, "\n");
+
+                        auto n = allocator.Alloc<ast_node>();
+
+                        n->type = ast_node::Type::BinOp;
+                        n->binop.op = Operator::OR;
+                        n->binop.lhs = _lhs;
+                        n->binop.rhs = lhs;
+                        _lhs = n;
+                }
+#endif
 
                 if (trace)
                         SLog("OUTPUT:", *_lhs, "\n");
@@ -172,13 +314,13 @@ namespace Trinity
                 return {_lhs, maxIdx};
         }
 
-	// Very handy utility function that faciliaties query rewrites
-	// It generates optimal structures, and it is optimised for performance.
-	// `K` is the span of tokens you want to consider for each run. The lambda
-	// `l` will be passed upto that many tokens. 
-	// 
-	// Example:
-	/*
+        // Very handy utility function that faciliaties query rewrites
+        // It generates optimal structures, and it is optimised for performance.
+        // `K` is the span of tokens you want to consider for each run. The lambda
+        // `l` will be passed upto that many tokens.
+        //
+        // Example:
+        /*
 	Trinity::rewrite_query(inputQuery, 3, [](const auto tokens, const auto cnt, auto &allocator, auto out)
 	{
 		if (cnt == 1)
@@ -214,7 +356,7 @@ namespace Trinity
 
                         for (uint32_t i{0}; i < run.size();)
                         {
-                                auto pair = run_capture(allocator, run, i, l, K);
+                                auto pair = run_capture(q, run, i, l, K);
                                 auto expr = pair.first;
 
                                 if (trace)

@@ -267,6 +267,8 @@ namespace Trinity
         {
                 ast_node *root;
                 simple_allocator allocator{512};
+		// parse() will set tokensParser; this may come in handy elsewhere, e.g see rewrite_query() impl.
+		std::pair<uint32_t, uint8_t> (*tokensParser)(const str32_t, char_t *);
 
                 // Normalize a query.
                 // This is invoked when you initially parse the query, but if you
