@@ -5,10 +5,13 @@
 // (united, states, of, america) => [usa]
 // and (united, states) => [usa]
 // we will ignore the second (united, states) rule because we already matched it earlier (we process by match span descending)
-#define REWRITE_FILTER_ALTS 1
+#define TRINITY_QUERIES_REWRITE_FILTER 1
 
 namespace Trinity
 {
+	// Currently, we are ignoring terms with rep > 1
+	// but maybe we shouldn't. For now, you would need another pass to e.g replace
+	// [tom(rep=2)] to [tom(rep=2) OR tomtom)]
         template <typename L>
         static auto run_next(query &q, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l)
         {
@@ -27,15 +30,29 @@ namespace Trinity
                 if (trace)
                         SLog(ansifmt::bold, ansifmt::color_green, "AT ", i, " ", token, ansifmt::reset, "\n");
 
+		if (run[i]->p->rep > 1 || run[i]->p->flags)
+                {
+                        // special care for reps
+                        auto n = allocator.Alloc<ast_node>();
+
+                        n->type = ast_node::Type::Token;
+                        n->p = run[i]->p;
+                        expressions.push_back({n, 1});
+                        return expressions;
+                }
+
+		// This may be handy. e.g for possibly generating composite terms
+		const std::pair<uint32_t, uint32_t> runCtx(i, run.size());
+
                 v.clear();
                 v.push_back({{{token.data(), uint32_t(token.size())}, 0}, 1});
                 altAllocator.reuse();
 
-                for (size_t upto = std::min<size_t>(run.size(), i + maxSpan), k{i}, n{0}; k != upto; ++k)
+                for (size_t upto = std::min<size_t>(run.size(), i + maxSpan), k{i}, n{0}; k != upto && run[k]->p->rep == 1; ++k) 	// mind reps
                 {
                         tokens[n] = run[k]->p->terms[0].token;
                         alts.clear();
-                        l(tokens, ++n, altAllocator, &alts);
+                        l(runCtx, tokens, ++n, altAllocator, &alts);
 
                         if (trace)
                         {
@@ -48,7 +65,7 @@ namespace Trinity
                                 v.push_back({{it.first, it.second}, n});
                 }
 
-#if !defined(REWRITE_FILTER_ALTS)
+#if !defined(TRINITY_QUERIES_REWRITE_FILTER)
                 std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) {
                         return a.second < b.second;
                 });
@@ -219,7 +236,7 @@ namespace Trinity
                 }
 
 // This is a bit complicated, but it produces optimal results in optimal amount of time
-#if !defined(REWRITE_FILTER_ALTS)
+#if !defined(TRINITY_QUERIES_REWRITE_FILTER)
                 const auto max = expressions.back().second;
                 const auto upto = i + max;
                 auto _lhs = expressions.back().first;
@@ -243,7 +260,7 @@ namespace Trinity
 
                                 maxIdx = std::max<size_t>(maxIdx, pair.second);
                                 n->type = ast_node::Type::BinOp;
-                                n->binop.op = Operator::STRICT_AND;
+                                n->binop.op = Operator::AND;
                                 n->binop.lhs = lhs;
                                 n->binop.rhs = expr;
                                 lhs = n;
@@ -286,7 +303,7 @@ namespace Trinity
 
                                 maxIdx = std::max<size_t>(maxIdx, pair.second);
                                 n->type = ast_node::Type::BinOp;
-                                n->binop.op = Operator::STRICT_AND;
+                                n->binop.op = Operator::AND;
                                 n->binop.lhs = lhs;
                                 n->binop.rhs = expr;
                                 lhs = n;
@@ -338,6 +355,10 @@ namespace Trinity
 			if (tokens[0].Eq(_S("WORLD"))  && tokens[1].Eq(_S("OF")) || tokens[2].Eq(_S("WARCRAFT")))
 				out->push_back({"WOW", 1});
 		}}
+
+		You probably want another runs pass in order to e.g convert all stop word nodes to
+		<stopword> so that <the> becomes optional
+
 	*/
         template <typename L>
         void rewrite_query(Trinity::query &q, const uint8_t K, L &&l)
@@ -354,6 +375,13 @@ namespace Trinity
                 q.process_runs(false, true, [&](const auto &run) {
                         ast_node *lhs{nullptr};
 
+			if (trace)
+			{
+				SLog("Processing run of ", run.size(), "\n");
+				for (const auto n : run)
+					Print(*n->p, "\n");
+			}
+
                         for (uint32_t i{0}; i < run.size();)
                         {
                                 auto pair = run_capture(q, run, i, l, K);
@@ -369,7 +397,7 @@ namespace Trinity
                                         auto n = allocator.Alloc<ast_node>();
 
                                         n->type = ast_node::Type::BinOp;
-                                        n->binop.op = Operator::STRICT_AND;
+                                        n->binop.op = Operator::AND;
                                         n->binop.lhs = lhs;
                                         n->binop.rhs = expr;
                                         lhs = n;
@@ -378,7 +406,9 @@ namespace Trinity
                                 i = pair.second;
                         }
 
-                        q.root = lhs;
+			*run[0] = *lhs;
+			for (uint32_t i{1}; i != run.size(); ++i)
+				run[i]->set_dummy();
                         if (trace)
                                 SLog("Final:", *lhs, "\n");
                 });

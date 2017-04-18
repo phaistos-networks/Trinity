@@ -201,6 +201,7 @@ namespace Trinity
                 // but we don't want to capture the same phrase/word twice if in order.
 		// This is useful in MatchedIndexDocumentsFilter::consider() implementations for scoring documents based
 		// on the query structure and the matched terms.
+		// See Trinity::rewrite_query() where we consider this when rewriting sequences
                 uint8_t rep;
 
                 // index in the query
@@ -369,6 +370,10 @@ namespace Trinity
 		// the original and the suggested
 		// e.g for [world of worrcraft video game] 
 		// [ ((world of worrcraft video game) OR (world of warcraft video game)) ]
+		//
+		// XXX: you need to be careful if you are replacing a node's value (e.g *n = *anotherNode)
+		// and that anotherNode is e.g a binop and either of its (lhs, rhs) references itself.
+		// In that case, just create another node (e.g use clone() method) and use that
                 static void replace_run(ast_node **run, const size_t cnt, ast_node *newExprNode)
                 {
                         // Just set all nodes _except_ the first to dummy
@@ -383,42 +388,66 @@ namespace Trinity
                         // Now just make sure you normalize_root()
                 }
 
-                // You should _never_ process_runs() after you have invoked commit()
-                //
                 // Make sure you check the repetition count
                 // See also ast_node::set_alltokens_flags()
+		//
+		// andOnly: if false, will also consider runs of STRICT_AND nodes
                 template <typename L>
                 void process_runs(const bool includePhrases, const bool andOnly, L &&cb)
                 {
-                        std::vector<ast_node *> unaryNodes, stack, run;
+                        static thread_local std::vector<std::pair<uint32_t, ast_node *>> unaryNodes, stack;
+			static thread_local std::vector<ast_node *> run;
+			uint32_t segments{0};
 
-                        stack.push_back(root);
+			stack.clear();
+			unaryNodes.clear();
+                        stack.push_back({0, root});
                         do
                         {
-                                auto n = stack.back();
+				const auto pair = stack.back();
+                                auto n = pair.second;
+				const auto seg = pair.first;
 
                                 stack.pop_back();
                                 switch (n->type)
                                 {
                                         case ast_node::Type::Token:
-                                                unaryNodes.push_back(n);
+                                                unaryNodes.push_back({seg, n});
                                                 break;
 
                                         case ast_node::Type::Phrase:
                                                 if (includePhrases)
-                                                        unaryNodes.push_back(n);
+                                                        unaryNodes.push_back({seg, n});
                                                 break;
 
                                         case ast_node::Type::BinOp:
-                                                if (!andOnly || n->binop.op == Operator::AND)
+                                                if (n->binop.op == Operator::AND)
+						{
+                                                        stack.push_back({seg, n->binop.lhs});
+                                                        stack.push_back({seg, n->binop.rhs});
+						}
+						else if (n->binop.op == Operator::NOT)
+						{
+                                                        stack.push_back({seg, n->binop.lhs});
+							++segments;
+                                                        stack.push_back({segments, n->binop.rhs});
+						}
+						else if (n->binop.op == Operator::OR)
+						{
+							++segments;
+                                                        stack.push_back({segments, n->binop.lhs});
+							++segments;
+                                                        stack.push_back({segments, n->binop.rhs});
+						}
+						else if (false == andOnly && n->binop.op == Operator::STRICT_AND)
                                                 {
-                                                        stack.push_back(n->binop.lhs);
-                                                        stack.push_back(n->binop.rhs);
+                                                        stack.push_back({seg, n->binop.lhs});
+                                                        stack.push_back({seg, n->binop.rhs});
                                                 }
                                                 break;
 
                                         case ast_node::Type::UnaryOp:
-                                                stack.push_back(n->unaryop.expr);
+                                                stack.push_back({seg, n->unaryop.expr});
                                                 break;
 
                                         case ast_node::Type::Dummy:
@@ -428,23 +457,23 @@ namespace Trinity
                                 }
                         } while (stack.size());
 
-                        std::sort(unaryNodes.begin(), unaryNodes.end(), [](const auto a, const auto b) {
-                                return a->p->index < b->p->index;
+                        std::sort(unaryNodes.begin(), unaryNodes.end(), [](const auto &a, const auto &b) {
+                                return a.first < b.first || (a.first == b.first && a.second->p->index < b.second->p->index);
                         });
 
+
                         for (const auto *p = unaryNodes.data(), *const e = p + unaryNodes.size(); p != e;)
-                        {
-                                auto idx = (*p)->p->index;
+			{
+				const auto segment = p->first;
 
                                 run.clear();
                                 do
-                                {
-                                        run.push_back(*p);
-                                        ++idx;
-                                } while (++p != e && (includePhrases || (*p)->p->size == 1) && (*p)->p->index == idx);
+				{
+					run.push_back(p->second);
+				} while (++p != e && p->first == segment);
 
                                 cb(run);
-                        }
+			}
                 }
         };
 }
