@@ -972,6 +972,7 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx)
 
 // This is somewhat complicated because it takes into account phrases and OR groups
 // In fact, this here function took longer than to implement than most if not all other functions and systems here. It just didn't feel right until it did.
+// This method, rewrite_query() and the impl. of the algorithm that considers matched sequences in Consider() have been particularly challenging to get right.
 struct query_assign_ctx final
 {
 	uint32_t nextIndex;

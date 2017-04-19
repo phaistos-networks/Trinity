@@ -9,13 +9,10 @@
 
 namespace Trinity
 {
-	// Currently, we are ignoring terms with rep > 1
-	// but maybe we shouldn't. For now, you would need another pass to e.g replace
-	// [tom(rep=2)] to [tom(rep=2) OR tomtom)]
         template <typename L>
         static auto run_next(query &q, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l)
         {
-                static constexpr bool trace{false};
+                static constexpr bool trace{true};
                 require(i < run.size());
                 const auto token = run[i]->p->terms[0].token;
                 static thread_local std::vector<std::pair<std::pair<str32_t, uint8_t>, uint8_t>> v;
@@ -224,7 +221,7 @@ namespace Trinity
         template <typename L>
         static std::pair<ast_node *, uint8_t> run_capture(query &q,  const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan)
         {
-                static constexpr bool trace{false};
+                static constexpr bool trace{true};
 		auto &allocator = q.allocator;
                 auto expressions = run_next(q, run, i, maxSpan, l);
 
@@ -234,6 +231,8 @@ namespace Trinity
                                 SLog("SINGLE expression ", *expressions.front().first, "\n");
                         return {expressions.front().first, i + 1};
                 }
+
+		require(expressions.size());
 
 // This is a bit complicated, but it produces optimal results in optimal amount of time
 #if !defined(TRINITY_QUERIES_REWRITE_FILTER)
@@ -338,7 +337,7 @@ namespace Trinity
         //
         // Example:
         /*
-	Trinity::rewrite_query(inputQuery, 3, [](const auto tokens, const auto cnt, auto &allocator, auto out)
+	Trinity::rewrite_query(inputQuery, 3, [](const auto runCtx, const auto tokens, const auto cnt, auto &allocator, auto out)
 	{
 		if (cnt == 1)
 		{
@@ -359,11 +358,12 @@ namespace Trinity
 		You probably want another runs pass in order to e.g convert all stop word nodes to
 		<stopword> so that <the> becomes optional
 
+		See RECIPES
 	*/
         template <typename L>
         void rewrite_query(Trinity::query &q, const uint8_t K, L &&l)
         {
-                static constexpr bool trace{false};
+                static constexpr bool trace{true};
                 const auto before = Timings::Microseconds::Tick();
                 auto &allocator = q.allocator;
 
@@ -372,7 +372,7 @@ namespace Trinity
                 if (trace)
                         SLog("REWRITING:", q, "\n");
 
-                q.process_runs(false, true, [&](const auto &run) {
+                q.process_runs(false, true, true, [&](const auto &run) {
                         ast_node *lhs{nullptr};
 
 			if (trace)
@@ -414,9 +414,6 @@ namespace Trinity
                 });
 
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " to rewrite the query\n");
-
-                SLog("NOW:", ptr_repr(q.root), "\n");
                 q.normalize();
-                SLog("NOW:", ptr_repr(q.root), "\n");
         }
 }

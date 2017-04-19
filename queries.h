@@ -393,7 +393,7 @@ namespace Trinity
 		//
 		// andOnly: if false, will also consider runs of STRICT_AND nodes
                 template <typename L>
-                void process_runs(const bool includePhrases, const bool andOnly, L &&cb)
+                void process_runs(const bool includePhrases, const bool processStrictAND, const bool processNOT, L &&cb)
                 {
                         static thread_local std::vector<std::pair<uint32_t, ast_node *>> unaryNodes, stack;
 			static thread_local std::vector<ast_node *> run;
@@ -429,9 +429,12 @@ namespace Trinity
 						else if (n->binop.op == Operator::NOT)
 						{
                                                         stack.push_back({seg, n->binop.lhs});
-							++segments;
-                                                        stack.push_back({segments, n->binop.rhs});
-						}
+							if (processNOT)
+                                                        {
+                                                                ++segments;
+                                                                stack.push_back({segments, n->binop.rhs});
+                                                        }
+                                                }
 						else if (n->binop.op == Operator::OR)
 						{
 							++segments;
@@ -439,7 +442,7 @@ namespace Trinity
 							++segments;
                                                         stack.push_back({segments, n->binop.rhs});
 						}
-						else if (false == andOnly && n->binop.op == Operator::STRICT_AND)
+						else if (processStrictAND && n->binop.op == Operator::STRICT_AND)
                                                 {
                                                         stack.push_back({seg, n->binop.lhs});
                                                         stack.push_back({seg, n->binop.rhs});

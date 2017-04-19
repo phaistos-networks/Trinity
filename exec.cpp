@@ -2318,7 +2318,7 @@ static exec_node compile_query(ast_node *root, runtime_ctx &rctx, std::vector<ex
 // We can't reuse the same compiled bytecode/runtime_ctx to run the same query across multiple index sources, because
 // we optimize based on the index source structure and terms involved in the query
 // It is also very cheap to construct those.
-void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc, masked_documents_registry *const __restrict__ maskedDocumentsRegistry, MatchedIndexDocumentsFilter *__restrict__ const matchesFilter)
+void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc, masked_documents_registry *const __restrict__ maskedDocumentsRegistry, MatchedIndexDocumentsFilter *__restrict__ const matchesFilter, IndexDocumentsFilter *const documentsFilter)
 {
         struct query_term_instance final
         {
@@ -2599,7 +2599,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                 if (traceExec)
                         SLog("DOCUMENT ", docID, "\n");
 
-                if (!maskedDocumentsRegistry->test(docID))
+                if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
                 {
                         // now execute rootExecNode
                         // and it it returns true, compute the document's score
