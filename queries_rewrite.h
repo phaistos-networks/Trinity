@@ -229,6 +229,7 @@ namespace Trinity
                 {
                         if (trace)
                                 SLog("SINGLE expression ", *expressions.front().first, "\n");
+
                         return {expressions.front().first, i + 1};
                 }
 
