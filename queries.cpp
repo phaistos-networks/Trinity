@@ -28,7 +28,7 @@ static constexpr uint8_t OpPrio(const Operator op) noexcept
         }
 }
 
-static str32_t parse_term(ast_parser &ctx)
+static std::pair<str32_t, range_base<uint16_t, uint16_t>> parse_term(ast_parser &ctx)
 {
         // Will strip characters that are not part of a valid token
         // and will pay attention to special group termination characters
@@ -36,17 +36,21 @@ static str32_t parse_term(ast_parser &ctx)
         {
                 if (const auto pair = ctx.token_parser(ctx.content, ctx.lastParsedToken); pair.second)
                 {
+                        const auto o = ctx.content.data() - ctx.contentBase;
+
                         ctx.content.strip_prefix(pair.first);
 
                         if (unlikely(pair.second > Trinity::Limits::MaxTermLength))
-			{
-				// TODO: what's the right thing to do here?
-				return {};
-			}
-			else
-                                return {ctx.lastParsedToken, pair.second};
+                        {
+                                // TODO: what's the right thing to do here?
+                                return {{}, {}};
+                        }
+                        else
+                        {
+                                return {{ctx.lastParsedToken, pair.second}, {uint16_t(o), uint16_t(pair.first)}};
+                        }
                 }
-		else if (pair.first)
+                else if (pair.first)
                 {
                         // We may still have skipped past some content  if we didn't consume any
                         ctx.content.strip_prefix(pair.first);
@@ -54,10 +58,10 @@ static str32_t parse_term(ast_parser &ctx)
                 }
 
                 if (ctx.content.empty() || (ctx.groupTerm.size() && ctx.groupTerm.back() == ctx.content.front()))
-                        return {};
+                        return {{}, {}};
                 else
                 {
-			// whitespace or other content here
+                        // whitespace or other content here
                         ctx.content.strip_prefix(1);
                 }
         }
@@ -71,14 +75,18 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                 auto &terms = ctx.terms;
                 uint8_t n{0};
                 term t;
+		range_base<uint16_t, uint16_t> range;
+		const auto b = ctx.content.data();
 
+		range.offset = b - ctx.contentBase;
                 for (;;)
                 {
                         ctx.skip_ws();
+			range.len = ctx.content.data() - b;
                         if (!ctx.content || ctx.content.StripPrefix(_S("\"")))
                                 break;
 
-                        if (const auto token = parse_term(ctx))
+                        if (const auto pair = parse_term(ctx); const auto token = pair.first)
                         {
                                 if (unlikely(token.size() > Limits::MaxTermLength))
                                         return ctx.alloc_node(ast_node::Type::ConstFalse);
@@ -109,11 +117,12 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                         p->rep = 1;
 			p->toNextSpan = n;
                         p->flags = 0;
+			p->inputRange = range;
                         node->p = p;
                         return node;
                 }
         }
-        else if (const auto token = parse_term(ctx))
+        else if (const auto pair = parse_term(ctx); const auto token = pair.first)
         {
                 if (unlikely(token.size() > Limits::MaxTermLength))
                         return ctx.alloc_node(ast_node::Type::ConstFalse);
@@ -132,6 +141,7 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                 p->rep = 1;
 		p->toNextSpan = 1;
                 p->flags = 0;
+		p->inputRange = pair.second;
                 node->p = p;
                 return node;
         }

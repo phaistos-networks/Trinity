@@ -105,6 +105,17 @@ namespace Trinity
                         return type == Type::ConstFalse;
                 }
 
+                constexpr bool is_token() const noexcept
+                {
+                        return type == Type::Token;
+                }
+
+                constexpr bool is_phrase() const noexcept
+                {
+                        return type == Type::Phrase;
+                }
+
+
                 static ast_node *make(simple_allocator &a, const Type t)
                 {
                         auto r = a.Alloc<ast_node>();
@@ -151,6 +162,7 @@ namespace Trinity
         struct ast_parser final
         {
                 str32_t content;
+		const char_t *contentBase;
                 simple_allocator &allocator;
                 term terms[Trinity::Limits::MaxPhraseSize];
                 std::pair<uint32_t, uint8_t>(*token_parser)(const str32_t, char_t *);
@@ -165,7 +177,7 @@ namespace Trinity
                 }
 
                 ast_parser(const str32_t input, simple_allocator &a, std::pair<uint32_t, uint8_t> (*p)(const str32_t, char_t *) = default_token_parser_impl)
-                    : content{input}, allocator{a}, token_parser{p}
+                    : content{input}, contentBase{content.data()}, allocator{a}, token_parser{p}
                 {
                 }
 
@@ -239,6 +251,12 @@ namespace Trinity
                 //
                 // See ast_node::set_alltokens_flags()
                 uint8_t flags;
+
+		// This is the range in the input query string
+		// This is handy for e.g spell checking runs where you want to highlight corrected tokens/phrases in the input query
+		// and you 'd rather not have to go through hoops to accomplish it
+		range_base<uint16_t, uint16_t> inputRange;
+
 
                 term terms[0];
 
