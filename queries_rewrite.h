@@ -12,7 +12,7 @@ namespace Trinity
         template <typename L>
         static auto run_next(query &q, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l)
         {
-                static constexpr bool trace{true};
+                static constexpr bool trace{false};
                 require(i < run.size());
                 const auto token = run[i]->p->terms[0].token;
                 static thread_local std::vector<std::pair<std::pair<str32_t, uint8_t>, uint8_t>> v;
@@ -221,8 +221,8 @@ namespace Trinity
         template <typename L>
         static std::pair<ast_node *, uint8_t> run_capture(query &q,  const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan)
         {
-                static constexpr bool trace{true};
-		auto &allocator = q.allocator;
+                static constexpr bool trace{false};
+                auto &allocator = q.allocator;
                 auto expressions = run_next(q, run, i, maxSpan, l);
 
                 if (expressions.size() == 1)
@@ -233,7 +233,7 @@ namespace Trinity
                         return {expressions.front().first, i + 1};
                 }
 
-		require(expressions.size());
+                require(expressions.size());
 
 // This is a bit complicated, but it produces optimal results in optimal amount of time
 #if !defined(TRINITY_QUERIES_REWRITE_FILTER)
@@ -283,10 +283,15 @@ namespace Trinity
 #else
                 const auto max = expressions.front().second;
                 auto _lhs = expressions.front().first;
+                auto firstExpression = _lhs;
+                ast_node *C{nullptr};
                 size_t maxIdx{i + 1};
 
                 if (trace)
                         SLog("Last:", *_lhs, ", max = ", max, "\n");
+
+                static constexpr bool traceFix{false};
+                const bool _D = traceFix ? _lhs->p->terms[0].token.Eq(_S("foobar")) : false;
 
                 for (uint32_t _i{1}; _i != expressions.size(); ++_i)
                 {
@@ -309,7 +314,7 @@ namespace Trinity
                                 lhs = n;
 
                                 if (trace)
-                                        SLog("GOT for expr [", *lhs, "] [", *expr, "], from ", k, "\n");
+                                        SLog("GOT for expr [", *lhs, "] .rhs = [", *expr, "], from ", k, "\n");
                         }
 
                         if (trace)
@@ -321,8 +326,53 @@ namespace Trinity
                         n->binop.op = Operator::OR;
                         n->binop.lhs = _lhs;
                         n->binop.rhs = lhs;
+
+                        if (!C)
+                                C = n;
+
                         _lhs = n;
                 }
+
+                // consider [foo bar ping]
+                // and your callback for two tokens(t1,t2) will output (t1t2). e.g for (foo,bar) => foobar
+                // Without this bit here, we 'll end up compiling to
+                // foobar OR (foo barping OR bar AND ping)
+                const auto lastspan = max;
+                const auto rem = maxIdx - i - lastspan;
+
+                if (traceFix)
+                {
+                        SLog(ansifmt::bold, ansifmt::color_brown, "maxIdx = ", maxIdx, ", i = ", i, ", lastspan = ", lastspan, ", _D = ", _D, ", rem = ", rem, ansifmt::reset, "\n");
+                        SLog("OK FINAL:", *_lhs, "\n");
+                }
+
+                if (rem)
+                {
+                        const auto pair = run_capture(q, run, i + lastspan, l, rem);
+                        const auto expr = pair.first;
+                        auto n = allocator.Alloc<ast_node>();
+
+                        if (traceFix)
+                                SLog("Expr:", *expr, "\n");
+
+                        n->type = ast_node::Type::BinOp;
+                        n->binop.op = Operator::AND;
+                        n->binop.lhs = firstExpression;
+                        n->binop.rhs = expr;
+
+                        if (traceFix)
+                                SLog("WELL:", *n, "\n");
+
+                        require(C);
+                        C->binop.lhs = n;
+
+                        if (traceFix)
+                                SLog("FINAL:", *_lhs, "\n");
+                }
+                else if (traceFix)
+                        SLog("Not needed\n");
+
+//if (_D) { exit(0); }
 #endif
 
                 if (trace)
@@ -360,11 +410,15 @@ namespace Trinity
 		<stopword> so that <the> becomes optional
 
 		See RECIPES
+
+		XXX: [foo bar   ping]
+		This FAILS  if we e.g return [foobar] from [foo bar]
+		ALSO: [foo bar 512    8192]
 	*/
         template <typename L>
         void rewrite_query(Trinity::query &q, const uint8_t K, L &&l)
         {
-                static constexpr bool trace{true};
+                static constexpr bool trace{false};
                 const auto before = Timings::Microseconds::Tick();
                 auto &allocator = q.allocator;
 
