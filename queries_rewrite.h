@@ -1,7 +1,7 @@
 #pragma once
 #include "queries.h"
 
-// This is important so that we will disregard dupes, and also, if e.g 
+// This is important so that we will disregard dupes, and also, if e.g
 // (united, states, of, america) => [usa]
 // and (united, states) => [usa]
 // we will ignore the second (united, states) rule because we already matched it earlier (we process by match span descending)
@@ -10,7 +10,7 @@
 namespace Trinity
 {
         template <typename L>
-        static auto run_next(query &q, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l)
+        static auto run_next(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l)
         {
                 static constexpr bool trace{false};
                 require(i < run.size());
@@ -21,13 +21,13 @@ namespace Trinity
                 auto &altAllocator = altAllocatorInstance;
                 strwlen8_t tokens[maxSpan];
                 std::vector<std::pair<Trinity::ast_node *, uint8_t>> expressions;
-		auto tokensParser = q.tokensParser;
-		auto &allocator = q.allocator;
+                auto tokensParser = q.tokensParser;
+                auto &allocator = q.allocator;
 
                 if (trace)
                         SLog(ansifmt::bold, ansifmt::color_green, "AT ", i, " ", token, ansifmt::reset, "\n");
 
-		if (run[i]->p->rep > 1 || run[i]->p->flags)
+                if (run[i]->p->rep > 1 || run[i]->p->flags)
                 {
                         // special care for reps
                         auto n = allocator.Alloc<ast_node>();
@@ -35,17 +35,20 @@ namespace Trinity
                         n->type = ast_node::Type::Token;
                         n->p = run[i]->p;
                         expressions.push_back({n, 1});
+
+                        if (budget)
+                                --budget;
                         return expressions;
                 }
 
-		// This may be handy. e.g for possibly generating composite terms
-		const std::pair<uint32_t, uint32_t> runCtx(i, run.size());
+                // This may be handy. e.g for possibly generating composite terms
+                const std::pair<uint32_t, uint32_t> runCtx(i, run.size());
 
                 v.clear();
                 v.push_back({{{token.data(), uint32_t(token.size())}, 0}, 1});
                 altAllocator.reuse();
 
-                for (size_t upto = std::min<size_t>(run.size(), i + maxSpan), k{i}, n{0}; k != upto && run[k]->p->rep == 1; ++k) 	// mind reps
+                for (size_t upto = std::min<size_t>(run.size(), i + maxSpan), k{i}, n{0}; k != upto && run[k]->p->rep == 1; ++k) // mind reps
                 {
                         tokens[n] = run[k]->p->terms[0].token;
                         alts.clear();
@@ -83,6 +86,11 @@ namespace Trinity
                         {
                                 auto lhs = ast_parser(alts.front().first, allocator, tokensParser).parse();
 
+                                if (const auto n = lhs->nodes_count(); budget >= n)
+                                        budget -= n;
+                                else
+                                        budget = 0;
+
                                 if (const auto flags = alts.front().second)
                                 {
                                         if (trace)
@@ -94,11 +102,19 @@ namespace Trinity
                                 {
                                         auto n = allocator.Alloc<ast_node>();
 
+                                        if (budget)
+                                                --budget;
+
                                         n->type = ast_node::Type::BinOp;
                                         n->binop.op = Operator::OR;
                                         n->binop.lhs = lhs;
                                         n->binop.rhs = ast_parser(alts[i].first, allocator, tokensParser).parse();
                                         lhs = n;
+
+                                        if (const auto n = n->binop.rhs->nodes_count(); budget >= n)
+                                                budget -= n;
+                                        else
+                                                budget = 0;
 
                                         if (const auto flags = alts[i].second)
                                         {
@@ -113,6 +129,11 @@ namespace Trinity
                         else
                         {
                                 node = Trinity::ast_parser(alts.front().first, allocator, tokensParser).parse();
+
+                                if (const auto n = node->nodes_count(); budget >= n)
+                                        budget -= n;
+                                else
+                                        budget = 0;
 
                                 if (const auto flags = alts.front().second)
                                 {
@@ -161,6 +182,11 @@ namespace Trinity
                         {
                                 auto lhs = ast_parser(alts[saved].first, allocator, tokensParser).parse();
 
+                                if (const auto n = lhs->nodes_count(); budget >= n)
+                                        budget -= n;
+                                else
+                                        budget = 0;
+
                                 if (const auto flags = alts[saved].second)
                                 {
                                         if (trace)
@@ -172,11 +198,19 @@ namespace Trinity
                                 {
                                         auto n = allocator.Alloc<ast_node>();
 
+                                        if (budget)
+                                                --budget;
+
                                         n->type = ast_node::Type::BinOp;
                                         n->binop.op = Operator::OR;
                                         n->binop.lhs = lhs;
                                         n->binop.rhs = ast_parser(alts[i + saved].first, allocator, tokensParser).parse();
                                         lhs = n;
+
+                                        if (const auto _n = n->binop.rhs->nodes_count(); budget >= _n)
+                                                budget -= _n;
+                                        else
+                                                budget = 0;
 
                                         if (const auto flags = alts[i + saved].second)
                                         {
@@ -192,6 +226,11 @@ namespace Trinity
                         {
                                 node = Trinity::ast_parser(alts[saved].first, allocator, tokensParser).parse();
 
+                                if (const auto n = node->nodes_count(); budget >= n)
+                                        budget -= n;
+                                else
+                                        budget = 0;
+
                                 if (const auto flags = alts[saved].second)
                                 {
                                         if (trace)
@@ -202,8 +241,8 @@ namespace Trinity
 
                         expressions.push_back({node, span});
 
-			if (trace) 
-				SLog("<<<<<< [", *node, "] ", span, "\n");
+                        if (trace)
+                                SLog("<<<<<< [", *node, "] ", span, "\n");
                 }
 
 #endif
@@ -219,11 +258,26 @@ namespace Trinity
         }
 
         template <typename L>
-        static std::pair<ast_node *, uint8_t> run_capture(query &q,  const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan)
+        static std::pair<ast_node *, uint8_t> run_capture(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan)
         {
                 static constexpr bool trace{false};
                 auto &allocator = q.allocator;
-                auto expressions = run_next(q, run, i, maxSpan, l);
+                auto expressions = run_next(budget, q, run, i, maxSpan, l);
+
+                require(expressions.size());
+
+                if (0 == budget)
+                {
+#if !defined(TRINITY_QUERIES_REWRITE_FILTER)
+                        if (trace)
+                                SLog("No budget, returnign first ", *expressions.front().first, "\n");
+                        return {expressions.front().first, i + 1};
+#else
+                        if (trace)
+                                SLog("No budget, returnign first ", *expressions.back().first, "\n");
+                        return {expressions.back().first, i + 1};
+#endif
+                }
 
                 if (expressions.size() == 1)
                 {
@@ -234,7 +288,6 @@ namespace Trinity
                 }
 
                 require(expressions.size());
-
 // This is a bit complicated, but it produces optimal results in optimal amount of time
 #if !defined(TRINITY_QUERIES_REWRITE_FILTER)
                 const auto max = expressions.back().second;
@@ -254,7 +307,7 @@ namespace Trinity
 
                         for (uint32_t k = i + span; k != upto; ++k)
                         {
-                                const auto pair = run_capture(q, run, k, l, maxSpan);
+                                const auto pair = run_capture(budget, q, run, k, l, maxSpan);
                                 const auto expr = pair.first;
                                 auto n = allocator.Alloc<ast_node>();
 
@@ -281,12 +334,14 @@ namespace Trinity
                         _lhs = n;
                 }
 #else
+                require(expressions.size());
                 const auto max = expressions.front().second;
                 auto _lhs = expressions.front().first;
                 auto firstExpression = _lhs;
                 ast_node *C{nullptr};
                 size_t maxIdx{i + 1};
 
+                require(_lhs);
                 if (trace)
                         SLog("Last:", *_lhs, ", max = ", max, "\n");
 
@@ -302,8 +357,12 @@ namespace Trinity
 
                         for (uint32_t k = i + span; k != upto; ++k)
                         {
-                                const auto pair = run_capture(q, run, k, l, maxSpan);
+                                const auto pair = run_capture(budget, q, run, k, l, maxSpan);
                                 const auto expr = pair.first;
+
+                                if (!expr)
+                                        return {nullptr, 0};
+
                                 auto n = allocator.Alloc<ast_node>();
 
                                 maxIdx = std::max<size_t>(maxIdx, pair.second);
@@ -348,7 +407,7 @@ namespace Trinity
 
                 if (rem)
                 {
-                        const auto pair = run_capture(q, run, i + lastspan, l, rem);
+                        const auto pair = run_capture(budget, q, run, i + lastspan, l, rem);
                         const auto expr = pair.first;
                         auto n = allocator.Alloc<ast_node>();
 
@@ -376,7 +435,10 @@ namespace Trinity
 #endif
 
                 if (trace)
+                {
+                        require(_lhs);
                         SLog("OUTPUT:", *_lhs, "\n");
+                }
 
                 return {_lhs, maxIdx};
         }
@@ -416,11 +478,21 @@ namespace Trinity
 		ALSO: [foo bar 512    8192]
 	*/
         template <typename L>
-        void rewrite_query(Trinity::query &q, const uint8_t K, L &&l)
+        void rewrite_query(Trinity::query &q, size_t budget, const uint8_t K, L &&l)
         {
                 static constexpr bool trace{false};
                 const auto before = Timings::Microseconds::Tick();
                 auto &allocator = q.allocator;
+
+                if (trace)
+                        SLog("Initially budget: ", budget, "\n");
+                if (const auto n = q.root->nodes_count(); n < budget)
+                        budget -= n;
+                else
+                        budget = 0;
+
+                if (trace)
+                        SLog("Then budget ", budget, "\n");
 
                 Dexpect(K > 1 && K < 16);
 
@@ -430,16 +502,16 @@ namespace Trinity
                 q.process_runs(false, true, true, [&](const auto &run) {
                         ast_node *lhs{nullptr};
 
-			if (trace)
-			{
-				SLog("Processing run of ", run.size(), "\n");
-				for (const auto n : run)
-					Print(*n->p, "\n");
-			}
+                        if (trace)
+                        {
+                                SLog("Processing run of ", run.size(), "\n");
+                                for (const auto n : run)
+                                        Print(*n->p, "\n");
+                        }
 
                         for (uint32_t i{0}; i < run.size();)
                         {
-                                auto pair = run_capture(q, run, i, l, K);
+                                auto pair = run_capture(budget, q, run, i, l, K);
                                 auto expr = pair.first;
 
                                 if (trace)
@@ -461,9 +533,9 @@ namespace Trinity
                                 i = pair.second;
                         }
 
-			*run[0] = *lhs;
-			for (uint32_t i{1}; i != run.size(); ++i)
-				run[i]->set_dummy();
+                        *run[0] = *lhs;
+                        for (uint32_t i{1}; i != run.size(); ++i)
+                                run[i]->set_dummy();
                         if (trace)
                                 SLog("Final:", *lhs, "\n");
                 });

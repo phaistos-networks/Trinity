@@ -279,6 +279,9 @@ void PrintImpl(Buffer &b, const Trinity::ast_node &n)
 
                 case ast_node::Type::BinOp:
                 {
+			require(n.binop.lhs);
+			require(n.binop.rhs);
+
                         const bool useparens = n.binop.op != Operator::AND || n.binop.lhs->type == ast_node::Type::BinOp || n.binop.rhs->type == ast_node::Type::BinOp;
 
                         if (useparens)

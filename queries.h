@@ -135,6 +135,22 @@ namespace Trinity
                 // and you want to know in your MatchedIndexDocumentsFilter::consume() impl if the term hit is for a token from
                 // any of the tokens added to the query after the rewrite.
                 void set_alltokens_flags(const uint8_t flags);
+
+                size_t nodes_count() const noexcept
+                {
+                        switch (type)
+                        {
+                                case Type::BinOp:
+                                        return binop.lhs->nodes_count() + binop.rhs->nodes_count() + 1;
+
+                                case Type::ConstTrueExpr:
+                                case Type::UnaryOp:
+                                        return 1 + expr->nodes_count();
+
+                                default:
+                                        return 1;
+                        }
+                }
         };
 
         static constexpr auto unary_same_type(const ast_node *a, const ast_node *b) noexcept
