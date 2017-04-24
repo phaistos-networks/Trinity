@@ -1,3 +1,6 @@
+// Query rewrites is as important, maybe even more so, than a good ranking (precision) function.
+// However, it's also important to consider the final query complexity. A simple query with say, 5-8 terms, can easily blow up to
+// be extremely concpet, many 100s of nodes in size, so you need to compromise and accept tradeoffs.
 #pragma once
 #include "queries.h"
 

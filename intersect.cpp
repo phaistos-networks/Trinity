@@ -2,7 +2,7 @@
 
 using namespace Trinity;
 
-void Trinity::intersect_impl(const str8_t *const tokens, const uint8_t tokensCnt, IndexSource *__restrict__ const src, masked_documents_registry *const __restrict__ maskedDocumentsRegistry, std::vector<std::pair<uint64_t, uint32_t>> *const out)
+void Trinity::intersect_impl(const uint64_t stopwordsMask, const str8_t *const tokens, const uint8_t tokensCnt, IndexSource *__restrict__ const src, masked_documents_registry *const __restrict__ maskedDocumentsRegistry, std::vector<std::pair<uint64_t, uint32_t>> *const out)
 {
         Dexpect(tokensCnt < 64);
 
@@ -35,13 +35,15 @@ void Trinity::intersect_impl(const str8_t *const tokens, const uint8_t tokensCnt
         {
                 uint64_t mapPrev{0};
                 uint8_t indexPrev{0};
-                uint8_t matchesCnt{0};
 
                 struct match
                 {
                         uint64_t v;
                         uint32_t cnt;
-                } matches[64];
+                };
+
+		std::vector<match> matches;
+
 
                 void consider(const uint64_t map)
                 {
@@ -49,40 +51,46 @@ void Trinity::intersect_impl(const str8_t *const tokens, const uint8_t tokensCnt
                                 ++matches[indexPrev].cnt;
                         else
                         {
+                                auto matchesCnt = matches.size();
+                                auto all = matches.data();
+
                                 mapPrev = map;
                                 for (uint8_t i{0}; i < matchesCnt;)
                                 {
-                                        if (const auto v = matches[i].v; (v & map) == map)
+                                        if (const auto v = all[i].v; (v & map) == map)
                                         {
                                                 // [wars jedi] [star wars jedi]
                                                 if (map == v)
-                                                        ++matches[i].cnt;
+                                                        ++all[i].cnt;
                                                 indexPrev = i;
                                                 return;
                                         }
                                         else if ((map & v) == v)
                                         {
                                                 // [star wars return jedi] [wars jedi]
-                                                matches[i] = matches[--matchesCnt];
+                                                matches[i] = matches.back();
+						matches.pop_back();
+						--matchesCnt;
                                         }
                                         else
                                                 ++i;
                                 }
 
                                 indexPrev = matchesCnt;
-                                matches[matchesCnt++] = {map, 1};
+				matches.push_back({map, 1});
                         }
                 }
 
                 void finalize()
                 {
-                        std::sort(matches, matches + matchesCnt, [](const auto &a, const auto &b) noexcept {
+                        std::sort(matches.begin(), matches.end(), [](const auto &a, const auto &b) noexcept {
                                 const auto r = int8_t(SwitchBitOps::PopCnt(b.v)) - int8_t(SwitchBitOps::PopCnt(a.v));
 
                                 return r < 0 || (!r && b.cnt < a.cnt);
                         });
                 }
         };
+
 
         uint8_t selected[64];
         ctx c;
@@ -94,6 +102,7 @@ void Trinity::intersect_impl(const str8_t *const tokens, const uint8_t tokensCnt
                 docid_t lowest;
                 const auto &it = remaining[0];
                 uint64_t mask = uint64_t(1u) << it.tokenIdx;
+		uint8_t first{0}, last{0};
 
                 selected[0] = 0;
                 lowest = it.dec->curDocument.id;
@@ -105,8 +114,11 @@ void Trinity::intersect_impl(const str8_t *const tokens, const uint8_t tokensCnt
 
                         if (const auto docID = it.dec->curDocument.id; docID == lowest)
                         {
-                                mask |= uint64_t(1u) << it.tokenIdx;
+				const auto m = uint64_t(1u) << it.tokenIdx;
+
+                                mask |= m;
                                 selected[cnt++] = i;
+				last = i;
                         }
                         else if (docID < lowest)
                         {
@@ -114,16 +126,22 @@ void Trinity::intersect_impl(const str8_t *const tokens, const uint8_t tokensCnt
                                 selected[0] = i;
                                 cnt = 1;
                                 lowest = docID;
+				first = last = i;
                         }
+
+l100: ;
                 }
 
                 if (mask != origMask)
 		{
-                        if (!maskedDocumentsRegistry->test(lowest))
-                                c.consider(mask);
+			if (0 == (stopwordsMask & ((uint64_t(1)<< first) | (uint64_t(1) << last))))
+                        {
+                                if (!maskedDocumentsRegistry->test(lowest))
+                                        c.consider(mask);
+                        }
                 }
 
-                do
+		while (cnt)
                 {
                         const auto idx = selected[--cnt];
 
@@ -135,7 +153,7 @@ void Trinity::intersect_impl(const str8_t *const tokens, const uint8_t tokensCnt
                                 else
                                         remaining[idx] = remaining[rem];
                         }
-                } while (cnt);
+                }
         }
 
 l10:
@@ -167,12 +185,12 @@ l10:
                 ++i;
 	}
 #else
-        for (uint32_t i{0}; i != c.matchesCnt; ++i)
-                out->push_back({c.matches[i].v, c.matches[i].cnt});
+	for (const auto &it: c.matches)
+                out->push_back({it.v, it.cnt});
 #endif
 }
 
-std::vector<std::pair<uint64_t, uint32_t>> intersect_impl(const str8_t *tokens, const uint8_t tokensCnt, IndexSourcesCollection *collection)
+std::vector<std::pair<uint64_t, uint32_t>> intersect_impl(const uint64_t stopwordsMask, const str8_t *tokens, const uint8_t tokensCnt, IndexSourcesCollection *collection)
 {
 	std::vector<std::pair<uint64_t, uint32_t>> out;
 	const auto n = collection->sources.size();
@@ -182,7 +200,7 @@ std::vector<std::pair<uint64_t, uint32_t>> intersect_impl(const str8_t *tokens, 
 		auto source = collection->sources[i];
 		auto scanner = collection->scanner_registry_for(i);
 
-		intersect_impl(tokens, tokensCnt, source, scanner.get(), &out);
+		intersect_impl(stopwordsMask, tokens, tokensCnt, source, scanner.get(), &out);
 	}
 
 	std::sort(out.begin(), out.end(), [](const auto &a, const auto &b) { return a.first < b.first; });

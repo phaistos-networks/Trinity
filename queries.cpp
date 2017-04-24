@@ -250,11 +250,13 @@ void PrintImpl(Buffer &b, const Trinity::phrase &p)
 static void print_token(Buffer &b, const phrase *const p)
 {
         b.append(p->terms[0].token);
+#if 0
         if (p->rep > 1)
                 b.append('(', p->rep, ')');
         b.append('[', p->index, ',', p->toNextSpan, ']');
 	if (p->flags)
 		b.append("(F:", p->flags, ")");
+#endif
 }
 
 void PrintImpl(Buffer &b, const Trinity::ast_node &n)
