@@ -27,9 +27,9 @@ namespace Trinity
 #endif
         };
 
-        term_index_ctx lookup_term(range_base<const uint8_t *, uint32_t> termsData, const str8_t term, const Switch::vector<terms_skiplist_entry> &skipList);
+        term_index_ctx lookup_term(range_base<const uint8_t *, uint32_t> termsData, const str8_t term, const std::vector<terms_skiplist_entry> &skipList);
 
-        void unpack_terms_skiplist(const range_base<const uint8_t *, const uint32_t> termsIndex, Switch::vector<terms_skiplist_entry> *skipList, simple_allocator &allocator);
+        void unpack_terms_skiplist(const range_base<const uint8_t *, const uint32_t> termsIndex, std::vector<terms_skiplist_entry> *skipList, simple_allocator &allocator);
 
         void pack_terms(std::vector<std::pair<str8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index);
 
@@ -166,7 +166,7 @@ namespace Trinity
         class SegmentTerms final
         {
               private:
-                Switch::vector<terms_skiplist_entry> skiplist;
+                std::vector<terms_skiplist_entry> skiplist;
                 simple_allocator allocator;
                 range_base<const uint8_t *, uint32_t> termsData;
 

@@ -1,5 +1,8 @@
 #include "utils.h"
 #include "common.h"
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <fcntl.h>
 
 int8_t Trinity::Utilities::to_file(const char *p, uint64_t len, const char *path)
 {

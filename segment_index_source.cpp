@@ -18,7 +18,7 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
 
 	gen = bp.AsUint64();
 
-        Snprintf(path, sizeof(path), "%s/updated_documents.ids", basePath);
+        snprintf(path, sizeof(path), "%s/updated_documents.ids", basePath);
         fd = open(path, O_RDONLY | O_LARGEFILE);
 
         if (fd == -1)
@@ -41,7 +41,7 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
 
         terms.reset(new SegmentTerms(basePath));
 
-        Snprintf(path, sizeof(path), "%s/index", basePath);
+        snprintf(path, sizeof(path), "%s/index", basePath);
         fd = open(path, O_RDONLY | O_LARGEFILE);
         Dexpect(fd != -1);
 
@@ -53,7 +53,7 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
 
         index.Set(static_cast<const uint8_t *>(fileData), uint32_t(fileSize));
 
-        Snprintf(path, sizeof(path), "%s/codec", basePath);
+        snprintf(path, sizeof(path), "%s/codec", basePath);
         fd = open(path, O_RDONLY | O_LARGEFILE);
         Dexpect(fd != -1);
 

@@ -1,7 +1,6 @@
 #pragma once
 #include "codecs.h"
 #include <buffer.h>
-#include <compress.h>
 #include <switch_dictionary.h>
 #include <switch_mallocators.h>
 

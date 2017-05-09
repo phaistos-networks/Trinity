@@ -2,6 +2,7 @@
 #include "docidupdates.h"
 #include <compress.h>
 #include <memory>
+#include <ansifmt.h>
 
 #pragma mark ENCODER
 

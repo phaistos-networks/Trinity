@@ -1,8 +1,11 @@
-#include <text.h>
-#include <compress.h>
 #include "terms.h"
+#include <compress.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <text.h>
+#include <fcntl.h>
 
-Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_t> termsData, const str8_t q, const Switch::vector<Trinity::terms_skiplist_entry> &skipList)
+Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_t> termsData, const str8_t q, const std::vector<Trinity::terms_skiplist_entry> &skipList)
 {
         int32_t top{int32_t(skipList.size()) - 1};
         const auto skipListData = skipList.data();
@@ -78,23 +81,27 @@ l100:
         return {};
 }
 
-void Trinity::unpack_terms_skiplist(const range_base<const uint8_t *, const uint32_t> termsIndex, Switch::vector<Trinity::terms_skiplist_entry> *skipList, simple_allocator &allocator)
+void Trinity::unpack_terms_skiplist(const range_base<const uint8_t *, const uint32_t> termsIndex, std::vector<Trinity::terms_skiplist_entry> *skipList, simple_allocator &allocator)
 {
-	for (const auto *p = reinterpret_cast<const uint8_t *>(termsIndex.start()), *const e = p + termsIndex.size(); p != e;)
-	{
-		auto t = skipList->PushEmpty();
-		const str8_t term((char_t *)p + 1, *p);
-		p += (term.size() * sizeof(char_t)) + sizeof(uint8_t);
+        for (const auto *p = reinterpret_cast<const uint8_t *>(termsIndex.start()), *const e = p + termsIndex.size(); p != e;)
+        {
+                skipList->resize(skipList->size() + 1);
+
+                auto t = skipList->data() + skipList->size() - 1;
+                const str8_t term((char_t *)p + 1, *p);
+
+                p += (term.size() * sizeof(char_t)) + sizeof(uint8_t);
 #ifdef TRINITY_TERMS_FAT_INDEX
-		{
-			t->tctx.documents = Compression::decode_varuint32(p);
-			t->tctx.indexChunk.len = Compression::decode_varuint32(p);
-			t->tctx.indexChunk.offset = *(uint32_t *)p; p+=sizeof(uint32_t);
-		}
+                {
+                        t->tctx.documents = Compression::decode_varuint32(p);
+                        t->tctx.indexChunk.len = Compression::decode_varuint32(p);
+                        t->tctx.indexChunk.offset = *(uint32_t *)p;
+                        p += sizeof(uint32_t);
+                }
 #endif
-		t->blockOffset = Compression::decode_varuint32(p);
-		t->term.Set(allocator.CopyOf(term.data(), term.size()), term.size());
-	}
+                t->blockOffset = Compression::decode_varuint32(p);
+                t->term.Set(allocator.CopyOf(term.data(), term.size()), term.size());
+        }
 }
 
 void Trinity::pack_terms(std::vector<std::pair<str8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index)

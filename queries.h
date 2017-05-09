@@ -376,11 +376,11 @@ namespace Trinity
                 }
 
                 // utility method; returns all nodes
-                static Switch::vector<ast_node *> &nodes(ast_node *root, Switch::vector<ast_node *> *const res);
+                static std::vector<ast_node *> &nodes(ast_node *root, std::vector<ast_node *> *const res);
 
                 static auto nodes(ast_node *root)
                 {
-                        Switch::vector<ast_node *> out;
+                        std::vector<ast_node *> out;
 
                         return nodes(root, &out);
                 }

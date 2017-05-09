@@ -52,4 +52,7 @@ namespace Trinity
 	std::pair<uint32_t, uint8_t> default_token_parser_impl(const str32_t content, char_t *out);
 }
 
-#include "limits.h"
+#include "trinity_limits.h"
+#ifdef LEAN_SWITCH
+#include <compress.h>
+#endif

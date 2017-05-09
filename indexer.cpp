@@ -2,6 +2,9 @@
 #include "docidupdates.h"
 #include "terms.h"
 #include "utils.h"
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <text.h>
 
 using namespace Trinity;
@@ -105,7 +108,14 @@ uint32_t SegmentIndexSession::term_id(const str8_t term)
         uint32_t *idp;
         str8_t *keyptr;
 
+#ifndef LEAN_SWITCH
         if (dictionary.AddNeedKey(term, 0, keyptr, &idp))
+#else
+	const auto p = dictionary.insert({term, 0});
+	
+	idp = &p.first->second;
+	if (p.second)
+#endif
         {
                 keyptr->Set(dictionaryAllocator.CopyOf(term.data(), term.size()), term.size());
                 *idp = dictionary.size();
@@ -280,12 +290,19 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
 
         for (const auto &it : map)
         {
+#ifdef LEAN_SWITCH
+                const auto termID = it.first;
+                const auto term = invDict[termID]; // actual term
+
+                v.push_back({term, it.second});
+#else
                 const auto termID = it.key();
                 const auto term = invDict[termID]; // actual term
 
                 v.push_back({term, it.value()});
+#endif
         }
 
-	sess->persist_terms(v);
+        sess->persist_terms(v);
 	persist_segment(sess, updatedDocumentIDs);
 }

@@ -1,6 +1,10 @@
 // Query rewrites is as important, maybe even more so, than a good ranking (precision) function.
 // However, it's also important to consider the final query complexity. A simple query with say, 5-8 terms, can easily blow up to
 // be extremely concpet, many 100s of nodes in size, so you need to compromise and accept tradeoffs.
+//
+// Having a "budget" helps, although its not optimal; query normalization may drop nodes count, by a large factor, and when the query is compiled the actual final
+// nodes generated may be even fewe, by an even larger factor -- but we want rewrites to be fast, so short of normalizing the query after every rewrite, and/or accepting 
+/// many, many query nodes and somehow trimming during execution, this is a good compromise.
 #pragma once
 #include "queries.h"
 

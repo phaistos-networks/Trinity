@@ -1409,7 +1409,7 @@ void query::leader_nodes(std::vector<ast_node *> *const out)
         capture_leader(root, out, 1);
 }
 
-Switch::vector<ast_node *> &query::nodes(ast_node *root, Switch::vector<ast_node *> *const res)
+std::vector<ast_node *> &query::nodes(ast_node *root, std::vector<ast_node *> *const res)
 {
         if (root)
         {

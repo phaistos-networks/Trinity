@@ -306,7 +306,14 @@ namespace // static/local this module
                 {
                         exec_term_id_t *ptr;
 
+#ifndef LEAN_SWITCH
                         if (termsDict.Add(term, 0, &ptr))
+#else
+			auto p = termsDict.insert({term, 0});
+
+			ptr = &p.first->second;
+			if (p.second)
+#endif
                         {
                                 const auto tctx = idxsrc->term_ctx(term);
 
@@ -1266,8 +1273,8 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
 
                         if (ctx->lhs.fp == consttrueexpr_impl && ctx->rhs.fp == consttrueexpr_impl)
                         {
-                                auto lhsCtx = (runtime_ctx::unaryop_ctx *)ctx->lhs.ptr;
-                                auto rhsCtx = (runtime_ctx::unaryop_ctx *)ctx->rhs.ptr;
+                                auto *const __restrict__ lhsCtx = (runtime_ctx::unaryop_ctx *)ctx->lhs.ptr;
+                                auto *const __restrict__ rhsCtx = (runtime_ctx::unaryop_ctx *)ctx->rhs.ptr;
 
                                 if (auto ptr = try_collect_impl(lhsCtx->expr, rhsCtx->expr, a, SPECIALIMPL_COLLECTION_LOGICALAND, matchallterms_impl))
                                 {
@@ -1300,8 +1307,8 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
 
                         if (ctx->lhs.fp == consttrueexpr_impl && ctx->rhs.fp == consttrueexpr_impl)
                         {
-                                auto lhsCtx = (runtime_ctx::unaryop_ctx *)ctx->lhs.ptr;
-                                auto rhsCtx = (runtime_ctx::unaryop_ctx *)ctx->rhs.ptr;
+                                auto *const __restrict__ lhsCtx = (runtime_ctx::unaryop_ctx *)ctx->lhs.ptr;
+                                auto *const __restrict__ rhsCtx = (runtime_ctx::unaryop_ctx *)ctx->rhs.ptr;
 
                                 if (auto ptr = try_collect_impl(lhsCtx->expr, rhsCtx->expr, a, SPECIALIMPL_COLLECTION_LOGICALOR, matchanyterms_impl))
                                 {
@@ -2088,7 +2095,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
         do
         {
                 // collapse and expand nodes
-                // this was pulled out of optimize_node() in order to safeguard from some edge conditions
+                // this was pulled out of optimize_node() in order to safeguard us from some edge conditions
                 collapse_node(root, rctx, a, terms, phrases, stack);
                 expand_node(root, rctx, a, terms, phrases, stack);
 
@@ -2099,6 +2106,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 {
                         if (traceCompile)
                                 SLog("Nothing to do (false OR noop)\n");
+
                         return {constfalse_impl, {}};
                 }
         } while (updates);
@@ -2277,7 +2285,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 for (const auto id : *leaderTermIDs)
                         Print("LEADER TERM ID:", id, "\n");
         }
-        //exit(0);
+
 
         // NOW, prepare decoders
         // No need to have done so if we could have determined that the query would have failed anyway
@@ -2285,7 +2293,11 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
         before = Timings::Microseconds::Tick();
         for (const auto &kv : rctx.tctxMap)
         {
+#ifdef LEAN_SWITCH
+                const auto termID = kv.first;
+#else
                 const auto termID = kv.key();
+#endif
 
                 rctx.prepare_decoder(termID);
         }
@@ -2322,8 +2334,8 @@ static exec_node compile_query(ast_node *root, runtime_ctx &rctx, std::vector<ex
 // this is a very fast operation anyway
 //
 // We can't reuse the same compiled bytecode/runtime_ctx to run the same query across multiple index sources, because
-// we optimize based on the index source structure and terms involved in the query
-// It is also very cheap to construct those.
+// we optimize based on the index source structure and terms involved in the query.
+// It is also very cheap to construct those anyway.
 void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc, masked_documents_registry *const __restrict__ maskedDocumentsRegistry, MatchedIndexDocumentsFilter *__restrict__ const matchesFilter, IndexDocumentsFilter *__restrict__ const documentsFilter)
 {
         struct query_term_instance final
@@ -2353,6 +2365,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
         {
                 if (traceCompile)
                         SLog("No root node after normalization\n");
+
                 return;
         }
 
@@ -2435,6 +2448,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
         {
                 if (traceCompile)
                         SLog("Nothing to do\n");
+
                 return;
         }
 

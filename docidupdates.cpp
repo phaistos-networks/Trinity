@@ -1,4 +1,6 @@
 #include "docidupdates.h"
+#include <switch_bitops.h>
+#include <ansifmt.h>
 
 // packs a list of updated/delete documents into a buffer that also contains
 // a skiplist for random access to the bitmaps

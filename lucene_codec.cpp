@@ -1,5 +1,6 @@
 #include "lucene_codec.h"
 #include <switch_bitops.h>
+#include <ansifmt.h>
 #ifdef LUCENE_USE_MASKEDVBYTE
 #include <ext/MaskedVByte/include/varintdecode.h>
 #include <ext/MaskedVByte/include/varintencode.h>
@@ -30,8 +31,6 @@ static void pfor_encode(FastPForLib::FastPFor<4> &forUtil, const uint32_t *value
                 return;
         }
 
-        if (trace)
-                SLog("ENCODING:", strwlen32_t((char *)values, n * sizeof(uint32_t)).CRC32(), "\n");
 
 #ifdef LUCENE_USE_MASKEDVBYTE
         out.reserve(n * 8);

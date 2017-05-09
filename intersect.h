@@ -3,6 +3,7 @@
 #include "docidupdates.h"
 #include "index_source.h"
 #include "matches.h"
+#include <switch_bitops.h>
 
 namespace Trinity
 {

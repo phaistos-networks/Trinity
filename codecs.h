@@ -1,4 +1,5 @@
 #pragma once
+#include "common.h"
 #include "docwordspace.h"
 #include "docidupdates.h"
 #include "runtime.h"

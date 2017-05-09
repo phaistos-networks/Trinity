@@ -2,6 +2,7 @@
 #include "codecs.h"
 #include <switch.h>
 #include <switch_dictionary.h>
+#include <switch_refcnt.h>
 
 namespace Trinity
 {
@@ -17,7 +18,11 @@ namespace Trinity
             : public RefCounted<IndexSource>
         {
               protected:
+#ifdef LEAN_SWITCH
+		std::unordered_map<str8_t, term_index_ctx> cache;
+#else
                 Switch::unordered_map<str8_t, term_index_ctx> cache;
+#endif
                 uint64_t gen{0}; // See IndexSourcesCollection
 
               public:
@@ -29,11 +34,20 @@ namespace Trinity
                 // TODO: serialize access
                 term_index_ctx term_ctx(const str8_t term)
                 {
-			term_index_ctx *ptr;
 
-			if (cache.Add(term, {}, &ptr))
-				*ptr = resolve_term_ctx(term);
-			return *ptr;
+#ifndef LEAN_SWITCH
+                        term_index_ctx *ptr;
+
+                        if (cache.Add(term, {}, &ptr))
+                                *ptr = resolve_term_ctx(term);
+                        return *ptr;
+#else
+                        auto p = cache.insert({term, {}});
+                        if (p.second)
+                                p.first->second = resolve_term_ctx(term);
+
+                        return p.first->second;
+#endif
                 }
 
 #if 0 		// This would probably be a good idea, but we don't need this, and it would make some optimisations in updated_documents_scanner::test() possible because
