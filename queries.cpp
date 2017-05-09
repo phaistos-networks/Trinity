@@ -1448,7 +1448,7 @@ bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str
 {
         ast_parser ctx{in, allocator, tp};
 
-	tokensParser = tp; // May come in handy later
+        tokensParser = tp; // May come in handy later
         root = parse_expr(ctx);
 
         if (!root)
@@ -1459,16 +1459,19 @@ bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str
 
         // perform trivial optimizations here
         // This is important, because this is where we remove DUMMY nodes etc
-
-        Print(ansifmt::color_red, "parsed:", ansifmt::reset, *root, "\n");
-        Print(ansifmt::bold, ansifmt::color_blue, "OPTIMIZING AST", ansifmt::reset, "\n");
+        if (traceParser)
+        {
+                Print(ansifmt::color_red, "parsed:", ansifmt::reset, *root, "\n");
+                Print(ansifmt::bold, ansifmt::color_blue, "OPTIMIZING AST", ansifmt::reset, "\n");
+        }
 
         root = normalize_root(root);
 
         if (!root)
                 return false;
 
-        Print(ansifmt::color_red, "normalized:", ansifmt::reset, *root, "\n");
+        if (traceParser)
+                Print(ansifmt::color_red, "normalized:", ansifmt::reset, *root, "\n");
 
         return true;
 }
