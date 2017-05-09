@@ -479,9 +479,9 @@ static bool matchanyterms_impl(const exec_node &self, runtime_ctx &rctx)
         bool res{false};
         const auto did = rctx.curDocID;
 #if 1
-        const auto *__restrict__ run = static_cast<const runtime_ctx::termsrun *>(self.ptr);
+        const auto *const __restrict__ run = static_cast<const runtime_ctx::termsrun *>(self.ptr);
         const auto size = run->size;
-        const auto *__restrict__ terms = run->terms;
+        const auto *const __restrict__ terms = run->terms;
 
 #if defined(TRINITY_ENABLE_PREFETCH)
         // this helps
@@ -1219,8 +1219,8 @@ static bool same(const exec_node &a, const exec_node &b)
 {
         if (a.fp == matchallterms_impl && b.fp == a.fp)
         {
-                auto runa = (runtime_ctx::termsrun *)a.ptr;
-                auto runb = (runtime_ctx::termsrun *)b.ptr;
+                const auto *const __restrict__ runa = (runtime_ctx::termsrun *)a.ptr;
+                const auto *const __restrict__ runb = (runtime_ctx::termsrun *)b.ptr;
 
                 return *runa == *runb;
         }
@@ -1228,8 +1228,8 @@ static bool same(const exec_node &a, const exec_node &b)
                 return a.u16 == b.u16;
         else if (a.fp == matchphrase_impl)
         {
-                const auto pa = (runtime_ctx::phrase *)a.ptr;
-                const auto pb = (runtime_ctx::phrase *)b.ptr;
+                const auto *const __restrict__ pa = (runtime_ctx::phrase *)a.ptr;
+                const auto *const __restrict__ pb = (runtime_ctx::phrase *)b.ptr;
 
                 return *pa == *pb;
         }
