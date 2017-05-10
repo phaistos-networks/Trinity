@@ -2644,6 +2644,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                         // Maybe the filter has collected as many documents as it needs
                                         // See https://blog.twitter.com/2010/twitters-new-search-architecture "efficient early query termination"
                                         // See CONCEPTS.md
+					goto l1;
                                 }
 
                                 ++matchedDocuments;
