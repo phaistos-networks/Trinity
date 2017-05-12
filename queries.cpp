@@ -1,4 +1,5 @@
 #include "queries.h"
+#include <unordered_map>
 
 using namespace Trinity;
 
@@ -1474,4 +1475,53 @@ bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str
                 Print(ansifmt::color_red, "normalized:", ansifmt::reset, *root, "\n");
 
         return true;
+}
+
+void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a)
+{
+        std::vector<ast_node *> stack;
+	std::unordered_map<str8_t, char_t *> map;
+
+        stack.push_back(n);
+        do
+        {
+                auto n = stack.back();
+
+                stack.pop_back();
+                switch (n->type)
+                {
+                        case ast_node::Type::Token:
+                        case ast_node::Type::Phrase:
+				{
+					const auto phrase = n->p;
+
+					for (uint32_t i{0}; i != phrase->size; ++i)
+					{
+						auto &t = phrase->terms[i].token;
+						auto res = map.insert({t, nullptr});
+
+						if (res.second)
+							res.first->second = a->CopyOf(t.data(), t.size());
+
+						t.p = res.first->second;
+					}
+
+				}
+                                break;
+
+                        case ast_node::Type::BinOp:
+                                stack.push_back(n->binop.lhs);
+                                stack.push_back(n->binop.rhs);
+                                break;
+
+                        case ast_node::Type::UnaryOp:
+                        case ast_node::Type::ConstTrueExpr:
+                                stack.push_back(n->expr);
+                                break;
+
+			case ast_node::Type::Dummy:
+			case ast_node::Type::ConstFalse:
+				break;
+                }
+        } while (stack.size());
 }

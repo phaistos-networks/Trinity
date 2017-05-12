@@ -337,6 +337,11 @@ namespace Trinity
 
                 bool parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *) = default_token_parser_impl);
 
+		// This is handy. When we copy a query to another query, we want to make sure
+		// that tokens point to the destination query allocator, not the source, because it is possible for
+		// the source query to go away
+		static void bind_tokens_to_allocator(ast_node *, simple_allocator *);
+
                 query() = default;
 
                 inline operator bool() const noexcept
@@ -356,9 +361,11 @@ namespace Trinity
 
 		}
 
-                query(const query &o)
+                explicit query(const query &o)
                 {
                         root = o.root ? o.root->copy(&allocator) : nullptr;
+			if (root)
+				bind_tokens_to_allocator(root, &allocator);
                 }
 
                 query(query &&o)
@@ -372,6 +379,8 @@ namespace Trinity
                         allocator.reuse();
 
                         root = o.root ? o.root->copy(&allocator) : nullptr;
+			if (root)
+				bind_tokens_to_allocator(root, &allocator);
                         return *this;
                 }
 
