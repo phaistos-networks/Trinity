@@ -71,13 +71,17 @@ namespace Trinity
 		struct IndexSession
                 {
                         IOBuffer indexOut;
+			// Whenever you flush indexOut to disk, say, every few MBs or GBs,
+			// you need to adjust indexOutFlushed, because the various codecs implementations need to compute some offset in the index
+			// Obviously, you are not required to flush, but it's an option.
+			uint32_t indexOutFlushed;
 			const char *basePath;
 
 			// The segment name should be the generation
 			// e.g for path Trinity/Indices/Wikipedia/Segments/100
 			// the generation is extracted as 100, but, again, this is codec specific
                         IndexSession(const char *bp)
-				: basePath{bp}
+				: indexOutFlushed{0}, basePath{bp}
 			{
 
 			}
@@ -86,6 +90,10 @@ namespace Trinity
 			{
 
 			}
+
+			// Utility method
+			// Demonstrates how you should update indexOutFlushed
+			void flush_index(int fd);
 
 			// Handy utility function
 			// see SegmentIndexSession::commit()

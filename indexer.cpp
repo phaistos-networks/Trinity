@@ -138,13 +138,18 @@ Trinity::SegmentIndexSession::document_proxy SegmentIndexSession::begin(const do
 
 // You are expected to have invoked sess->begin() and built the index in sess->indexOut
 // see SegmentIndexSession::commit()
-void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<docid_t> &updatedDocumentIDs)
+// Callee is responsible for clos()ing indexFd
+void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<docid_t> &updatedDocumentIDs, int indexFd)
 {
-	if (Trinity::Utilities::to_file(sess->indexOut.data(), sess->indexOut.size(), Buffer{}.append(sess->basePath, "/index").c_str()) == -1)
-                throw Switch::system_error("Failed to persist index");
+	if (sess->indexOut.size())
+        {
+                if (Trinity::Utilities::to_file(sess->indexOut.data(), sess->indexOut.size(), indexFd) == -1)
+                        throw Switch::system_error("Failed to persist index");
 
+                sess->indexOut.clear();
+        }
 
-	IOBuffer maskedDocumentsBuf;
+        IOBuffer maskedDocumentsBuf;
 
         // Persist masked documents if any
         pack_updates(updatedDocumentIDs, &maskedDocumentsBuf);
@@ -174,6 +179,24 @@ void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::ve
         sess->end();
 }
 
+void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<docid_t> &updatedDocumentIDs)
+{
+        auto path = Buffer{}.append(sess->basePath, "/index.t");
+        int fd = open(sess->indexOut.data(), sess->indexOut.size(), path.c_str(), O_WRONLY | O_CREAT | O_LARGEFILE, 0775);
+
+        if (fd == -1)
+                throw Switch::system_error("Failed to persist index");
+
+        Defer({
+                close(fd);
+        });
+
+        persist_segment(sess, updatedDocumentIDs, fd);
+
+        if (rename(path.c_str(), Buffer{}.append(strwlen32_t(path.data(), path.size() - 2)).c_str()) == -1)
+                throw Switch::system_error("Failed to persist index");
+}
+
 void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
 {
         struct segment_data
@@ -181,14 +204,24 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                 uint32_t termID;
                 docid_t documentID;
                 uint32_t hitsOffset;
-                uint16_t hitsCnt; 	// XXX: see comments earlier
+                uint16_t hitsCnt; // XXX: see comments earlier
         };
 
         std::vector<uint32_t> allOffsets;
         Switch::unordered_map<uint32_t, term_index_ctx> map;
         std::unique_ptr<Trinity::Codecs::Encoder> enc_(sess->new_encoder());
+        auto path = Buffer{}.append(sess->basePath, "/index.t");
+        int indexFd = open(path.c_str(), O_WRONLY | O_CREAT | O_LARGEFILE, 0775);
 
-        const auto scan = [ enc = enc_.get(), &map ](const auto data, const auto dataSize)
+        if (indexFd == -1)
+                throw Switch::system_error("Failed to persist index");
+
+        Defer({
+                if (indexFd != -1)
+                        close(indexFd);
+        });
+
+        const auto scan = [ flushFreq = this->flushFreq, indexFd, enc = enc_.get(), &map, sess ](const auto data, const auto dataSize)
         {
                 uint8_t payloadSize;
                 std::vector<segment_data> all;
@@ -235,11 +268,10 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                         return a.termID < b.termID || (a.termID == b.termID && a.documentID < b.documentID);
                 });
 
-
                 for (const auto *it = all.data(), *const e = it + all.size(); it != e;)
                 {
                         const auto term = it->termID;
-			docid_t prevDID{0};
+                        docid_t prevDID{0};
 
                         enc->begin_term();
 
@@ -250,7 +282,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                                 const auto *p = data + it->hitsOffset;
                                 uint32_t pos{0};
 
-				require(documentID > prevDID);
+                                require(documentID > prevDID);
 
                                 enc->begin_document(documentID);
                                 for (uint32_t i{0}; i != hitsCnt; ++i)
@@ -268,11 +300,14 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                                 }
                                 enc->end_document();
 
-				prevDID = documentID;
+                                prevDID = documentID;
                         } while (++it != e && it->termID == term);
 
                         enc->end_term(&tctx);
                         map.insert({term, tctx});
+
+                        if (flushFreq && sess->indexOut.size() > flushFreq)
+                                sess->flush_index(indexFd);
                 }
         };
 
@@ -280,10 +315,8 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         // begin() could open files, etc
         sess->begin();
 
-
         // IF we flushed b earlier, mmap() and scan() that mmmap()ed region first
         scan(reinterpret_cast<const uint8_t *>(b.data()), b.size());
-
 
         // Persist terms dictionary
         std::vector<std::pair<str8_t, term_index_ctx>> v;
@@ -304,5 +337,8 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         }
 
         sess->persist_terms(v);
-	persist_segment(sess, updatedDocumentIDs);
+        persist_segment(sess, updatedDocumentIDs, indexFd);
+
+        if (rename(path.c_str(), Buffer{}.append(strwlen32_t(path.data(), path.size() - 2)).c_str()) == -1)
+                throw Switch::system_error("Failed to persist index");
 }

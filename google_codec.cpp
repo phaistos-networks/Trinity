@@ -15,7 +15,7 @@ void Trinity::Codecs::Google::Encoder::begin_term()
 	prevBlockLastDocumentID = 0;
 	hitsData.clear();
 	termDocuments = 0;
-	curTermOffset = out->size();
+	curTermOffset = out->size() + sess->indexOutFlushed;
 
 	if (CONSTRUCT_SKIPLIST)
         {
@@ -116,11 +116,11 @@ void Trinity::Codecs::Google::Encoder::end_term(term_index_ctx *tctx)
 		require(skipListData.size() == skipListEntries * (sizeof(docid_t) + sizeof(uint32_t)));
 
                 out->serialize(skipListData.data(), skipListData.size());     // actual skiplist
-                *(uint16_t *)(out->data() + curTermOffset) = skipListEntries; // skiplist size in entries in the index chunk header
+                *(uint16_t *)(out->data() + (curTermOffset - sess->indexOutFlushed)) = skipListEntries; // skiplist size in entries in the index chunk header
         }
 
-        tctx->indexChunk.Set(curTermOffset, out->size() - curTermOffset);
-	tctx->documents = termDocuments;
+        tctx->indexChunk.Set(curTermOffset, (out->size() + sess->indexOutFlushed) - curTermOffset);
+        tctx->documents = termDocuments;
 
 	skipListData.clear();
 }
@@ -133,7 +133,7 @@ void Trinity::Codecs::Google::Encoder::commit_block()
         auto out{&sess->indexOut};
 
         if (trace)
-                SLog("Commiting block, curBlockSize = ", curBlockSize, ", curDocID = ", curDocID, ", prevBlockLastDocumentID = ", prevBlockLastDocumentID, ", delta = ", delta, "  ", out->size(), "\n");
+                SLog("Commiting block, curBlockSize = ", curBlockSize, ", curDocID = ", curDocID, ", prevBlockLastDocumentID = ", prevBlockLastDocumentID, ", delta = ", delta, "  ", out->size() + sess->indexOutFlushed, "\n");
 
         // build the new block
         block.clear();
@@ -183,13 +183,13 @@ void Trinity::Codecs::Google::Encoder::commit_block()
         curBlockSize = 0;
 
         if (trace)
-                SLog("Commited Block ", out->size(), "\n");
+                SLog("Commited Block ", out->size() + sess->indexOutFlushed, "\n");
 }
 
 range32_t Trinity::Codecs::Google::IndexSession::append_index_chunk(const Trinity::Codecs::AccessProxy *src_, const term_index_ctx srcTCTX)
 {
         auto src = static_cast<const Trinity::Codecs::Google::AccessProxy *>(src_);
-        const auto o = indexOut.size();
+        const auto o = indexOut.size() + indexOutFlushed;
 
         indexOut.serialize(src->indexPtr + srcTCTX.indexChunk.offset, srcTCTX.indexChunk.size());
         return {uint32_t(o), srcTCTX.indexChunk.size()};

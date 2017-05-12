@@ -8,6 +8,9 @@ namespace Trinity
 {
         // Persists an index sesion as a segment
         // The application is responsible for persisting the terms (see SegmentIndexSession::commit() for example, and IndexSession::persist_terms())
+        void persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<uint32_t> &updatedDocumentIDs, int fd);
+
+	// Wrapper for persist_segment(); opens the index file and passes it to persist_segment()
         void persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<uint32_t> &updatedDocumentIDs);
 
         // A utility class suitable for indexing document terms and persisting the index and other codec specifc data into a directory
@@ -23,6 +26,7 @@ namespace Trinity
                 simple_allocator dictionaryAllocator;
                 Switch::unordered_map<str8_t, uint32_t> dictionary;
                 Switch::unordered_map<uint32_t, str8_t> invDict;
+		uint32_t flushFreq{0};
 
               public:
                 struct document_proxy final
@@ -84,6 +88,13 @@ namespace Trinity
                 {
                         b.clear();
                 }
+
+		// When != 0, whenever the session's indexOut size exceeds that value, the index
+		// will be flushed.
+		void set_flush_freq(const size_t n)
+		{
+			flushFreq = n;
+		}
 
                 void erase(const docid_t documentID);
 

@@ -13,6 +13,7 @@ namespace Trinity
         // We can no longer ommit (term, term_index_ctx) from the terms data file and keep
         // that just in the index, beause while it works great for lookups, it means we can't trivially iterate
         // over all terms in the terms data file (see terms_data_view struct), and this is important for merging segments.
+	//
         // For other applications that do not need to access to all terms, one couild get those structures, make sure TRINITY_TERMS_FAT_INDEX is defined
         // and use it .
         //#define TRINITY_TERMS_FAT_INDEX
@@ -138,7 +139,8 @@ namespace Trinity
             : public IndexSourceTermsView
         {
               private:
-                terms_data_view::iterator it, end;
+                terms_data_view::iterator it;
+		const terms_data_view::iterator end;
 
               public:
                 IndexSourcePrefixCompressedTermsView(const range_base<const uint8_t *, uint32_t> termsData)

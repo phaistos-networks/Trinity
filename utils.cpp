@@ -4,13 +4,8 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-int8_t Trinity::Utilities::to_file(const char *p, uint64_t len, const char *path)
+int8_t Trinity::Utilities::to_file(const char *p, uint64_t len, int fd)
 {
-        int fd = open(path, O_WRONLY | O_TRUNC | O_CREAT | O_LARGEFILE, 0775);
-
-        if (fd == -1)
-                return -1;
-
 	// can't write more than sizeof(ssize_t) bytes/time (EINVAL)
         static constexpr uint64_t MaxSpan{(2ul * 1024 * 1024 * 1024) - 1};
         const auto *ptr{p};
@@ -38,11 +33,27 @@ int8_t Trinity::Utilities::to_file(const char *p, uint64_t len, const char *path
                 return -1;
         }
 
-        if (close(fd) == -1)
-                return -1;
-
         // TODO: as per Jeff Praisance's recommendation, we should open() the directory, fsync() its fd, and close() it
         return 0;
+}
+
+int8_t Trinity::Utilities::to_file(const char *p, uint64_t len, const char *path)
+{
+        int fd = open(path, O_WRONLY | O_TRUNC | O_CREAT | O_LARGEFILE, 0775);
+
+        if (fd == -1)
+                return -1;
+        else if (const auto res = to_file(p, len, fd); res == -1)
+        {
+                close(fd);
+                return -1;
+        }
+        else
+        {
+                // TODO: as per Jeff Praisance's recommendation, we should open() the directory, fsync() its fd, and close() it
+                close(fd);
+                return 0;
+        }
 }
 
 std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::str32_t content, Trinity::char_t *out)

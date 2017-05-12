@@ -2,6 +2,19 @@
 #include "terms.h"
 #include "utils.h"
 
+void Trinity::Codecs::IndexSession::flush_index(int fd)
+{
+        if (indexOut.empty())
+                return;
+        else if (Utilities::to_file(indexOut.data(), indexOut.size(), fd) == -1)
+                throw Switch::data_error("Failed to flush index");
+        else
+        {
+                indexOutFlushed += indexOut.size();
+                indexOut.clear();
+        }
+}
+
 void Trinity::Codecs::IndexSession::persist_terms(std::vector<std::pair<str8_t, term_index_ctx>> &v)
 {
         IOBuffer data, index;
