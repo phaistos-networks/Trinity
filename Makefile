@@ -3,8 +3,8 @@ HOST:=$(shell hostname)
 ifeq ($(HOST), origin)
 # When building on our dev.system
 	include /home/system/Development/Switch/Makefile.dfl
-	#CPPFLAGS:=$(CPPFLAGS_SANITY) $(OPTIMIZER_CFLAGS)
-	CPPFLAGS:=$(CPPFLAGS_SANITY) #-fsanitize=address
+	CPPFLAGS:=$(CPPFLAGS_SANITY) $(OPTIMIZER_CFLAGS)
+	#CPPFLAGS:=$(CPPFLAGS_SANITY) #-fsanitize=address
 	SWITCH_OBJS:=$(SWITCH_BASE)/ext/FastPFor/libFastPFor.a
 	SWITCH_OBJS:=$(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/bitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/varintdecode.c.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/streamvbyte.c.o
 else
@@ -25,7 +25,7 @@ OBJS:=utils.o codecs.o queries.o exec.o google_codec.o docidupdates.o indexer.o 
 ifeq ($(HOST), origin)
 all : app lib
 app:  app.o lib
-	$(CC) app.o -o T $(LDFLAGS_SANITY) -lswitch -lpthread $(SWITCH_TLS_LDFLAGS) -lz -L /home/system/Development/Switch/ext/MaskedVByte -lmaskedvbyte -L./ -lthe_trinity -fsanitize=address
+	$(CC) app.o -o T $(LDFLAGS_SANITY) -lswitch -lpthread $(SWITCH_TLS_LDFLAGS) -lz -L /home/system/Development/Switch/ext/MaskedVByte -lmaskedvbyte -L./ -lthe_trinity #-fsanitize=address
 else
 all: switch lib
 

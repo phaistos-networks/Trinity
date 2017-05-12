@@ -1,6 +1,7 @@
 #include "lucene_codec.h"
 #include <switch_bitops.h>
 #include <ansifmt.h>
+#include "utils.h"
 #ifdef LUCENE_USE_MASKEDVBYTE
 #include <ext/MaskedVByte/include/varintdecode.h>
 #include <ext/MaskedVByte/include/varintencode.h>
@@ -149,11 +150,18 @@ void Trinity::Codecs::Lucene::IndexSession::end()
 {
         int fd = open(Buffer{}.append(basePath, "/hits.data").c_str(), O_WRONLY | O_LARGEFILE | O_CREAT, 0775);
 
-        expect(fd != -1);
-        // XXX: use SwitchFS::writev_safe() or use multiple write() calls because if a write() is for size >= sizeof(ssize_t) it will fail with EINVAL
+        if (fd == -1)
+                throw Switch::data_error("Failed to persist hits.data");
+
+        Defer({
+                close(fd);
+        });
+
         if (positionsOut.size())
-                expect(pwrite64(fd, positionsOut.data(), positionsOut.size(), 0) == positionsOut.size());
-        close(fd);
+        {
+                if (Utilities::to_file(positionsOut.data(), positionsOut.size(), fd) == -1)
+                        throw Switch::data_error("Failed to persist hits.data");
+        }
 }
 
 range32_t Trinity::Codecs::Lucene::IndexSession::append_index_chunk(const Trinity::Codecs::AccessProxy *src_, const term_index_ctx srcTCTX)

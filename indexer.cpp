@@ -92,9 +92,26 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
 
         *(uint16_t *)(b.data() + offset) = terms; // total distinct terms for (document) XXX: see earlier comments
 
-        if (b.size() > 16 * 1024 * 1024)
+        if (intermediateStateFlushFreq && b.size() > intermediateStateFlushFreq)
         {
-                // flush buffer?
+                if (backingFileFD == -1)
+                {
+                        Buffer path;
+
+                        path.append("/tmp/trinity-index-intermediate.", Timings::Microseconds::SysTime(), ".", uint32_t(getpid()), ".tmp");
+                        backingFileFD = open(path.c_str(), O_RDWR | O_CREAT | O_LARGEFILE | O_TRUNC | O_EXCL, 0755);
+
+                        if (backingFileFD == -1)
+                                throw Switch::data_error("Failed to persist state");
+
+                        // Unlink it here; won't need it
+                        unlink(path.c_str());
+                }
+
+                if (write(backingFileFD, b.data(), b.size()) != b.size())
+                        throw Switch::data_error("Failed to persist state");
+
+                b.clear();
         }
 }
 
@@ -164,7 +181,8 @@ void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::ve
 	// Persist codec info
         int fd = open(Buffer{}.append(sess->basePath, "/codec").c_str(), O_WRONLY | O_LARGEFILE | O_TRUNC | O_CREAT, 0775);
 
-        Dexpect(fd != -1);
+	if (fd == -1)
+                throw Switch::system_error("Failed to persist codec id");
 
         const auto codecID = sess->codec_identifier();
 
@@ -315,8 +333,32 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         // begin() could open files, etc
         sess->begin();
 
-        // IF we flushed b earlier, mmap() and scan() that mmmap()ed region first
-        scan(reinterpret_cast<const uint8_t *>(b.data()), b.size());
+	if (backingFileFD != -1)
+        {
+                const auto fileSize = lseek64(backingFileFD, 0, SEEK_END);
+
+                if (fileSize == off64_t(-1))
+                        throw Switch::data_error("Failed to access backing file");
+
+                auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, backingFileFD, 0);
+
+                if (fileData == MAP_FAILED)
+                        throw Switch::data_error("Failed to access backing file");
+
+                Defer({
+                        munmap(fileData, fileSize);
+                });
+
+                scan(reinterpret_cast<const uint8_t *>(fileData), fileSize);
+
+		close(backingFileFD);
+		backingFileFD = -1;
+        }
+
+	if (b.size())
+	{
+        	scan(reinterpret_cast<const uint8_t *>(b.data()), b.size());
+	}
 
         // Persist terms dictionary
         std::vector<std::pair<str8_t, term_index_ctx>> v;
@@ -339,6 +381,10 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         sess->persist_terms(v);
         persist_segment(sess, updatedDocumentIDs, indexFd);
 
+	if (close(indexFd) == -1)
+		throw Switch::data_error("Failed to persist index");
+
+        indexFd = -1;
         if (rename(path.c_str(), Buffer{}.append(strwlen32_t(path.data(), path.size() - 2)).c_str()) == -1)
                 throw Switch::system_error("Failed to persist index");
 }

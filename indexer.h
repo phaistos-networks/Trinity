@@ -21,12 +21,13 @@ namespace Trinity
               private:
                 IOBuffer b;
                 IOBuffer hitsBuf;
+		int backingFileFD{-1};
                 std::vector<std::pair<uint32_t, std::pair<uint32_t, range_base<uint32_t, uint8_t>>>> hits;
                 std::vector<docid_t> updatedDocumentIDs;
                 simple_allocator dictionaryAllocator;
                 Switch::unordered_map<str8_t, uint32_t> dictionary;
                 Switch::unordered_map<uint32_t, str8_t> invDict;
-		uint32_t flushFreq{0};
+		uint32_t flushFreq{0}, intermediateStateFlushFreq{0};
 
               public:
                 struct document_proxy final
@@ -96,6 +97,12 @@ namespace Trinity
 			flushFreq = n;
 		}
 
+		// This affects intermediate state flushing frequency
+		void set_intermediate_state_flush_freq(const size_t n)
+		{
+			intermediateStateFlushFreq = n;
+		}
+
                 void erase(const docid_t documentID);
 
                 // After you have obtained a document_proxy, you can use its insert methods to register term hits
@@ -122,5 +129,11 @@ namespace Trinity
                 // Persist index and masked products into the directory s->basePath
                 // See also SegmentIndexSource::SegmentIndexSource()
                 void commit(Trinity::Codecs::IndexSession *const s);
+
+		~SegmentIndexSession()
+		{
+			if (backingFileFD != -1)
+				close(backingFileFD);
+		}
         };
 }
