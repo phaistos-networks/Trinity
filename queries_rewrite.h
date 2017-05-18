@@ -547,7 +547,8 @@ namespace Trinity
                                 SLog("Final:", *lhs, "\n");
                 });
 
-                SLog(duration_repr(Timings::Microseconds::Since(before)), " to rewrite the query\n");
+		if (trace)
+	                SLog(duration_repr(Timings::Microseconds::Since(before)), " to rewrite the query\n");
                 q.normalize();
         }
 }
