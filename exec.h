@@ -18,11 +18,11 @@ namespace Trinity
 	// Note that execution of sources does not depend on state of other sources - they are isolated so parallel processing them requires
 	// no coordination.
 	template<typename T, typename...Arg>
-		std::vector<std::unique_ptr<MatchedIndexDocumentsFilter>> exec_query(const query &in, IndexSourcesCollection *collection, IndexDocumentsFilter *f, Arg&&...args)
+		std::vector<std::unique_ptr<T>> exec_query(const query &in, IndexSourcesCollection *collection, IndexDocumentsFilter *f, Arg&&...args)
 		{
 			static_assert(std::is_base_of<MatchedIndexDocumentsFilter, T>::value, "Expected a MatchedIndexDocumentsFilter subclass");
 			const auto n = collection->sources.size();
-			std::vector<std::unique_ptr<MatchedIndexDocumentsFilter>> out;
+			std::vector<std::unique_ptr<T>> out;
 
 			for (uint32_t i{0}; i != n; ++i)
                         {

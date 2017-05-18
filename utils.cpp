@@ -60,6 +60,47 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
 {
         const auto *p = content.begin(), *const e = content.end(), *const b{p};
 
+	if (p + 5 < e && isalpha(*p) && p[1] == '.' && isalnum(p[2]) && p[3] == '.' && isalpha(p[4]))
+	{
+		// is it e.g I.B.M ?
+		const auto threshold = out + 0xff;
+		auto o{out};
+
+		*o++ = p[0];
+		*o++ = p[2];
+		*o++ = p[4];
+
+                for (p += 5;;)
+                {
+                        if (p == e)
+				break;
+                        else if (*p == '.')
+                        {
+				++p;
+				if (p == e)
+					break;
+				else if (isalpha(*p))
+				{
+					if (unlikely(o !=threshold))
+						*o++ = *p;
+					++p;
+					continue;
+				}
+				else if (!isalnum(*p))
+					break;
+				else
+					goto l20;
+                        }
+                        else if (isalnum(*p))
+                                goto l20;
+			else
+				break;
+                }
+
+                return {p - content.data(), o - out};
+        }
+
+l20:
         if (p != e && isalnum(*p))
         {
 		// e.g site:google.com, or video|games
