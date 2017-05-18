@@ -2020,7 +2020,7 @@ static void capture_leader(const exec_node n, std::vector<exec_node> *const out,
         {
                 auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
 
-                out->push_back(ctx->expr);
+		capture_leader(ctx->expr, out, threshold);
         }
         else if (n.fp == logicalor_impl)
         {
@@ -2058,7 +2058,7 @@ static void capture_leader(const exec_node n, std::vector<exec_node> *const out,
                 auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
 
                 if (out->size() < threshold)
-                        out->push_back(ctx->expr);
+			capture_leader(ctx->expr, out, threshold);
         }
 }
 
@@ -2270,6 +2270,19 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
 
                         leaderTermIDs->push_back(selectedTerm);
                 }
+		// for [ +the iphone]
+		else if (n.fp == unaryand_impl)
+		{
+			auto e = (runtime_ctx::unaryop_ctx *)n.ptr;
+
+			leaderNodes.push_back(e->expr);
+		}
+		else if (n.fp == logicaland_impl)
+		{
+			auto e = (runtime_ctx::binop_ctx *)n.ptr;
+
+			leaderNodes.push_back(e->lhs);
+		}
                 else
                         std::abort();
         }
