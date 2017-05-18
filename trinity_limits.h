@@ -14,7 +14,7 @@ namespace Trinity
 		static constexpr size_t MaxPhraseSize{16};
 		static constexpr size_t MaxQueryTokens{1024};
 		static constexpr size_t MaxTermLength{64};
-		static constexpr size_t MaxPosition{8192};
+		static constexpr size_t MaxPosition{1 << 14};
 
 
 		// Sanity check

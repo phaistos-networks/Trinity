@@ -27,6 +27,7 @@ namespace Trinity
                 simple_allocator dictionaryAllocator;
                 Switch::unordered_map<str8_t, uint32_t> dictionary;
                 Switch::unordered_map<uint32_t, str8_t> invDict;
+		// See IndexSession::indexOutFlushed comments
 		uint32_t flushFreq{0}, intermediateStateFlushFreq{0};
 
               public:
@@ -47,36 +48,43 @@ namespace Trinity
                         {
                         }
 
-                        void insert(const uint32_t termID, const uint32_t position, range_base<const uint8_t *, const uint8_t> payload);
+                        void insert(const uint32_t termID, const tokenpos_t position, range_base<const uint8_t *, const uint8_t> payload);
 
                         // new `term` hit at `position` with `payload`(attrs.)
-                        void insert(const str8_t term, const uint32_t position, range_base<const uint8_t *, const uint8_t> payload)
+                        void insert(const str8_t term, const tokenpos_t position, range_base<const uint8_t *, const uint8_t> payload)
                         {
                                 insert(term_id(term), position, payload);
                         }
 
-                        void insert(const uint32_t termID, const uint32_t position)
+                        void insert(const uint32_t termID, const tokenpos_t position)
                         {
                                 insert(termID, position, {});
                         }
 
                         // new `term` hit at `position`
-                        void insert(const str8_t term, const uint32_t position)
+                        void insert(const str8_t term, const tokenpos_t position)
                         {
                                 insert(term_id(term), position, {});
                         }
 
                         template <typename T>
-                        void insert(const uint32_t termID, const uint32_t position, const T &v)
+                        void insert(const uint32_t termID, const tokenpos_t position, const T &v)
                         {
-                                insert(termID, position, {static_cast<const uint8_t *>(&v), uint32_t(sizeof(T))});
+                                insert(termID, position, {reinterpret_cast<const uint8_t *>(&v), uint32_t(sizeof(T))});
                         }
 
                         template <typename T>
-                        void insert(const str8_t term, const uint32_t position, const T &v)
+                        void insert(const str8_t term, const tokenpos_t position, const T &v)
                         {
                                 insert(term_id(term), position, {static_cast<const uint8_t *>(&v), uint32_t(sizeof(T))});
                         }
+
+			void insert_var_payload(const uint32_t termID, const tokenpos_t pos, const uint64_t payload)
+			{
+				const uint8_t requiredBytes = ((64 - SwitchBitOps::LeadingZeros(payload)) + 7) >> 3;
+
+				insert(termID, pos, {reinterpret_cast<const uint8_t *>(&payload), requiredBytes});
+			}
                 };
 
               private:
@@ -84,6 +92,8 @@ namespace Trinity
 
               public:
                 uint32_t term_id(const str8_t term);
+
+		str8_t term(const uint32_t id) const;
 
                 void clear()
                 {
@@ -129,6 +139,11 @@ namespace Trinity
                 // Persist index and masked products into the directory s->basePath
                 // See also SegmentIndexSource::SegmentIndexSource()
                 void commit(Trinity::Codecs::IndexSession *const s);
+
+		auto any_indexed() const noexcept
+		{
+			return backingFileFD != -1 || hitsBuf.size();
+		}
 
 		~SegmentIndexSession()
 		{

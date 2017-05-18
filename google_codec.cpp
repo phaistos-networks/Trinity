@@ -50,12 +50,15 @@ void Trinity::Codecs::Google::Encoder::new_hit(const uint32_t pos, const range_b
 		return;
 	}
 
-	const auto delta = pos - lastPos;
+	Drequire(payload.size() <= sizeof(uint64_t));	 // un-necessary?
+	Drequire(pos < Limits::MaxPosition);
+	Drequire(pos >= lastPos);
 
-	require(pos >= lastPos);
+	const uint32_t delta = pos - lastPos;
+
 
 	if (trace)
-		SLog("HIT ", pos, " => ", delta, "\n");
+		SLog("HIT ", pos, " => ", delta, ", ", payload.size(), "\n");
 
 	++blockFreqs[curBlockSize];
 
@@ -63,18 +66,22 @@ void Trinity::Codecs::Google::Encoder::new_hit(const uint32_t pos, const range_b
 	{
 		if (payloadSize != curPayloadSize)
 		{
-			hitsData.encode_varuint32((delta << 1) | 1);
-			hitsData.Serialize(payloadSize);
+			hitsData.encode_varbyte32((delta << 1) | 1);
+			hitsData.pack(payloadSize);
 			curPayloadSize = payloadSize;
 		}
 		else
-			hitsData.encode_varuint32(delta << 1);
+		{
+			hitsData.encode_varbyte32(delta << 1);
+		}
 
 		if (payloadSize)
 			hitsData.serialize(payload.offset, payloadSize);
 	}
 	else
-		hitsData.encode_varuint32(delta);
+	{
+		hitsData.encode_varbyte32(delta);
+	}
 
 	lastPos = pos;
 }
@@ -141,6 +148,7 @@ void Trinity::Codecs::Google::Encoder::commit_block()
         {
                 if (trace)
                         SLog("<< ", docDeltas[i], "\n");
+
                 block.encode_varbyte32(docDeltas[i]);
         }
 
@@ -148,6 +156,7 @@ void Trinity::Codecs::Google::Encoder::commit_block()
         {
                 if (trace)
                         SLog("<< freq ", blockFreqs[i], "\n");
+
                 block.encode_varbyte32(blockFreqs[i]);
         }
 
@@ -336,7 +345,10 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
 			if (TRACK_PAYLOADS)
 			{
 				if (step&1)
+				{
 					payloadSize = *p++;
+					Dexpect(payloadSize <= sizeof(uint64_t));
+				}
 
 				if (payloadSize)
 				{
@@ -516,12 +528,16 @@ void Trinity::Codecs::Google::Decoder::skip_block_doc()
 
 void Trinity::Codecs::Google::Decoder::materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out)
 {
+	static constexpr bool trace{false};
         const auto freq = freqs[blockDocIdx];
         tokenpos_t pos{0};
         uint8_t curPayloadSize{0};
         uint64_t payload{0};
         auto *const bytes = (uint8_t *)&payload;
         uint32_t step;
+
+	if (trace)
+		SLog("Materializing ", freq, " hits\n");
 
         for (tokenpos_t i{0}; i != freq; ++i)
         {
@@ -533,9 +549,15 @@ void Trinity::Codecs::Google::Decoder::materialize_hits(const exec_term_id_t ter
                         {
                                 // new payload size
                                 curPayloadSize = *p++;
+
+				if (trace)
+					SLog("Payload size = ", curPayloadSize, "\n");
+
+				Dexpect(curPayloadSize <= sizeof(uint64_t));	 // XXX: un-necessary check
                         }
 
                         pos += step >> 1;
+
                         if (curPayloadSize)
                         {
                                 memcpy(bytes, p, curPayloadSize);
@@ -547,6 +569,9 @@ void Trinity::Codecs::Google::Decoder::materialize_hits(const exec_term_id_t ter
                 else
                         pos += step;
 
+		if (trace)
+			SLog("Pos = ", pos, "\n");
+
 		if (pos)
 		{
 	 		// pos == 0  if this not e.g a title or body match but e.g a special token
@@ -555,6 +580,7 @@ void Trinity::Codecs::Google::Decoder::materialize_hits(const exec_term_id_t ter
 			// to not match any terms in the document), but 0 makes sense
                 	dwspace->set(termID, pos);
 		}
+
                 out[i] = {payload, pos, curPayloadSize};
         }
 
@@ -586,7 +612,7 @@ void Trinity::Codecs::Google::Decoder::unpack_block(const docid_t thisBlockLastD
 
                 documents[i] = id;
 
-                require(id < thisBlockLastDocID);
+                expect(id < thisBlockLastDocID);
         }
 
         for (uint32_t i{0}; i != n; ++i)

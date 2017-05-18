@@ -9,9 +9,10 @@
 
 using namespace Trinity;
 
-void SegmentIndexSession::document_proxy::insert(const uint32_t termID, const uint32_t position, range_base<const uint8_t *, const uint8_t> payload)
+void SegmentIndexSession::document_proxy::insert(const uint32_t termID, const tokenpos_t position, range_base<const uint8_t *, const uint8_t> payload)
 {
         require(termID);
+	Dexpect(position < Limits::MaxPosition);
 
         if (const auto size = payload.size())
         {
@@ -115,6 +116,11 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
         }
 }
 
+str8_t SegmentIndexSession::term(const uint32_t id) const
+{
+	return invDict[id];
+}
+
 uint32_t SegmentIndexSession::term_id(const str8_t term)
 {
 	// Indexer words space
@@ -200,7 +206,7 @@ void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::ve
 void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<docid_t> &updatedDocumentIDs)
 {
         auto path = Buffer{}.append(sess->basePath, "/index.t");
-        int fd = open(sess->indexOut.data(), sess->indexOut.size(), path.c_str(), O_WRONLY | O_CREAT | O_LARGEFILE, 0775);
+        int fd = open(sess->indexOut.data(), sess->indexOut.size(), path.c_str(), O_WRONLY | O_CREAT | O_LARGEFILE | O_TRUNC, 0775);
 
         if (fd == -1)
                 throw Switch::system_error("Failed to persist index");
@@ -229,7 +235,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         Switch::unordered_map<uint32_t, term_index_ctx> map;
         std::unique_ptr<Trinity::Codecs::Encoder> enc_(sess->new_encoder());
         auto path = Buffer{}.append(sess->basePath, "/index.t");
-        int indexFd = open(path.c_str(), O_WRONLY | O_CREAT | O_LARGEFILE, 0775);
+        int indexFd = open(path.c_str(), O_WRONLY | O_CREAT | O_LARGEFILE | O_TRUNC, 0775);
 
         if (indexFd == -1)
                 throw Switch::system_error("Failed to persist index");

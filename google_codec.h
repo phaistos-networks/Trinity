@@ -74,7 +74,7 @@ namespace Trinity
 
                                 void new_hit(const uint32_t pos, const range_base<const uint8_t *, const uint8_t> payload) override final;
                                 
-                                inline void new_position(const uint32_t pos)
+                                inline void new_position(const tokenpos_t pos)
                                 {
                                         new_hit(pos, {});
                                 }

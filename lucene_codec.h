@@ -28,6 +28,8 @@ namespace Trinity
                         {
 				FastPForLib::FastPFor<4> forUtil;	 // handy for merge()
 
+				// TODO: support for periodic flushing
+				// i.e in either Encoder::end_term() or Encoder::end_document()
 				IOBuffer positionsOut;
 
                                 void begin() override final;

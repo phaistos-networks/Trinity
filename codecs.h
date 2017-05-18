@@ -73,7 +73,11 @@ namespace Trinity
                         IOBuffer indexOut;
 			// Whenever you flush indexOut to disk, say, every few MBs or GBs,
 			// you need to adjust indexOutFlushed, because the various codecs implementations need to compute some offset in the index
+			//
 			// Obviously, you are not required to flush, but it's an option.
+			// Doing this would also likely improve performance, for instead of expanding indexOut's underlying allocated memory and thus
+			// likely incurring a memmcpy() cost, by keeping the buffer small and flushing it periodically to a backing file, this is avoided, memory
+			// allocation remainins low/constant and no need for memcpy() is required (if no reallocations are required)
 			uint32_t indexOutFlushed;
 			const char *basePath;
 

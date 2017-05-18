@@ -2616,7 +2616,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                 }
 
                 if (traceExec)
-                        SLog("DOCUMENT ", docID, "\n");
+                        SLog("DOCUMENT ", docID, " ", ptr_repr(documentsFilter), " ", documentsFilter ? documentsFilter->filter(docID) : false, "\n");
 
                 if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
                 {
