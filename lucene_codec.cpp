@@ -677,7 +677,8 @@ void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_b
                 return;
         }
 
-        require(pos ? pos > lastPosition : pos >= lastPosition);
+
+	require(pos >= lastPosition);
 
         const auto delta = pos - lastPosition;
 
