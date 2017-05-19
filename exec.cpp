@@ -969,6 +969,18 @@ static void reorder(ast_node *n, reorder_ctx *const ctx)
                         return;
                 }
 
+
+		if (n->binop.op == Operator::OR)
+		{
+			// ((1 OR <2>) OR 3) => 1 OR 3 OR <2>
+			if (lhs->type == ast_node::Type::BinOp && lhs->binop.op == Operator::OR && lhs->binop.rhs->type == ast_node::Type::ConstTrueExpr && rhs->type != ast_node::Type::ConstTrueExpr)
+			{
+				std::swap(*lhs->binop.rhs, *rhs);
+				ctx->dirty = true;
+				return;
+			}
+		}
+
                 if (n->binop.op == Operator::AND || n->binop.op == Operator::STRICT_AND)
                 {
                         if (lhs->type == ast_node::Type::BinOp)
@@ -2202,6 +2214,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 SLog("COMPILED\n");
                 Print(root);
                 Print("\n");
+		//exit(0);
         }
 
         // We now need the leader nodes so that we can get the leader term IDs from them.
