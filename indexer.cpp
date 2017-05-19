@@ -116,7 +116,7 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
         }
 }
 
-str8_t SegmentIndexSession::term(const uint32_t id) const
+str8_t SegmentIndexSession::term(const uint32_t id)
 {
 	return invDict[id];
 }

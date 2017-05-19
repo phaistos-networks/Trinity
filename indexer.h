@@ -3,6 +3,7 @@
 #include <buffer.h>
 #include <switch_dictionary.h>
 #include <switch_mallocators.h>
+#include <switch_bitops.h>
 
 namespace Trinity
 {
@@ -93,7 +94,7 @@ namespace Trinity
               public:
                 uint32_t term_id(const str8_t term);
 
-		str8_t term(const uint32_t id) const;
+		str8_t term(const uint32_t id);
 
                 void clear()
                 {

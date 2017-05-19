@@ -353,9 +353,9 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                 {
                         if (!skippedHits)
                                 return;
-
                         else if (bufferedHits == skippedHits)
                         {
+				// fast-path
                                 skippedHits = 0;
                                 bufferedHits = 0;
                                 hitsIndex = 0;
@@ -387,10 +387,8 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                                 SLog("Will output hits for ", cur_block.i, " ", freq, ", skippedHits = ", skippedHits, "\n");
 
                         skip_ommitted_hits(forUtil);
-                        if (hitsIndex + freq <= bufferedHits)
+                        if (const auto upto = hitsIndex + freq; upto <= bufferedHits)
                         {
-                                const auto upto = hitsIndex + freq;
-
                                 if (trace)
                                         SLog("fast-path\n");
 
@@ -531,7 +529,8 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                 c->positions_chunk.e = c->positions_chunk.p + posChunkSize;
                 c->hitsLeft = sumHits;
 
-		//SLog("For ", i, " ", skiplistSize, "\n");
+                if (trace)
+                        SLog("participant ", i, " ", c->documentsLeft, " ", c->hitsLeft, ", skiplistSize = ", skiplistSize, "\n");
 
 		// Skip past skiplist
 		if (skiplistSize)
@@ -544,8 +543,6 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                 c->refill_documents(forUtil);
 
-                if (trace)
-                        SLog("participant ", i, " ", c->documentsLeft, " ", c->hitsLeft, "\n");
         }
 
         for (uint32_t prev{0};;)
@@ -564,12 +561,6 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                                 toAdvanceCnt = 0;
                                 toAdvance[0] = i;
                         }
-                }
-
-                if (unlikely(did <= prev))
-                {
-                        SLog("unexpected ", did, "<=", prev, "\n");
-                        exit(1);
                 }
 
                 require(did > prev);
