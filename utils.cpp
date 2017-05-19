@@ -25,15 +25,7 @@ int8_t Trinity::Utilities::to_file(const char *p, uint64_t len, int fd)
                 return -1;
         }
 
-        // http://www.jeffplaisance.com/2013/10/how-to-write-file.html
-        // fdatasync() is insufficient; it does not sync the file size
-        if (fsync(fd) == -1)
-        {
-                close(fd);
-                return -1;
-        }
 
-        // TODO: as per Jeff Praisance's recommendation, we should open() the directory, fsync() its fd, and close() it
         return 0;
 }
 
@@ -48,7 +40,15 @@ int8_t Trinity::Utilities::to_file(const char *p, uint64_t len, const char *path
                 close(fd);
                 return -1;
         }
-        else
+
+        // http://www.jeffplaisance.com/2013/10/how-to-write-file.html
+        // fdatasync() is insufficient; it does not sync the file size
+        if (fsync(fd) == -1)
+        {
+                close(fd);
+                return -1;
+	}
+	else
         {
                 // TODO: as per Jeff Praisance's recommendation, we should open() the directory, fsync() its fd, and close() it
                 close(fd);

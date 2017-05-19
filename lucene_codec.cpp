@@ -146,22 +146,41 @@ void Trinity::Codecs::Lucene::IndexSession::begin()
         // We will need two extra/additional buffers, one for documents, another for the hits
 }
 
-void Trinity::Codecs::Lucene::IndexSession::end()
+void Trinity::Codecs::Lucene::IndexSession::flush_positions_data()
 {
-        int fd = open(Buffer{}.append(basePath, "/hits.data").c_str(), O_WRONLY | O_LARGEFILE | O_CREAT, 0775);
-
-        if (fd == -1)
-                throw Switch::data_error("Failed to persist hits.data");
-
-        Defer({
-                close(fd);
-        });
-
-        if (positionsOut.size())
+        if (positionsOutFd == -1)
         {
-                if (Utilities::to_file(positionsOut.data(), positionsOut.size(), fd) == -1)
+                positionsOutFd = open(Buffer{}.append(basePath, "/hits.data.t").c_str(), O_WRONLY | O_LARGEFILE | O_CREAT, 0775);
+
+                if (positionsOutFd == -1)
                         throw Switch::data_error("Failed to persist hits.data");
         }
+
+        if (Utilities::to_file(positionsOut.data(), positionsOut.size(), positionsOutFd) == -1)
+                throw Switch::data_error("Failed to persist hits.data");
+
+	positionsOutFlushed += positionsOut.size();
+	positionsOut.clear();
+}
+
+void Trinity::Codecs::Lucene::IndexSession::end()
+{
+        if (positionsOut.size())
+		flush_positions_data();
+	
+	if (positionsOutFd != -1)
+	{
+		if (close(positionsOutFd) == -1)
+			throw Switch::data_error("Failed to persist hits.data");
+
+		positionsOutFd = -1;
+
+		if (rename(Buffer{}.append(basePath, "/hits.data.t").c_str(), Buffer{}.append(basePath, "/hits.data").c_str()) == -1)
+		{
+			unlink(Buffer{}.append(basePath, "/hits.data.t").c_str());
+			throw Switch::data_error("Failed to persist hits.data");
+		}
+	}
 }
 
 range32_t Trinity::Codecs::Lucene::IndexSession::append_index_chunk(const Trinity::Codecs::AccessProxy *src_, const term_index_ctx srcTCTX)
@@ -180,7 +199,7 @@ range32_t Trinity::Codecs::Lucene::IndexSession::append_index_chunk(const Trinit
         p += sizeof(uint32_t);
         [[maybe_unused]] const auto skiplistSize = *(uint16_t *)p;
         p += sizeof(uint16_t);
-        const auto newHitsDataOffset = positionsOut.size();
+        const auto newHitsDataOffset = positionsOut.size() + positionsOutFlushed;
 
         positionsOut.serialize(src->hitsDataPtr + hitsDataOffset, positionsChunkSize);
         indexOut.pack(uint32_t(newHitsDataOffset), sumHits, positionsChunkSize);
@@ -575,13 +594,15 @@ l1:;
 
 void Trinity::Codecs::Lucene::Encoder::begin_term()
 {
+	const auto s = static_cast<Trinity::Codecs::Lucene::IndexSession *>(sess);
+
         lastDocID = 0;
         totalHits = 0;
         sumHits = 0;
         buffered = 0;
         termDocuments = 0;
         termIndexOffset = sess->indexOut.size() + sess->indexOutFlushed;
-        termPositionsOffset = static_cast<Trinity::Codecs::Lucene::IndexSession *>(sess)->positionsOut.size();
+        termPositionsOffset = s->positionsOut.size() + s->positionsOutFlushed;
         lastHitsBlockOffset = 0;
 	lastHitsBlockTotalHits = 0;
         skiplistCountdown = SKIPLIST_STEP;
@@ -674,7 +695,8 @@ void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_b
         ++totalHits;
         if (unlikely(totalHits == BLOCK_SIZE))
         {
-                auto positionsOut = &static_cast<Trinity::Codecs::Lucene::IndexSession *>(sess)->positionsOut;
+		auto s = static_cast<Trinity::Codecs::Lucene::IndexSession *>(sess);
+                auto positionsOut = &s->positionsOut;
 
                 sumHits += totalHits;
 
@@ -700,7 +722,7 @@ void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_b
 
 
 		lastHitsBlockTotalHits = sumHits;
-                lastHitsBlockOffset = positionsOut->size() - termPositionsOffset;
+                lastHitsBlockOffset = (positionsOut->size() + s->positionsOutFlushed) - termPositionsOffset;
 
                 totalHits = 0;
         }
@@ -714,6 +736,7 @@ void Trinity::Codecs::Lucene::Encoder::end_document()
 void Trinity::Codecs::Lucene::Encoder::end_term(term_index_ctx *out)
 {
         auto indexOut = &sess->indexOut;
+	auto s = static_cast<Trinity::Codecs::Lucene::IndexSession *>(sess);
 
         sumHits += totalHits;
 
@@ -749,7 +772,7 @@ void Trinity::Codecs::Lucene::Encoder::end_term(term_index_ctx *out)
         if (totalHits)
         {
                 uint8_t lastPayloadLen{0x0};
-                auto positionsOut = &static_cast<Trinity::Codecs::Lucene::IndexSession *>(sess)->positionsOut;
+                auto positionsOut = &s->positionsOut;
                 size_t sum{0};
 
                 for (uint32_t i{0}; i != totalHits; ++i)
@@ -778,7 +801,7 @@ void Trinity::Codecs::Lucene::Encoder::end_term(term_index_ctx *out)
 
         const uint16_t skiplistSize = skiplist.size();
 
-        *(uint32_t *)(sess->indexOut.data() + (termIndexOffset - sess->indexOutFlushed) + sizeof(uint32_t) + sizeof(uint32_t)) = static_cast<Trinity::Codecs::Lucene::IndexSession *>(sess)->positionsOut.size() - termPositionsOffset;
+        *(uint32_t *)(sess->indexOut.data() + (termIndexOffset - sess->indexOutFlushed) + sizeof(uint32_t) + sizeof(uint32_t)) = (s->positionsOut.size() + s->positionsOutFlushed) - termPositionsOffset;
         *(uint16_t *)(sess->indexOut.data() + (termIndexOffset - sess->indexOutFlushed) + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t)) = skiplistSize;
 
         if (skiplistSize)
@@ -794,6 +817,10 @@ void Trinity::Codecs::Lucene::Encoder::end_term(term_index_ctx *out)
 
         out->documents = termDocuments;
         out->indexChunk.Set(termIndexOffset, uint32_t((sess->indexOut.size() + sess->indexOutFlushed) - termIndexOffset));
+
+
+	if (const auto f = s->flushFreq; f && s->positionsOut.size() > f)
+		s->flush_positions_data();
 }
 
 Trinity::Codecs::Encoder *Trinity::Codecs::Lucene::IndexSession::new_encoder()

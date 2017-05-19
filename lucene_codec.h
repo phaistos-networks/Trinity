@@ -31,17 +31,36 @@ namespace Trinity
 				// TODO: support for periodic flushing
 				// i.e in either Encoder::end_term() or Encoder::end_document()
 				IOBuffer positionsOut;
+				uint32_t positionsOutFlushed;
+				int positionsOutFd;
+				uint32_t flushFreq;
 
+				// private
+				void flush_positions_data();
+
+
+
+
+                                IndexSession(const char *bp)
+                                    : Trinity::Codecs::IndexSession{bp}, positionsOutFlushed{0}, positionsOutFd{-1}, flushFreq{0}
+                                {
+                                }
+
+				~IndexSession()
+				{
+					if (positionsOutFd != -1)
+						close(positionsOutFd);
+				}
+
+				constexpr void set_flush_freq(const uint32_t f)
+				{
+					flushFreq = f;
+				}
                                 void begin() override final;
 
                                 void end() override final;
 
                                 Trinity::Codecs::Encoder *new_encoder() override final;
-
-                                IndexSession(const char *bp)
-                                    : Trinity::Codecs::IndexSession{bp}
-                                {
-                                }
 
                                 strwlen8_t codec_identifier() override final
                                 {

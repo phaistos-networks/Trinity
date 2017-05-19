@@ -387,6 +387,9 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         sess->persist_terms(v);
         persist_segment(sess, updatedDocumentIDs, indexFd);
 
+	if (fsync(indexFd) == -1)
+		throw Switch::data_error("Failed to persist index");
+
 	if (close(indexFd) == -1)
 		throw Switch::data_error("Failed to persist index");
 
