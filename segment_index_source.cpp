@@ -43,19 +43,23 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
 
         snprintf(path, sizeof(path), "%s/index", basePath);
         fd = open(path, O_RDONLY | O_LARGEFILE);
-        Dexpect(fd != -1);
+	if (unlikely(fd == -1))
+		throw Switch::data_error("Failed to acess ", path);
 
         auto fileSize = lseek64(fd, 0, SEEK_END);
         auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
 
         close(fd);
-        Dexpect(fileData != MAP_FAILED);
+	if (unlikely(fileData == MAP_FAILED))
+		throw Switch::data_error("Failed to acess ", path);
+		
 
         index.Set(static_cast<const uint8_t *>(fileData), uint32_t(fileSize));
 
         snprintf(path, sizeof(path), "%s/codec", basePath);
         fd = open(path, O_RDONLY | O_LARGEFILE);
-        Dexpect(fd != -1);
+	if (unlikely(fd == -1))
+		throw Switch::data_error("Failed to acess ", path);
 
         fileSize = lseek64(fd, 0, SEEK_END);
 

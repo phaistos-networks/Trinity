@@ -530,6 +530,18 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                 c->positions_chunk.p = ap->hitsDataPtr + hitsDataOffset;
                 c->positions_chunk.e = c->positions_chunk.p + posChunkSize;
                 c->hitsLeft = sumHits;
+
+		//SLog("For ", i, " ", skiplistSize, "\n");
+
+		// Skip past skiplist
+		if (skiplistSize)
+		{
+                	static constexpr size_t skiplistEntrySize{sizeof(uint32_t) * 5 + sizeof(uint16_t)};
+
+                	c->index_chunk.e -= skiplistSize * skiplistEntrySize;
+		}
+
+
                 c->refill_documents(forUtil);
 
                 if (trace)
@@ -1312,7 +1324,7 @@ void Trinity::Codecs::Lucene::Decoder::init(const term_index_ctx &tctx, Trinity:
         {
                 // deserialize the skiplist and maybe use it
                 static constexpr size_t skiplistEntrySize{sizeof(uint32_t) * 5 + sizeof(uint16_t)};
-                const auto *sit = (ptr + chunkSize - (skiplistSize * skiplistEntrySize));
+                const auto *sit = (ptr + chunkSize) - (skiplistSize * skiplistEntrySize);
                 struct skiplist_entry e;
 
                 chunkEnd = sit;

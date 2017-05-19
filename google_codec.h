@@ -10,10 +10,10 @@ namespace Trinity
         {
                 namespace Google
                 {
-			static constexpr bool TRACK_PAYLOADS{true};
-                        static constexpr size_t N{32};             	// block size (Google's block size is 32)
-                        static constexpr size_t SKIPLIST_STEP{256/N}; 	// generate a new skiplist entry every that many blocks
-			static constexpr bool CONSTRUCT_SKIPLIST{true};
+                        static constexpr bool TRACK_PAYLOADS{true};
+                        static constexpr size_t N{32};                  // block size (Google's block size is 32)
+                        static constexpr size_t SKIPLIST_STEP{256 / N}; // generate a new skiplist entry every that many blocks
+                        static constexpr bool CONSTRUCT_SKIPLIST{true};
 
                         struct IndexSession final
                             : public Trinity::Codecs::IndexSession
@@ -73,7 +73,7 @@ namespace Trinity
                                 void begin_document(const docid_t documentID) override final;
 
                                 void new_hit(const uint32_t pos, const range_base<const uint8_t *, const uint8_t> payload) override final;
-                                
+
                                 inline void new_position(const tokenpos_t pos)
                                 {
                                         new_hit(pos, {});
@@ -142,7 +142,7 @@ namespace Trinity
                                         documents[0] = MaxDocIDValue;
                                         p = chunkEnd;
 
-					curDocument.id = MaxDocIDValue;
+                                        curDocument.id = MaxDocIDValue;
                                 }
 
                                 // see skip_block_doc()

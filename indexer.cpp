@@ -206,10 +206,10 @@ void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::ve
 void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<docid_t> &updatedDocumentIDs)
 {
         auto path = Buffer{}.append(sess->basePath, "/index.t");
-        int fd = open(sess->indexOut.data(), sess->indexOut.size(), path.c_str(), O_WRONLY | O_CREAT | O_LARGEFILE | O_TRUNC, 0775);
+        int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_LARGEFILE | O_TRUNC, 0775);
 
         if (fd == -1)
-                throw Switch::system_error("Failed to persist index");
+                throw Switch::system_error("Failed to persist index ", path.AsS32(), ":", strerror(errno));
 
         Defer({
                 close(fd);

@@ -179,10 +179,11 @@ void Trinity::Codecs::Google::Encoder::commit_block()
                 skiplistEntryCountdown = SKIPLIST_STEP;
         }
 
+        require(curBlockSize);
+
         out->encode_varbyte32(delta);       // delta to last docID in block from previous block's last document ID
         out->encode_varbyte32(blockLength); // block length in bytes, excluding this header
-        require(curBlockSize);
-        out->pack(curBlockSize); // one byte will suffice
+        out->pack(curBlockSize);            // one byte will suffice
 
         out->serialize(block.data(), block.size());
         out->serialize(hitsData.data(), hitsData.size());
@@ -267,29 +268,61 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
                 c->e = c->p + participants[i].tctx.indexChunk.size();
                 c->maskedDocsReg = participants[i].maskedDocsReg;
 
+		if (participants[i].tctx.indexChunk.size())
+		{
+			require(c->p);
+			require(c->e);
+		}
+
+		if (CONSTRUCT_SKIPLIST)
+                {
+                        // skip past the skiplist
+                        auto p = c->p;
+                        const auto skipListEntriesCnt = *(uint16_t *)p;
+                        p += sizeof(uint16_t);
+
+                        if (skipListEntriesCnt)
+                                c->e = c->e - (skipListEntriesCnt * (sizeof(uint32_t) + sizeof(uint32_t)));
+
+                        c->p = p;
+                }
+
                 // Simplifies refill()
                 c->cur_block.size = 1;
                 c->cur_block.documents[0] = 0;
 
                 if (trace)
-                        SLog("merge participant ", i, " ", participants[i].tctx.indexChunk, "\n");
+                        SLog("merge participant ", i, " ", participants[i].tctx.indexChunk, " ", ptr_repr(c->p), " ", ptr_repr(c->e), "\n");
         }
 
-        const auto refill = [](auto c) {
+        const auto refill = [](auto *__restrict__ const c) {
                 uint32_t _v;
                 auto p = c->p;
                 const auto prevBlockLastID = c->cur_block.documents[c->cur_block.size - 1];
+
                 varbyte_get32(p, _v);
+
                 const auto thisBlockLastDocID = prevBlockLastID + _v;
                 uint32_t blockLength;
+
                 varbyte_get32(p, blockLength);
+		require(blockLength);
+
                 const auto n = *p++;
-                require(n);
                 auto id{prevBlockLastID};
                 const auto k = n - 1;
 
                 if (trace)
-                        SLog("Refilling chunk prevBlockLastID = ", prevBlockLastID, ", thisBlockLastDocID = ", thisBlockLastDocID, " ", n, "\n");
+                        SLog("Refilling chunk prevBlockLastID = ", prevBlockLastID, ", thisBlockLastDocID = ", thisBlockLastDocID, " => blockLength = ", blockLength, ", n = ", n, "\n");
+
+		// sanity check
+		if (unlikely(n > N))
+		{
+			Print("Unexpected n(", n, ") > N(", N, ")\n");
+			std::abort();
+		}
+		require(blockLength);
+
 
                 for (uint8_t i{0}; i != k; ++i)
                 {
@@ -374,7 +407,12 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
         };
 
         for (uint32_t i{0}; i != participantsCnt; ++i)
+	{
+		if (trace)
+			SLog("Refilling ", i, " ", ptr_repr(chunks[i].p), "\n");
+
                 refill(chunks + i);
+	}
 
         for (;;)
         {
@@ -704,7 +742,11 @@ void Trinity::Codecs::Google::Decoder::unpack_next_block()
 
         varbyte_get32(p, blockSize);
 
+	require(blockSize);
+
         const auto blockDocsCnt = *p++;
+
+	require(blockDocsCnt <= N);
 
         if (trace)
                 SLog("UNPACKING next block, thisBlockLastDocID = ", thisBlockLastDocID, ", blockSize = ", blockSize, ", blockDocsCnt = ", blockDocsCnt, ", blockLastDocID = ", blockLastDocID, "\n");
