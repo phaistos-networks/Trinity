@@ -1259,8 +1259,20 @@ ast_node *ast_node::copy(simple_allocator *const a)
         {
                 case ast_node::Type::Token:
                 case ast_node::Type::Phrase:
-                        res->p = n->p;
-                        break;
+                {
+                        auto np = (phrase *)a->Alloc(sizeof(phrase) + sizeof(term) * n->p->size);
+
+                        np->size = n->p->size;
+                        np->rep = n->p->rep;
+                        np->index = n->p->index;
+                        np->toNextSpan = n->p->toNextSpan;
+                        np->flags = n->p->toNextSpan;
+                        np->inputRange = n->p->inputRange;
+
+                        memcpy(np->terms, n->p->terms, sizeof(np->terms[0]) * np->size);
+                        res->p = np;
+                }
+                break;
 
                 case ast_node::Type::ConstTrueExpr:
                         res->expr = n->expr->copy(a);

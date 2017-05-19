@@ -2381,10 +2381,10 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                 return;
         }
 
+
         // We need a copy of that query here
         // for we we will need to modify it
         query q(in);
-
 
         // Normalize just in case
         if (!q.normalize())
