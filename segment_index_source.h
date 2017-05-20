@@ -35,6 +35,11 @@ namespace Trinity
               public:
                 SegmentIndexSource(const char *basePath);
 
+		bool index_empty() const noexcept override final
+		{
+			return accessProxy.get() == nullptr;
+		}
+
 		auto access_proxy()
 		{
 			return accessProxy.get();

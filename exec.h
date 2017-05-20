@@ -50,12 +50,15 @@ namespace Trinity
 			return out;
 		else if (n == 1)
 		{
-			auto source = collection->sources[0];
-			auto scanner = collection->scanner_registry_for(0);
-			auto filter = std::make_unique<T>(std::forward<Arg>(args)...);
+			if (false == collection->sources[0]->index_empty())
+			{
+				auto source = collection->sources[0];
+				auto scanner = collection->scanner_registry_for(0);
+				auto filter = std::make_unique<T>(std::forward<Arg>(args)...);
 
-			exec_query(in, source, scanner.get(), filter.get(), f);
-			out.push_back(std::move(filter));
+				exec_query(in, source, scanner.get(), filter.get(), f);
+				out.push_back(std::move(filter));
+			}
 			return out;
 		}
 
@@ -64,16 +67,19 @@ namespace Trinity
 
                 for (uint32_t i{0}; i != n; ++i)
                 {
-                        futures.push_back(
-                            std::async(std::launch::async, [&](const uint32_t i) {
-                                    auto source = collection->sources[i];
-                                    auto scanner = collection->scanner_registry_for(i);
-                                    auto filter = std::make_unique<T>(std::forward<Arg>(args)...);
+			if (false == collection->sources[i]->index_empty())
+                        {
+                                futures.push_back(
+                                    std::async(std::launch::async, [&](const uint32_t i) {
+                                            auto source = collection->sources[i];
+                                            auto scanner = collection->scanner_registry_for(i);
+                                            auto filter = std::make_unique<T>(std::forward<Arg>(args)...);
 
-                                    exec_query(in, source, scanner.get(), filter.get(), f);
-                                    return filter;
-                            },
-                                       i));
+                                            exec_query(in, source, scanner.get(), filter.get(), f);
+                                            return filter;
+                                    },
+                                               i));
+                        }
                 }
 
                 while (futures.size())

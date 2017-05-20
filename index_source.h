@@ -102,6 +102,17 @@ namespace Trinity
 			return 8192;
 		}
 
+		// After we merge, we may, depending on which indices we decided to merge, be left with
+		// 1+ indices that may have masked documents, but no index data(i.e they exist simply
+		// to hold the masked documents.
+		// If that's the case, subclasses should override this method and return true
+		//
+		// This is not necessary; it helps the execution engine to avoid compiling queries and initializing itself. See exec.h
+		virtual bool index_empty() const
+		{
+			return true;
+		}
+
                 virtual ~IndexSource()
                 {
                 }
@@ -139,6 +150,12 @@ namespace Trinity
                 {
                         return maskedDocuments;
                 }
+
+		bool index_empty() const noexcept override final
+		{
+			// this is just about masked documents really; there's no index
+			return true;
+		}
         };
 
         // A collection of IndexSource; an index of segments or other sources

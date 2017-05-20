@@ -53,6 +53,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 		if (trace)
 			SLog("Candidate ", i, " gen=", candidates[i].gen, " ", candidates[i].ap->codec_identifier(), "\n");
 
+		if (i)
+			require(candidates[i].gen < candidates[i - 1].gen);
+
                 if (false == candidates[i].terms->done())
                         all_.push_back({i, candidates[i]});
         }

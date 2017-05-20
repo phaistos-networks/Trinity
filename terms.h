@@ -65,9 +65,11 @@ namespace Trinity
                 {
                         friend struct terms_data_view;
 
-                      public:
+                      private:
                         const uint8_t *p;
                         str8_t::value_type termStorage[Limits::MaxTermLength];
+
+                      public:
                         struct
                         {
                                 str8_t term;
