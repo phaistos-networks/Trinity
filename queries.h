@@ -493,7 +493,8 @@ namespace Trinity
                                                 break;
 
                                         case ast_node::Type::UnaryOp:
-                                                stack.push_back({seg, n->unaryop.expr});
+						if (n->unaryop.op != Operator::STRICT_AND || processStrictAND)
+	                                                stack.push_back({seg, n->unaryop.expr});
                                                 break;
 
                                         case ast_node::Type::Dummy:

@@ -7,7 +7,20 @@
 
 namespace Trinity
 {
-        void exec_query(const query &in, IndexSource *, masked_documents_registry *const maskedDocumentsRegistry, MatchedIndexDocumentsFilter *, IndexDocumentsFilter *const f = nullptr);
+	enum class ExecFlags : uint32_t
+	{
+		// If this set, then only matching documents will be provided in MatchedIndexDocumentsFilter subclass's consider()
+		// That is, no matching terms or their hits will be provided in the passed matched_document&
+		//
+		// This is very helpful if you want to e.g just count, or otherwise don't care for which of the terms (in case of ORs) match the document, only for
+		// the documents that match the query (so you won't get a chance to e.g compute a trinity/query score based on the matched terms).
+		// 
+		// It is also helpful if you want to e.g build a prefix-search people search system(like LinkedIn's) where you want to match all users matching the query, and you really don't care
+		// for which of the terms (or their hits) to do so. If you expand the last token (prefix-expansion), which couild lead to e.g 100s of new terms, you should consider this option(over x2 perfomrance boost).
+		DocumentsOnly = 1
+	};
+
+        void exec_query(const query &in, IndexSource *, masked_documents_registry *const maskedDocumentsRegistry, MatchedIndexDocumentsFilter *, IndexDocumentsFilter *const f = nullptr, const uint32_t flags = 0);
 
         // Handy utility function; executes query on all index sources in the provided collection in sequence and returns
         // a vector with the match filters/results of each execution.
@@ -19,7 +32,7 @@ namespace Trinity
         // Note that execution of sources does not depend on state of other sources - they are isolated so parallel processing them requires
         // no coordination.
         template <typename T, typename... Arg>
-        std::vector<std::unique_ptr<T>> exec_query(const query &in, IndexSourcesCollection *collection, IndexDocumentsFilter *f, Arg &&... args)
+        std::vector<std::unique_ptr<T>> exec_query(const query &in, IndexSourcesCollection *collection, IndexDocumentsFilter *f, Arg &&... args, const uint32_t flags = 0)
         {
                 static_assert(std::is_base_of<MatchedIndexDocumentsFilter, T>::value, "Expected a MatchedIndexDocumentsFilter subclass");
                 const auto n = collection->sources.size();
@@ -31,7 +44,7 @@ namespace Trinity
                         auto scanner = collection->scanner_registry_for(i);
                         auto filter = std::make_unique<T>(std::forward<Arg>(args)...);
 
-                        exec_query(in, source, scanner.get(), filter.get(), f);
+                        exec_query(in, source, scanner.get(), filter.get(), f, flags);
                         out.push_back(std::move(filter));
                 }
 
@@ -40,7 +53,7 @@ namespace Trinity
 
         // Parallel queries execution, using std::async()
         template <typename T, typename... Arg>
-        std::vector<std::unique_ptr<T>> exec_query_par(const query &in, IndexSourcesCollection *collection, IndexDocumentsFilter *f, Arg &&... args)
+        std::vector<std::unique_ptr<T>> exec_query_par(const query &in, IndexSourcesCollection *collection, IndexDocumentsFilter *f, Arg &&... args, const uint32_t flags = 0)
         {
                 static_assert(std::is_base_of<MatchedIndexDocumentsFilter, T>::value, "Expected a MatchedIndexDocumentsFilter subclass");
                 const auto n = collection->sources.size();
@@ -56,7 +69,7 @@ namespace Trinity
 				auto scanner = collection->scanner_registry_for(0);
 				auto filter = std::make_unique<T>(std::forward<Arg>(args)...);
 
-				exec_query(in, source, scanner.get(), filter.get(), f);
+				exec_query(in, source, scanner.get(), filter.get(), f, flags);
 				out.push_back(std::move(filter));
 			}
 			return out;
@@ -75,7 +88,7 @@ namespace Trinity
                                             auto scanner = collection->scanner_registry_for(i);
                                             auto filter = std::make_unique<T>(std::forward<Arg>(args)...);
 
-                                            exec_query(in, source, scanner.get(), filter.get(), f);
+                                            exec_query(in, source, scanner.get(), filter.get(), f, flags);
                                             return filter;
                                     },
                                                i));

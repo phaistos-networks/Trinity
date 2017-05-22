@@ -2,6 +2,7 @@
 #include "codecs.h"
 #include <ext/FastPFor/headers/fastpfor.h>
 
+static_assert(sizeof(Trinity::docid_t) <= sizeof(uint32_t), "This codec implementation does not support 64bit document IDs. You can duplicate this file and update it to support larget document identifiers, or use another codec");
 namespace Trinity
 {
 	namespace Codecs

@@ -309,10 +309,10 @@ namespace // static/local this module
 #ifndef LEAN_SWITCH
                         if (termsDict.Add(term, 0, &ptr))
 #else
-			auto p = termsDict.insert({term, 0});
+                        auto p = termsDict.insert({term, 0});
 
-			ptr = &p.first->second;
-			if (p.second)
+                        ptr = &p.first->second;
+                        if (p.second)
 #endif
                         {
                                 const auto tctx = idxsrc->term_ctx(term);
@@ -544,6 +544,34 @@ static bool matchanyterms_impl(const exec_node &self, runtime_ctx &rctx)
         return res;
 }
 
+static bool matchanyterms_fordocs_impl(const exec_node &self, runtime_ctx &rctx)
+{
+        uint16_t i{0};
+        const auto did = rctx.curDocID;
+        const auto *const __restrict__ run = static_cast<const runtime_ctx::termsrun *>(self.ptr);
+        const auto size = run->size;
+        const auto *const __restrict__ terms = run->terms;
+
+#if defined(TRINITY_ENABLE_PREFETCH)
+        const auto n = size / (64 / sizeof(exec_term_id_t));
+        auto ptr = terms;
+
+        for (uint32_t i{0}; i != n; ++i, ptr += (64 / sizeof(exec_term_id_t)))
+                _mm_prefetch(ptr, _MM_HINT_NTA);
+#endif
+        do
+        {
+                const auto termID = terms[i];
+                auto decoder = rctx.decode_ctx.decoders[termID];
+
+                if (decoder->seek(did))
+                        return true;
+
+        } while (++i != size);
+
+        return false;
+}
+
 static inline bool matchterm_impl(const exec_node &self, runtime_ctx &rctx)
 {
         const auto termID = exec_term_id_t(self.u16);
@@ -639,6 +667,66 @@ static bool matchanyphrases_impl(const exec_node &self, runtime_ctx &rctx)
         }
 
         return res;
+}
+
+static bool matchanyphrases_fordocs_impl(const exec_node &self, runtime_ctx &rctx)
+{
+        const auto *const __restrict__ run = (runtime_ctx::phrasesrun *)self.ptr;
+        const auto size = run->size;
+        const auto did = rctx.curDocID;
+
+        for (uint32_t k{0}; k != size; ++k)
+        {
+                auto p = run->phrases[k];
+                const auto firstTermID = p->termIDs[0];
+                auto decoder = rctx.decode_ctx.decoders[firstTermID];
+
+                if (!decoder->seek(did))
+                        goto nextPhrase;
+
+                {
+                        const auto n = p->size;
+
+                        for (uint32_t i{1}; i != n; ++i)
+                        {
+                                const auto termID = p->termIDs[i];
+                                auto decoder = rctx.decode_ctx.decoders[termID];
+
+                                if (!decoder->seek(did))
+                                        goto nextPhrase;
+
+                                rctx.materialize_term_hits(termID);
+                        }
+
+                        {
+                                auto th = rctx.materialize_term_hits(firstTermID);
+                                const auto firstTermFreq = th->freq;
+                                const auto firstTermHits = th->all;
+                                auto &dws = rctx.docWordsSpace;
+
+                                for (uint32_t i{0}; i != firstTermFreq; ++i)
+                                {
+                                        if (const auto pos = firstTermHits[i].pos)
+                                        {
+                                                for (uint8_t k{1};; ++k)
+                                                {
+                                                        if (k == n)
+                                                                return true;
+
+                                                        const auto termID = p->termIDs[k];
+
+                                                        if (!dws.test(termID, pos + k))
+                                                                break;
+                                                }
+                                        }
+                                }
+                        }
+                }
+
+        nextPhrase:;
+        }
+
+        return false;
 }
 
 static bool matchallphrases_impl(const exec_node &self, runtime_ctx &rctx)
@@ -812,10 +900,19 @@ static inline bool logicalor_impl(const exec_node &self, runtime_ctx &rctx)
         // We need to evaluate both LHS and RHS and return true if either of them is true
         // this is so that we will COLLECT the tokens from both branches
         // e.g [apple OR samsung] should match if either is found, but we need to collect both tokens if possible
+        //
+        // See logicalor_fordocs_impl where we don't need to do that
         const auto res1 = eval(opctx->lhs, rctx);
         const auto res2 = eval(opctx->rhs, rctx);
 
         return res1 || res2;
+}
+
+static inline bool logicalor_fordocs_impl(const exec_node &self, runtime_ctx &rctx)
+{
+        const auto *const __restrict__ opctx = (runtime_ctx::binop_ctx *)self.ptr;
+
+        return eval(opctx->lhs, rctx) || eval(opctx->rhs, rctx);
 }
 
 #pragma mark COMPILER/OPTIMIZER
@@ -847,13 +944,13 @@ static uint32_t reorder_execnode(exec_node &n, bool &updates, runtime_ctx &rctx)
                 else
                         return lhsCost;
         }
-        else if (n.fp == logicalor_impl || n.fp == logicalnot_impl)
+        else if (n.fp == logicalor_impl || n.fp == logicalnot_impl || n.fp == logicalor_fordocs_impl)
         {
                 auto ctx = static_cast<runtime_ctx::binop_ctx *>(n.ptr);
                 const auto lhsCost = reorder_execnode(ctx->lhs, updates, rctx);
                 const auto rhsCost = reorder_execnode(ctx->rhs, updates, rctx);
 
-                return n.fp == logicalor_impl ? (lhsCost + rhsCost) : lhsCost;
+                return n.fp == logicalor_impl || n.fp == logicalor_fordocs_impl ? (lhsCost + rhsCost) : lhsCost;
         }
         else if (n.fp == unaryand_impl || n.fp == unarynot_impl)
         {
@@ -876,7 +973,7 @@ static uint32_t reorder_execnode(exec_node &n, bool &updates, runtime_ctx &rctx)
 
                 return rctx.term_ctx(run->terms[0]).documents;
         }
-        else if (n.fp == matchanyterms_impl)
+        else if (n.fp == matchanyterms_impl || n.fp == matchanyterms_fordocs_impl)
         {
                 const auto run = static_cast<const runtime_ctx::termsrun *>(n.ptr);
                 uint32_t sum{0};
@@ -891,7 +988,7 @@ static uint32_t reorder_execnode(exec_node &n, bool &updates, runtime_ctx &rctx)
 
                 return rctx.term_ctx(run->phrases[0]->termIDs[0]).documents;
         }
-        else if (n.fp == matchanyphrases_impl)
+        else if (n.fp == matchanyphrases_impl || n.fp == matchanyphrases_fordocs_impl)
         {
                 const auto *const __restrict__ run = (runtime_ctx::phrasesrun *)n.ptr;
                 uint32_t sum{0};
@@ -970,17 +1067,16 @@ static void reorder(ast_node *n, reorder_ctx *const ctx)
                         return;
                 }
 
-
-		if (n->binop.op == Operator::OR)
-		{
-			// ((1 OR <2>) OR 3) => 1 OR 3 OR <2>
-			if (lhs->type == ast_node::Type::BinOp && lhs->binop.op == Operator::OR && lhs->binop.rhs->type == ast_node::Type::ConstTrueExpr && rhs->type != ast_node::Type::ConstTrueExpr)
-			{
-				std::swap(*lhs->binop.rhs, *rhs);
-				ctx->dirty = true;
-				return;
-			}
-		}
+                if (n->binop.op == Operator::OR)
+                {
+                        // ((1 OR <2>) OR 3) => 1 OR 3 OR <2>
+                        if (lhs->type == ast_node::Type::BinOp && lhs->binop.op == Operator::OR && lhs->binop.rhs->type == ast_node::Type::ConstTrueExpr && rhs->type != ast_node::Type::ConstTrueExpr)
+                        {
+                                std::swap(*lhs->binop.rhs, *rhs);
+                                ctx->dirty = true;
+                                return;
+                        }
+                }
 
                 if (n->binop.op == Operator::AND || n->binop.op == Operator::STRICT_AND)
                 {
@@ -1049,7 +1145,7 @@ static auto impl_repr(const T *func)
 {
         const auto fp = (void *)func;
 
-        if (fp == (void *)logicalor_impl)
+        if (fp == (void *)logicalor_impl || fp == (void *)logicalor_fordocs_impl)
                 return "or"_s8;
         else if (fp == logicaland_impl)
                 return "and"_s8;
@@ -1075,11 +1171,11 @@ static auto impl_repr(const T *func)
                 return "<dummy>"_s8;
         else if (fp == matchallterms_impl)
                 return "(all terms)"_s8;
-        else if (fp == matchanyterms_impl)
+        else if (fp == matchanyterms_impl || fp == matchanyterms_fordocs_impl)
                 return "(any terms)"_s8;
         else if (fp == matchallphrases_impl)
                 return "(any phrases)"_s8;
-        else if (fp == matchanyphrases_impl)
+        else if (fp == matchanyphrases_impl || fp == matchanyphrases_fordocs_impl)
                 return "(any phrases)"_s8;
         else
                 return "<other>"_s8;
@@ -2027,15 +2123,15 @@ static void capture_leader(const exec_node n, std::vector<exec_node> *const out,
                 out->push_back(n);
         else if (n.fp == matchallterms_impl || n.fp == matchallphrases_impl)
                 out->push_back(n);
-        else if (n.fp == matchanyterms_impl || n.fp == matchanyphrases_impl)
+        else if (n.fp == matchanyterms_impl || n.fp == matchanyphrases_impl || n.fp == matchanyterms_fordocs_impl || n.fp == matchanyphrases_fordocs_impl)
                 out->push_back(n);
         else if (n.fp == unaryand_impl)
         {
                 auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
 
-		capture_leader(ctx->expr, out, threshold);
+                capture_leader(ctx->expr, out, threshold);
         }
-        else if (n.fp == logicalor_impl)
+        else if (n.fp == logicalor_impl || n.fp == logicalor_fordocs_impl)
         {
                 auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
 
@@ -2071,18 +2167,20 @@ static void capture_leader(const exec_node n, std::vector<exec_node> *const out,
                 auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
 
                 if (out->size() < threshold)
-			capture_leader(ctx->expr, out, threshold);
+                        capture_leader(ctx->expr, out, threshold);
         }
 }
 
-static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allocator &a, std::vector<exec_term_id_t> *leaderTermIDs)
+static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allocator &a, std::vector<exec_term_id_t> *leaderTermIDs, const uint32_t execFlags)
 {
         static constexpr bool traceMetrics{false};
         std::vector<exec_term_id_t> terms;
         std::vector<const runtime_ctx::phrase *> phrases;
         std::vector<exec_node> stack;
+        std::vector<exec_node *> stackP;
         std::vector<std::pair<exec_term_id_t, uint32_t>> v;
         uint64_t before;
+        const bool documentsOnly = execFlags & uint32_t(ExecFlags::DocumentsOnly);
 
         // First pass
         // Compile from AST tree to exec_nodes tree
@@ -2129,20 +2227,26 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
 
         // Third pass
         // For matchallterms_impl and matchanyterms_impl, sort the term IDs by number of documents they match
+        //
+        // Also, if (documentsOnly), we will replace some ops with others.
+        // For example, logicalor_impl will be replaced with logicalor_fordocs_impl, which will return
+        // if either LHS or RHS match -- it won't evaluate both if LHS matches.
+        // From here onwards, you should be prepared to deal with (logicalor_fordocs_impl, matchanyterms_fordocs_impl, matchanyphrases_fordocs_impl) as well
         size_t totalNodes{0};
 
         before = Timings::Microseconds::Tick();
-        stack.clear();
-        stack.push_back(root);
+        stackP.clear();
+        stackP.push_back(&root);
 
         do
         {
-                auto n = stack.back();
+                auto ptr = stackP.back();
+                auto n = *ptr;
 
+                stackP.pop_back();
                 require(n.fp != constfalse_impl);
                 require(n.fp != dummyop_impl);
 
-                stack.pop_back();
                 ++totalNodes;
                 if (n.fp == matchallterms_impl)
                 {
@@ -2182,28 +2286,36 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
 
                         for (uint32_t i{0}; i != ctx->size; ++i)
                                 ctx->terms[i] = v[i].first;
+
+                        if (documentsOnly)
+                                ptr->fp = matchanyterms_fordocs_impl;
                 }
                 else if (n.fp == logicaland_impl || n.fp == logicalor_impl || n.fp == logicalnot_impl)
                 {
                         auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
 
-                        stack.push_back(ctx->lhs);
-                        stack.push_back(ctx->rhs);
+                        stackP.push_back(&ctx->lhs);
+                        stackP.push_back(&ctx->rhs);
+
+                        if (documentsOnly && n.fp == logicalor_impl)
+                                ptr->fp = logicalor_fordocs_impl;
                 }
                 else if (n.fp == unaryand_impl || n.fp == unarynot_impl || n.fp == consttrueexpr_impl)
                 {
                         auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
 
-                        stack.push_back(ctx->expr);
+                        stackP.push_back(&ctx->expr);
                 }
-        } while (stack.size());
+                else if (documentsOnly && n.fp == matchanyphrases_impl)
+                        ptr->fp = matchanyphrases_fordocs_impl;
+        } while (stackP.size());
 
         if (traceMetrics)
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " to sort runs, ", dotnotation_repr(totalNodes), " exec_nodes\n");
 
         // Fourth Pass
         // Reorder logicaland_impl nodes (lhs, rhs) so that the least expensive to evaluate is always found in the lhs branch
-	// This also helps with moving tokens before phrases
+        // This also helps with moving tokens before phrases
         before = Timings::Microseconds::Tick();
         root = reorder_execnodes(root, rctx);
 
@@ -2215,7 +2327,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 SLog("COMPILED\n");
                 Print(root);
                 Print("\n");
-		//exit(0);
+                //exit(0);
         }
 
         // We now need the leader nodes so that we can get the leader term IDs from them.
@@ -2228,6 +2340,8 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
 
         if (traceCompile)
         {
+                SLog("LEADERS:", leaderNodes.size(), "\n");
+
                 for (const auto it : leaderNodes)
                         SLog("LEADER:", it, "\n");
         }
@@ -2242,7 +2356,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
 
                         leaderTermIDs->push_back(p->termIDs[0]);
                 }
-                else if (n.fp == matchanyterms_impl)
+                else if (n.fp == matchanyterms_impl || n.fp == matchanyterms_fordocs_impl)
                 {
                         const auto *__restrict__ run = static_cast<const runtime_ctx::termsrun *>(n.ptr);
 
@@ -2254,7 +2368,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
 
                         leaderTermIDs->push_back(run->terms[0]);
                 }
-                else if (n.fp == matchanyphrases_impl)
+                else if (n.fp == matchanyphrases_impl || n.fp == matchanyphrases_fordocs_impl)
                 {
                         const auto *const __restrict__ run = (runtime_ctx::phrasesrun *)n.ptr;
 
@@ -2284,19 +2398,19 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
 
                         leaderTermIDs->push_back(selectedTerm);
                 }
-		// for [ +the iphone]
-		else if (n.fp == unaryand_impl)
-		{
-			auto e = (runtime_ctx::unaryop_ctx *)n.ptr;
+                // for [ +the iphone]
+                else if (n.fp == unaryand_impl)
+                {
+                        auto e = (runtime_ctx::unaryop_ctx *)n.ptr;
 
-			leaderNodes.push_back(e->expr);
-		}
-		else if (n.fp == logicaland_impl)
-		{
-			auto e = (runtime_ctx::binop_ctx *)n.ptr;
+                        leaderNodes.push_back(e->expr);
+                }
+                else if (n.fp == logicaland_impl)
+                {
+                        auto e = (runtime_ctx::binop_ctx *)n.ptr;
 
-			leaderNodes.push_back(e->lhs);
-		}
+                        leaderNodes.push_back(e->lhs);
+                }
                 else
                         std::abort();
         }
@@ -2313,14 +2427,13 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                         Print("LEADER TERM ID:", id, "\n");
         }
 
-
         // NOW, prepare decoders
         // No need to have done so if we could have determined that the query would have failed anyway
         // This could take some time - for 52 distinct terms it takes 0.002s (>1ms)
-	//
-	// TODO: well, no need to prepare decoders for every distinct term we resolved
-	// because 1+ of them may not be referenced in the final execution nodes tree (because may have been dropped by the optimizer, etc)
-	// Instead, just identify the distinct termIds from all execution nodes of type (matchterm_impl, matchphrase_impl, matchallphrases_impl, matchanyphrases_impl, matchanyterms_impl, matchallterms_impl)
+        //
+        // TODO: well, no need to prepare decoders for every distinct term we resolved
+        // because 1+ of them may not be referenced in the final execution nodes tree (because may have been dropped by the optimizer, etc)
+        // Instead, just identify the distinct termIds from all execution nodes of type (matchterm_impl, matchphrase_impl, matchallphrases_impl, matchanyphrases_impl, matchanyterms_impl, matchallterms_impl)
         before = Timings::Microseconds::Tick();
         for (const auto &kv : rctx.tctxMap)
         {
@@ -2339,7 +2452,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
         return root;
 }
 
-static exec_node compile_query(ast_node *root, runtime_ctx &rctx, std::vector<exec_term_id_t> *leaderTermIDs)
+static exec_node compile_query(ast_node *root, runtime_ctx &rctx, std::vector<exec_term_id_t> *leaderTermIDs, const uint32_t execFlags)
 {
         simple_allocator a;
 
@@ -2353,7 +2466,7 @@ static exec_node compile_query(ast_node *root, runtime_ctx &rctx, std::vector<ex
 
         // Reorder the tree to enable the compiler to create larger collections
         // root is from a clone of the original query, so we are free to modify it anyway we see fit with reorder_root()
-        return compile(reorder_root(root), rctx, a, leaderTermIDs);
+        return compile(reorder_root(root), rctx, a, leaderTermIDs, execFlags);
 }
 
 #pragma EXECUTION
@@ -2367,7 +2480,7 @@ static exec_node compile_query(ast_node *root, runtime_ctx &rctx, std::vector<ex
 // We can't reuse the same compiled bytecode/runtime_ctx to run the same query across multiple index sources, because
 // we optimize based on the index source structure and terms involved in the query.
 // It is also very cheap to construct those anyway.
-void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc, masked_documents_registry *const __restrict__ maskedDocumentsRegistry, MatchedIndexDocumentsFilter *__restrict__ const matchesFilter, IndexDocumentsFilter *__restrict__ const documentsFilter)
+void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc, masked_documents_registry *const __restrict__ maskedDocumentsRegistry, MatchedIndexDocumentsFilter *__restrict__ const matchesFilter, IndexDocumentsFilter *__restrict__ const documentsFilter, const uint32_t execFlags)
 {
         struct query_term_instance final
         {
@@ -2385,7 +2498,6 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                         SLog("No root node\n");
                 return;
         }
-
 
         // We need a copy of that query here
         // for we we will need to modify it
@@ -2407,6 +2519,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
         // This must be performed before any query optimizations, for otherwise because the optimiser will most definitely rearrange the query, doing it after
         // the optimization passes will not capture the original, input query tokens instances information.
         std::vector<query_term_instance> originalQueryTokenInstances;
+        const bool documentsOnly = execFlags & uint32_t(ExecFlags::DocumentsOnly);
 
         {
                 std::vector<ast_node *> stack{q.root}; // use a stack because we don't care about the evaluation order
@@ -2470,7 +2583,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
         runtime_ctx rctx(idxsrc);
         std::vector<exec_term_id_t> leaderTermIDs;
         const auto before = Timings::Microseconds::Tick();
-        const auto rootExecNode = compile_query(q.root, rctx, &leaderTermIDs);
+        const auto rootExecNode = compile_query(q.root, rctx, &leaderTermIDs, execFlags);
 
         if (traceCompile)
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " to compile\n");
@@ -2620,144 +2733,258 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 
         matchesFilter->prepare(&dws, const_cast<const query_index_terms **>(queryIndicesTerms));
 
-        if (rootExecNode.fp == matchterm_impl)
+        // We will specialize on (documentsOnly)
+        if (!documentsOnly)
         {
-                // Fast-path, one token only
-                // Special-case this, e.g for cid:100
-		// For a dataset of 4 million or so documents, for a token that matched
-		// 6749 documents, it took 790us without this specialization, and about 640us when this specialization is enabled (~18% improvement)
-                auto *const decoder = leaderDecoders[0];
-                const auto termID = exec_term_id_t(rootExecNode.u16);
-                auto *const p = &rctx.matchedDocument.matchedTerms[0];
-                auto *const th = rctx.decode_ctx.termHits[termID];
-
-		require(th);
-		rctx.matchedDocument.matchedTermsCnt = 1;
-                p->queryCtx = rctx.originalQueryTermCtx[termID];
-                p->hits = th;
-
-		if (documentsFilter)
+                if (rootExecNode.fp == matchterm_impl)
                 {
-                        do
+                        // Fast-path, one token only
+                        // Special-case this, e.g for cid:100
+                        // For a dataset of 4 million or so documents, for a token that matched
+                        // 6749 documents, it took 790us without this specialization, and about 640us when this specialization is enabled (~18% improvement)
+                        auto *const decoder = leaderDecoders[0];
+                        const auto termID = exec_term_id_t(rootExecNode.u16);
+                        auto *const p = &rctx.matchedDocument.matchedTerms[0];
+                        auto *const th = rctx.decode_ctx.termHits[termID];
+
+                        require(th);
+                        rctx.matchedDocument.matchedTermsCnt = 1;
+                        p->queryCtx = rctx.originalQueryTermCtx[termID];
+                        p->hits = th;
+
+                        if (documentsFilter)
                         {
-                                const auto docID = decoder->curDocument.id;
-
-                                if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
+                                do
                                 {
-                                        // see runtime_ctx::capture_matched_term()
-                                        // we won't use runtime_ctx::reset() because it will
-                                        // 	docWordsSpace.reset()
-                                        rctx.materialize_term_hits_impl(termID);
-                                        rctx.matchedDocument.id = docID;
+                                        const auto docID = decoder->curDocument.id;
 
-                                        if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
-                                                break;
-                                }
-
-                                ++matchedDocuments;
-                        } while (decoder->next());
-                }
-                else
-                {
-                        do
-                        {
-                                const auto docID = decoder->curDocument.id;
-
-                                if (!maskedDocumentsRegistry->test(docID))
-                                {
-                                        rctx.materialize_term_hits_impl(termID);
-                                        rctx.matchedDocument.id = docID;
-
-                                        if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
-                                                break;
-                                }
-
-                                ++matchedDocuments;
-                        } while (decoder->next());
-                }
-        }
-        else
-        {
-                for (;;)
-                {
-                        // Select document from the leader tokens/decoders
-                        auto docID = leaderDecoders[0]->curDocument.id; // // see Codecs::Decoder::curDocument comments
-                        uint8_t toAdvanceCnt{1};
-
-                        toAdvance[0] = 0;
-
-                        for (uint32_t i{1}; i != leaderDecodersCnt; ++i)
-                        {
-                                const auto *const __restrict__ decoder = leaderDecoders[i];
-                                const auto did = decoder->curDocument.id; // see Codecs::Decoder::curDocument comments
-
-                                if (did < docID)
-                                {
-                                        docID = did;
-                                        toAdvance[0] = i;
-                                        toAdvanceCnt = 1;
-                                }
-                                else if (did == docID)
-                                        toAdvance[toAdvanceCnt++] = i;
-                        }
-
-                        if (traceExec)
-                                SLog("DOCUMENT ", docID, " ", ptr_repr(documentsFilter), " ", documentsFilter ? documentsFilter->filter(docID) : false, "\n");
-
-                        if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
-                        {
-                                // now execute rootExecNode
-                                // and it it returns true, compute the document's score
-                                rctx.reset(docID);
-
-				if (traceExec)
-					SLog("Evaluating ", docID, "\n");
-
-                                if (eval(rootExecNode, rctx))
-                                {
-                                        const auto n = rctx.matchedDocument.matchedTermsCnt;
-                                        auto *const __restrict__ allMatchedTerms = rctx.matchedDocument.matchedTerms;
-
-                                        rctx.matchedDocument.id = docID;
-
-                                        for (uint16_t i{0}; i != n; ++i)
+                                        if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
                                         {
-                                                const auto termID = allMatchedTerms[i].queryCtx->term.id;
+                                                // see runtime_ctx::capture_matched_term()
+                                                // we won't use runtime_ctx::reset() because it will
+                                                // 	docWordsSpace.reset()
+                                                rctx.materialize_term_hits_impl(termID);
+                                                rctx.matchedDocument.id = docID;
 
-                                                rctx.materialize_term_hits(termID);
-                                        }
-
-                                        if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
-                                        {
-                                                // Eearly abort
-                                                // Maybe the filter has collected as many documents as it needs
-                                                // See https://blog.twitter.com/2010/twitters-new-search-architecture "efficient early query termination"
-                                                // See CONCEPTS.md
-                                                goto l1;
+                                                if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
+                                                        break;
                                         }
 
                                         ++matchedDocuments;
-                                }
+                                } while (decoder->next());
                         }
-			else if (traceExec)
-				SLog("Ignored ", docID, "\n");
-
-                        // Advance leader tokens/decoders
-                        do
+                        else
                         {
-                                const auto idx = toAdvance[--toAdvanceCnt];
-                                auto *const decoder = leaderDecoders[idx];
-
-                                if (!decoder->next())
+                                do
                                 {
-                                        // done with this leaf token
-                                        if (!--leaderDecodersCnt)
-                                                goto l1;
+                                        const auto docID = decoder->curDocument.id;
 
-                                        memmove(leaderDecoders + idx, leaderDecoders + idx + 1, (leaderDecodersCnt - idx) * sizeof(Trinity::Codecs::Decoder *));
+                                        if (!maskedDocumentsRegistry->test(docID))
+                                        {
+                                                rctx.materialize_term_hits_impl(termID);
+                                                rctx.matchedDocument.id = docID;
+
+                                                if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
+                                                        break;
+                                        }
+
+                                        ++matchedDocuments;
+                                } while (decoder->next());
+                        }
+                }
+                else
+                {
+                        for (;;)
+                        {
+                                // Select document from the leader tokens/decoders
+                                auto docID = leaderDecoders[0]->curDocument.id; // see Codecs::Decoder::curDocument comments
+                                uint8_t toAdvanceCnt{1};
+
+                                toAdvance[0] = 0;
+
+                                for (uint32_t i{1}; i != leaderDecodersCnt; ++i)
+                                {
+                                        const auto *const __restrict__ decoder = leaderDecoders[i];
+                                        const auto did = decoder->curDocument.id; // see Codecs::Decoder::curDocument comments
+
+                                        if (did < docID)
+                                        {
+                                                docID = did;
+                                                toAdvance[0] = i;
+                                                toAdvanceCnt = 1;
+                                        }
+                                        else if (did == docID)
+                                                toAdvance[toAdvanceCnt++] = i;
                                 }
 
-                        } while (toAdvanceCnt);
+                                if (traceExec)
+                                        SLog("DOCUMENT ", docID, " ", ptr_repr(documentsFilter), " ", documentsFilter ? documentsFilter->filter(docID) : false, "\n");
+
+                                if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
+                                {
+                                        // now execute rootExecNode
+                                        // and it it returns true, compute the document's score
+                                        rctx.reset(docID);
+
+                                        if (traceExec)
+                                                SLog("Evaluating ", docID, "\n");
+
+                                        if (eval(rootExecNode, rctx))
+                                        {
+                                                const auto n = rctx.matchedDocument.matchedTermsCnt;
+                                                auto *const __restrict__ allMatchedTerms = rctx.matchedDocument.matchedTerms;
+
+                                                rctx.matchedDocument.id = docID;
+
+                                                for (uint16_t i{0}; i != n; ++i)
+                                                {
+                                                        const auto termID = allMatchedTerms[i].queryCtx->term.id;
+
+                                                        rctx.materialize_term_hits(termID);
+                                                }
+
+                                                if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
+                                                {
+                                                        // Eearly abort
+                                                        // Maybe the filter has collected as many documents as it needs
+                                                        // See https://blog.twitter.com/2010/twitters-new-search-architecture "efficient early query termination"
+                                                        // See CONCEPTS.md
+                                                        goto l1;
+                                                }
+
+                                                ++matchedDocuments;
+                                        }
+                                }
+                                else if (traceExec)
+                                        SLog("Ignored ", docID, "\n");
+
+                                // Advance leader tokens/decoders
+                                do
+                                {
+                                        const auto idx = toAdvance[--toAdvanceCnt];
+                                        auto *const decoder = leaderDecoders[idx];
+
+                                        if (!decoder->next())
+                                        {
+                                                // done with this leaf token
+                                                if (!--leaderDecodersCnt)
+                                                        goto l1;
+
+                                                memmove(leaderDecoders + idx, leaderDecoders + idx + 1, (leaderDecodersCnt - idx) * sizeof(Trinity::Codecs::Decoder *));
+                                        }
+
+                                } while (toAdvanceCnt);
+                        }
+                }
+        }
+        else // Documents only; won't materialize
+        {
+                if (rootExecNode.fp == matchterm_impl)
+                {
+                        auto *const decoder = leaderDecoders[0];
+                        const auto termID = exec_term_id_t(rootExecNode.u16);
+                        auto *const p = &rctx.matchedDocument.matchedTerms[0];
+                        auto *const th = rctx.decode_ctx.termHits[termID];
+
+                        require(th);
+                        rctx.matchedDocument.matchedTermsCnt = 0;
+                        p->queryCtx = rctx.originalQueryTermCtx[termID];
+                        p->hits = th;
+
+                        if (documentsFilter)
+                        {
+                                do
+                                {
+                                        const auto docID = decoder->curDocument.id;
+
+                                        if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
+                                        {
+                                                rctx.matchedDocument.id = docID;
+                                                if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
+                                                        break;
+                                        }
+
+                                        ++matchedDocuments;
+                                } while (decoder->next());
+                        }
+                        else
+                        {
+                                do
+                                {
+                                        const auto docID = decoder->curDocument.id;
+
+                                        if (!maskedDocumentsRegistry->test(docID))
+                                        {
+                                                rctx.matchedDocument.id = docID;
+                                                if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
+                                                        break;
+                                        }
+
+                                        ++matchedDocuments;
+                                } while (decoder->next());
+                        }
+                }
+                else
+                {
+                        for (;;)
+                        {
+                                auto docID = leaderDecoders[0]->curDocument.id;
+                                uint8_t toAdvanceCnt{1};
+
+                                toAdvance[0] = 0;
+                                for (uint32_t i{1}; i != leaderDecodersCnt; ++i)
+                                {
+                                        const auto *const __restrict__ decoder = leaderDecoders[i];
+                                        const auto did = decoder->curDocument.id; // see Codecs::Decoder::curDocument comments
+
+                                        if (did < docID)
+                                        {
+                                                docID = did;
+                                                toAdvance[0] = i;
+                                                toAdvanceCnt = 1;
+                                        }
+                                        else if (did == docID)
+                                                toAdvance[toAdvanceCnt++] = i;
+                                }
+
+                                if (traceExec)
+                                        SLog("DOCUMENT ", docID, " ", ptr_repr(documentsFilter), " ", documentsFilter ? documentsFilter->filter(docID) : false, "\n");
+
+                                if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
+                                {
+                                        rctx.reset(docID);
+
+                                        if (traceExec)
+                                                SLog("Evaluating ", docID, "\n");
+
+                                        if (eval(rootExecNode, rctx))
+                                        {
+                                                rctx.matchedDocument.id = docID;
+
+                                                if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
+                                                        goto l1;
+
+                                                ++matchedDocuments;
+                                        }
+                                }
+                                else if (traceExec)
+                                        SLog("Ignored ", docID, "\n");
+
+                                do
+                                {
+                                        const auto idx = toAdvance[--toAdvanceCnt];
+                                        auto *const decoder = leaderDecoders[idx];
+
+                                        if (!decoder->next())
+                                        {
+                                                if (!--leaderDecodersCnt)
+                                                        goto l1;
+
+                                                memmove(leaderDecoders + idx, leaderDecoders + idx + 1, (leaderDecodersCnt - idx) * sizeof(Trinity::Codecs::Decoder *));
+                                        }
+
+                                } while (toAdvanceCnt);
+                        }
                 }
         }
 

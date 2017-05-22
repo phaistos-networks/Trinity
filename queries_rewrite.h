@@ -506,7 +506,12 @@ namespace Trinity
                 if (trace)
                         SLog("REWRITING:", q, "\n");
 
-                q.process_runs(false, true, true, [&](const auto &run) {
+		// Second argument now set to false
+		// because otherwise for e.g [iphone +with]
+		// will replace with with alternatives or with itself, and it won't preserve the operator
+		// i.e it will be turned to [iphone with].
+		// TODO: preserve operator
+                q.process_runs(false, false, true, [&](const auto &run) {
                         ast_node *lhs{nullptr};
 
                         if (trace)
