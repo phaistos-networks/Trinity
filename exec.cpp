@@ -318,7 +318,7 @@ namespace // static/local this module
                                 const auto tctx = idxsrc->term_ctx(term);
 
                                 if (traceCompile)
-                                        SLog(ansifmt::bold, ansifmt::color_green, "[", term, "] ", termsDict.size(), ansifmt::reset, "\n");
+                                        SLog(ansifmt::bold, ansifmt::color_green, "[", term, "] ", termsDict.size(), ", documents = ", tctx.documents, ansifmt::reset, "\n");
 
                                 if (tctx.documents == 0)
                                 {
@@ -502,6 +502,7 @@ static bool matchanyterms_impl(const exec_node &self, runtime_ctx &rctx)
                         rctx.capture_matched_term(termID);
                         res = true;
                 }
+
         } while (++i != size);
 #else
         // this works but turns out to be _slower_ than the original implementation for some reason
@@ -805,7 +806,7 @@ static inline bool logicalnot_impl(const exec_node &self, runtime_ctx &rctx)
 
 static inline bool logicalor_impl(const exec_node &self, runtime_ctx &rctx)
 {
-        const auto opctx = (runtime_ctx::binop_ctx *)self.ptr;
+        const auto *const __restrict__ opctx = (runtime_ctx::binop_ctx *)self.ptr;
 
         // WAS: return eval(opctx->lhs, rctx) || eval(opctx->rhs, rctx);
         // We need to evaluate both LHS and RHS and return true if either of them is true
@@ -2687,7 +2688,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 
                         for (uint32_t i{1}; i != leaderDecodersCnt; ++i)
                         {
-                                const auto decoder = leaderDecoders[i];
+                                const auto *const __restrict__ decoder = leaderDecoders[i];
                                 const auto did = decoder->curDocument.id; // see Codecs::Decoder::curDocument comments
 
                                 if (did < docID)
@@ -2708,6 +2709,9 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                 // now execute rootExecNode
                                 // and it it returns true, compute the document's score
                                 rctx.reset(docID);
+
+				if (traceExec)
+					SLog("Evaluating ", docID, "\n");
 
                                 if (eval(rootExecNode, rctx))
                                 {
@@ -2735,12 +2739,14 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                         ++matchedDocuments;
                                 }
                         }
+			else if (traceExec)
+				SLog("Ignored ", docID, "\n");
 
                         // Advance leader tokens/decoders
                         do
                         {
                                 const auto idx = toAdvance[--toAdvanceCnt];
-                                auto decoder = leaderDecoders[idx];
+                                auto *const decoder = leaderDecoders[idx];
 
                                 if (!decoder->next())
                                 {

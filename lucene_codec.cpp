@@ -1129,9 +1129,9 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                 if (trace)
                         SLog("docsIndex = ", docsIndex, " ", bufferedDocs, ", curDocument.id = ", curDocument.id, "\n");
 
-                if (docsIndex == bufferedDocs)
+                if (unlikely(docsIndex == bufferedDocs))
                 {
-                        if (p == chunkEnd)
+                        if (unlikely(p == chunkEnd))
                         {
                                 if (trace)
                                         SLog("At the end already\n");

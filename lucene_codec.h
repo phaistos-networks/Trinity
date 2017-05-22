@@ -184,13 +184,13 @@ namespace Trinity
 
                                 void refill_documents();
 
-                                inline void update_curdoc()
+                                inline void update_curdoc() noexcept
 				{
 					curDocument.id = lastDocID + docDeltas[docsIndex];
 					curDocument.freq = docFreqs[docsIndex];
 				}
 
-                                void finalize()
+                                inline void finalize() noexcept
                                 {
                                         curDocument.id = MaxDocIDValue;
                                 }
