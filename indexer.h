@@ -108,7 +108,6 @@ namespace Trinity
 			flushFreq = n;
 		}
 
-		// This affects intermediate state flushing frequency
 		void set_intermediate_state_flush_freq(const size_t n)
 		{
 			intermediateStateFlushFreq = n;

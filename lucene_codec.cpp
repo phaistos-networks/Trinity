@@ -201,7 +201,7 @@ range32_t Trinity::Codecs::Lucene::IndexSession::append_index_chunk(const Trinit
         const auto newHitsDataOffset = positionsOut.size() + positionsOutFlushed;
 
         positionsOut.serialize(src->hitsDataPtr + hitsDataOffset, positionsChunkSize);
-        indexOut.pack(uint32_t(newHitsDataOffset), sumHits, positionsChunkSize);
+        indexOut.pack(uint32_t(newHitsDataOffset), sumHits, positionsChunkSize, skiplistSize);
         indexOut.serialize(p, end - p);
 
         return {uint32_t(o), srcTCTX.indexChunk.size()};
@@ -253,6 +253,8 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                         if (trace)
                                 SLog(ansifmt::bold, "REFILLING NOW, hitsLeft = ", hitsLeft, ", hitsIndex = ", hitsIndex, ", bufferedHits = ", bufferedHits, ansifmt::reset, "\n");
+
+			require(hitsIndex == 0 || hitsIndex == BLOCK_SIZE);
 
                         if (hitsLeft >= BLOCK_SIZE)
                         {
@@ -349,7 +351,6 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                 void skip_ommitted_hits(FastPForLib::FastPFor<4> &forUtil)
                 {
-
                         if (trace)
                                 SLog("Skipping omitted hits ", skippedHits, ", bufferedHits = ", bufferedHits, "\n");
 
@@ -365,32 +366,44 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                         }
                         else
                         {
+				// XXX: This is not optimal, but refactoring can wait
                                 if (trace)
-                                        SLog("Slow path (bufferedHits = ", bufferedHits, ", hitsIndex = ", hitsIndex, ")\n");
+                                        SLog("Slow path (bufferedHits = ", bufferedHits, ", hitsIndex = ", hitsIndex, ", rem = ", bufferedHits - hitsIndex, ") \n");
 
-                                if (!bufferedHits)
-                                        refill_hits(forUtil);
+                                require(hitsIndex <= bufferedHits);
 
-                                for (size_t span = std::min<size_t>(bufferedHits - hitsIndex, skippedHits);;)
+                                if (const auto rem = bufferedHits - hitsIndex; skippedHits >= rem)
+                                {
+                                        payloadsIt = payloadsEnd;
+                                        skippedHits -= rem;
+                                        bufferedHits = 0;
+                                        hitsIndex = 0;
+
+                                        const auto n = skippedHits / BLOCK_SIZE;
+
+                                        for (uint32_t i{0}; i != n; ++i)
+                                        {
+                                                payloadsIt = payloadsEnd;
+                                                refill_hits(forUtil);
+                                        }
+
+                                        skippedHits -= n * BLOCK_SIZE;
+                                }
+
+                                if (skippedHits)
                                 {
                                         uint32_t sum{0};
 
-                                        if (trace)
-                                                SLog("span = ", span, ", bufferedHits = ", bufferedHits, ", hitsLeft = ", hitsLeft, ", skippedHits = ", skippedHits, "\n");
+                                        if (!bufferedHits)
+                                                refill_hits(forUtil);
 
-                                        for (uint32_t i{0}; i != span; ++i)
+                                        require(hitsIndex + skippedHits <= bufferedHits);
+
+                                        for (uint32_t i{0}; i != skippedHits; ++i)
                                                 sum += hitsPayloadLengths[hitsIndex++];
 
+                                        skippedHits = 0;
                                         payloadsIt += sum;
-                                        skippedHits -= span;
-
-                                        if (skippedHits)
-                                        {
-                                                refill_hits(forUtil);
-                                                span = std::min<size_t>(skippedHits, bufferedHits);
-                                        }
-                                        else
-                                                break;
                                 }
                         }
                 }

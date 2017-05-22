@@ -25,7 +25,6 @@ int8_t Trinity::Utilities::to_file(const char *p, uint64_t len, int fd)
                 return -1;
         }
 
-
         return 0;
 }
 

@@ -127,11 +127,11 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 		{
                         auto c = all[toAdvance[0]].candidate;
                         auto maskedDocsReg = scanner_registry_for(all[toAdvance[0]].idx);
-
+		
                         if (fastPath && maskedDocsReg->empty())
                         {
 				const auto chunk = is->append_index_chunk(c.ap, selected.second);
-				
+
 				terms->push_back({outTerm, {selected.second.documents, chunk}});
 			}
 			else

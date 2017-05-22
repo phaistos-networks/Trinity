@@ -78,6 +78,13 @@ namespace Trinity
 			// Doing this would also likely improve performance, for instead of expanding indexOut's underlying allocated memory and thus
 			// likely incurring a memmcpy() cost, by keeping the buffer small and flushing it periodically to a backing file, this is avoided, memory
 			// allocation remainins low/constant and no need for memcpy() is required (if no reallocations are required)
+			//
+			// TODO: consider an alternative idea, where instead of flushing to disk, we 'll just steal indexOut memory (via IOBuffer::release() ) and
+			// length, and track that in a vector, and flush indexOut, and in the end, we 'll just compile a new indexOut from those chunks.
+			// This would provide those benefits:
+			// - no need to allocate large chunks of memory to hold the whold index; will allocate smaller chunks (and maybe even in the end
+			//	serialize all them to disk, free their memory, and allocate memory for the index and load it from disk)
+			// - no need to resize the IOBuffer, i.e no need for memcpy() the data to new buffers on reallocation
 			uint32_t indexOutFlushed;
 			const char *basePath;
 

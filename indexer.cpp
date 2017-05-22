@@ -229,6 +229,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                 docid_t documentID;
                 uint32_t hitsOffset;
                 uint16_t hitsCnt; // XXX: see comments earlier
+		uint8_t rangeIdx;
         };
 
         std::vector<uint32_t> allOffsets;
@@ -245,47 +246,56 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                         close(indexFd);
         });
 
-        const auto scan = [ flushFreq = this->flushFreq, indexFd, enc = enc_.get(), &map, sess ](const auto data, const auto dataSize)
+        const auto scan = [ flushFreq = this->flushFreq, indexFd, enc = enc_.get(), &map, sess ](const auto &ranges)
         {
                 uint8_t payloadSize;
                 std::vector<segment_data> all;
                 term_index_ctx tctx;
+		const auto R = ranges.data();
+	
+		require(ranges.size() < sizeof(uint8_t) << 3);
+		for (uint8_t i{0}; i != ranges.size(); ++i)
+		{
+			const auto range = R[i];
+                        const auto data = range.offset;
+                        const auto dataSize = range.size();
 
-                for (const auto *p = data, *const e = p + dataSize; p != e;)
-                {
-                        const auto documentID = *(docid_t *)p;
-                        p += sizeof(docid_t);
-                        auto termsCnt = *(uint16_t *)p; // XXX: see earlier comments
-                        p += sizeof(uint16_t);
-
-                        if (!termsCnt)
+                        for (const auto *p = data, *const e = p + dataSize; p != e;)
                         {
-                                // deleted?
-                                continue;
-                        }
+                                const auto documentID = *(docid_t *)p;
+                                p += sizeof(docid_t);
+                                auto termsCnt = *(uint16_t *)p; // XXX: see earlier comments
+                                p += sizeof(uint16_t);
 
-                        do
-                        {
-                                const auto term = *(uint32_t *)p;
-                                p += sizeof(uint32_t);
-                                auto hitsCnt = *(uint16_t *)p; // XXX: see earlier comments
-                                const auto saved{hitsCnt};
+                                if (!termsCnt)
+                                {
+                                        // deleted?
+                                        continue;
+                                }
 
-                                p += sizeof(hitsCnt);
-
-                                const auto base{p};
                                 do
                                 {
-                                        const auto deltaMask = Compression::decode_varuint32(p);
+                                        const auto term = *(uint32_t *)p;
+                                        p += sizeof(uint32_t);
+                                        auto hitsCnt = *(uint16_t *)p; // XXX: see earlier comments
+                                        const auto saved{hitsCnt};
 
-                                        if (0 == (deltaMask & 1))
-                                                payloadSize = Compression::decode_varuint32(p);
+                                        p += sizeof(hitsCnt);
 
-                                        p += payloadSize;
-                                } while (--hitsCnt);
+                                        const auto base{p};
+                                        do
+                                        {
+                                                const auto deltaMask = Compression::decode_varuint32(p);
 
-                                all.push_back({term, documentID, uint32_t(base - data), saved});
-                        } while (--termsCnt);
+                                                if (0 == (deltaMask & 1))
+                                                        payloadSize = Compression::decode_varuint32(p);
+
+                                                p += payloadSize;
+                                        } while (--hitsCnt);
+
+                                        all.push_back({term, documentID, uint32_t(base - data), saved, i});
+                                } while (--termsCnt);
+                        }
                 }
 
                 std::sort(all.begin(), all.end(), [](const auto &a, const auto &b) noexcept {
@@ -303,7 +313,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                         {
                                 const auto documentID = it->documentID;
                                 const auto hitsCnt = it->hitsCnt;
-                                const auto *p = data + it->hitsOffset;
+                                const auto *p = R[it->rangeIdx].offset + it->hitsOffset;
                                 uint32_t pos{0};
 
                                 require(documentID > prevDID);
@@ -339,6 +349,11 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         // begin() could open files, etc
         sess->begin();
 
+	std::vector<range_base<const uint8_t *, size_t>> ranges;
+
+	if (b.size())
+		ranges.push_back({reinterpret_cast<const uint8_t *>(b.data()), b.size()});
+
 	if (backingFileFD != -1)
         {
                 const auto fileSize = lseek64(backingFileFD, 0, SEEK_END);
@@ -355,19 +370,23 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                         munmap(fileData, fileSize);
                 });
 
-                scan(reinterpret_cast<const uint8_t *>(fileData), fileSize);
+		madvise(fileData, fileSize, MADV_SEQUENTIAL);
+                ranges.push_back({reinterpret_cast<const uint8_t *>(fileData), size_t(fileSize)});
+
+		scan(ranges);
 
 		close(backingFileFD);
 		backingFileFD = -1;
         }
+	else if (ranges.size())
+		scan(ranges);
 
-	if (b.size())
-	{
-        	scan(reinterpret_cast<const uint8_t *>(b.data()), b.size());
-	}
+
+
 
         // Persist terms dictionary
         std::vector<std::pair<str8_t, term_index_ctx>> v;
+	size_t sum{0};
 
         for (const auto &it : map)
         {
@@ -375,20 +394,33 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                 const auto termID = it.first;
                 const auto term = invDict[termID]; // actual term
 
+		sum += it.second.indexChunk.size();
                 v.push_back({term, it.second});
 #else
                 const auto termID = it.key();
                 const auto term = invDict[termID]; // actual term
 
+		sum += it.value().indexChunk.size();
                 v.push_back({term, it.value()});
 #endif
         }
 
+	// TODO: move this out to another method (persist), so that
+	// if we want to keep those resident in-memory
+	// If you don't set flush frequence(by default, set to 0), and you don't persist here, you can
+	// use this handy class to build a memory resident index, without
+	// having to directly use the various codec classes.
         sess->persist_terms(v);
         persist_segment(sess, updatedDocumentIDs, indexFd);
 
 	if (fsync(indexFd) == -1)
 		throw Switch::data_error("Failed to persist index");
+
+	if (const auto res = lseek64(indexFd, 0, SEEK_END); res != sum)
+	{
+		// Sanity check
+		throw Switch::data_error("Unexpected state");
+	}
 
 	if (close(indexFd) == -1)
 		throw Switch::data_error("Failed to persist index");

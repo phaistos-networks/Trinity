@@ -2316,6 +2316,10 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
         // NOW, prepare decoders
         // No need to have done so if we could have determined that the query would have failed anyway
         // This could take some time - for 52 distinct terms it takes 0.002s (>1ms)
+	//
+	// TODO: well, no need to prepare decoders for every distinct term we resolved
+	// because 1+ of them may not be referenced in the final execution nodes tree (because may have been dropped by the optimizer, etc)
+	// Instead, just identify the distinct termIds from all execution nodes of type (matchterm_impl, matchphrase_impl, matchallphrases_impl, matchanyphrases_impl, matchanyterms_impl, matchallterms_impl)
         before = Timings::Microseconds::Tick();
         for (const auto &kv : rctx.tctxMap)
         {
@@ -2619,9 +2623,8 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
         {
                 // Fast-path, one token only
                 // Special-case this, e.g for cid:100
-                // where the few extra ms will be ppreciated
-		// For a dummy dataset of 4 million or so documents, for a token that matched
-		// 6749 documents, it took 790us without this specialization, and about 640us when this specialization is enabled
+		// For a dataset of 4 million or so documents, for a token that matched
+		// 6749 documents, it took 790us without this specialization, and about 640us when this specialization is enabled (~18% improvement)
                 auto *const decoder = leaderDecoders[0];
                 const auto termID = exec_term_id_t(rootExecNode.u16);
                 auto *const p = &rctx.matchedDocument.matchedTerms[0];
@@ -2631,25 +2634,46 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 		rctx.matchedDocument.matchedTermsCnt = 1;
                 p->queryCtx = rctx.originalQueryTermCtx[termID];
                 p->hits = th;
-                do
+
+		if (documentsFilter)
                 {
-                        const auto docID = decoder->curDocument.id;
-
-                        if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
+                        do
                         {
-                                // see runtime_ctx::capture_matched_term()
-				// we won't use runtime_ctx::reset() because it will 
-				// 	docWordsSpace.reset()
-				rctx.curDocID = docID;
-                                rctx.materialize_term_hits_impl(termID);
-				rctx.matchedDocument.id = docID;
+                                const auto docID = decoder->curDocument.id;
 
-                                if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
-                                        break;
-                        }
+                                if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
+                                {
+                                        // see runtime_ctx::capture_matched_term()
+                                        // we won't use runtime_ctx::reset() because it will
+                                        // 	docWordsSpace.reset()
+                                        rctx.materialize_term_hits_impl(termID);
+                                        rctx.matchedDocument.id = docID;
 
-                        ++matchedDocuments;
-                } while (decoder->next());
+                                        if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
+                                                break;
+                                }
+
+                                ++matchedDocuments;
+                        } while (decoder->next());
+                }
+                else
+                {
+                        do
+                        {
+                                const auto docID = decoder->curDocument.id;
+
+                                if (!maskedDocumentsRegistry->test(docID))
+                                {
+                                        rctx.materialize_term_hits_impl(termID);
+                                        rctx.matchedDocument.id = docID;
+
+                                        if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
+                                                break;
+                                }
+
+                                ++matchedDocuments;
+                        } while (decoder->next());
+                }
         }
         else
         {

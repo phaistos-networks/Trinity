@@ -4,14 +4,15 @@
 
 void Trinity::Codecs::IndexSession::flush_index(int fd)
 {
-        if (indexOut.empty())
-                return;
-        else if (Utilities::to_file(indexOut.data(), indexOut.size(), fd) == -1)
-                throw Switch::data_error("Failed to flush index");
-        else
+        if (indexOut.size())
         {
-                indexOutFlushed += indexOut.size();
-                indexOut.clear();
+                if (Utilities::to_file(indexOut.data(), indexOut.size(), fd) == -1)
+                        throw Switch::data_error("Failed to flush index");
+                else
+                {
+                        indexOutFlushed += indexOut.size();
+                        indexOut.clear();
+                }
         }
 }
 
