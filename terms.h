@@ -34,13 +34,15 @@ namespace Trinity
 
         void pack_terms(std::vector<std::pair<str8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index);
 
+
+
         // An abstract index source terms access wrapper
+	//
         // For segments, you will likely use the prefix-compressed terms infra. but you may have
         // an index source that is e.g storing all those terms in an in-memory std::unordered_map<> or whatever else
         // for some reason and you can just write an IndexSourceTermsView subclass to access that.
         //
-        // IndexSourceTermsView subclasses are used while merging index sources
-        //
+        // IndexSourceTermsView subclasses are used while merging index sources.
         // see merge.h
         struct IndexSourceTermsView
         {

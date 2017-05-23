@@ -422,7 +422,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                         if (const auto upto = hitsIndex + freq; upto <= bufferedHits)
                         {
                                 if (trace)
-                                        SLog("fast-path\n");
+                                        SLog("fast-path hitsIndex = ", hitsIndex, ", upto = ", upto, "\n");
 
                                 while (hitsIndex != upto)
                                 {
@@ -494,7 +494,6 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                 bool next(FastPForLib::FastPFor<4> &forUtil)
                 {
-
                         skippedHits += docFreqs[cur_block.i];
                         lastDocID += docDeltas[cur_block.i++];
 
@@ -519,6 +518,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                 }
 
                 constexpr auto current() noexcept
+
                 {
                         return lastDocID + docDeltas[cur_block.i];
                 }
@@ -590,7 +590,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                         else if (id < did)
                         {
                                 did = id;
-                                toAdvanceCnt = 0;
+                                toAdvanceCnt = 1;
                                 toAdvance[0] = i;
                         }
                 }
@@ -710,6 +710,7 @@ void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_b
 {
         if (!pos && !payload)
         {
+		// This is perfectly fine
                 return;
         }
 

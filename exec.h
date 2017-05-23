@@ -12,8 +12,9 @@ namespace Trinity
 		// If this set, then only matching documents will be provided in MatchedIndexDocumentsFilter subclass's consider()
 		// That is, no matching terms or their hits will be provided in the passed matched_document&
 		//
-		// This is very helpful if you want to e.g just count, or otherwise don't care for which of the terms (in case of ORs) match the document, only for
-		// the documents that match the query (so you won't get a chance to e.g compute a trinity/query score based on the matched terms).
+		// This is very helpful if you want to e.g just count or collect documents matching a query, 
+		// or otherwise don't care for which of the terms (in case of ORs) matched the document, only for
+		// the documents(IDs) that match the query (so you won't get a chance to e.g compute a trinity/query score based on the matched terms).
 		// 
 		// It is also helpful if you want to e.g build a prefix-search people search system(like LinkedIn's) where you want to match all users matching the query, and you really don't care
 		// for which of the terms (or their hits) to do so. If you expand the last token (prefix-expansion), which couild lead to e.g 100s of new terms, you should consider this option(over x2 perfomrance boost).

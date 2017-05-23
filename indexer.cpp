@@ -162,6 +162,8 @@ Trinity::SegmentIndexSession::document_proxy SegmentIndexSession::begin(const do
 // You are expected to have invoked sess->begin() and built the index in sess->indexOut
 // see SegmentIndexSession::commit()
 // Callee is responsible for clos()ing indexFd
+//
+// Please note that it will invoke sess->end() for you
 void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<docid_t> &updatedDocumentIDs, int indexFd)
 {
 	if (sess->indexOut.size())
@@ -239,7 +241,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         int indexFd = open(path.c_str(), O_WRONLY | O_CREAT | O_LARGEFILE | O_TRUNC, 0775);
 
         if (indexFd == -1)
-                throw Switch::system_error("Failed to persist index");
+                throw Switch::system_error("Failed to persist index: ", path.AsS32());
 
         Defer({
                 if (indexFd != -1)

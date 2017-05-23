@@ -62,18 +62,19 @@ namespace Trinity
                 // - Trinity::persist_segment() to persist the actual index
 		//
 		// IMPORTANT:
-		// You will need to consider all candidates after merge() has returned.
+		// You will need to consider all candidates after merge() has returned:
 		// If a source's `gen` is higher than 1+ other index sources that are NOT included in this merge session as a candidate
 		// 	then you may delete the candidate's index and other files/data but you MUST retain its masked documents, because
 		// 	there are more sources, not included in this merge session, with lower gen that we will need to mask documents from them that
 		// 	have potentially been updated/deleted/masked by the source.
 		// Otherwise, you may safely wipe all data related to that merge candidate.
+		//
 		// When merge() returns and you consider all candidates, you should probably consider all other index sources/segments that didn't participate
 		// in the merge session, and if their gen is lower than any other remaining index source/segment that has any index data(i.e not retained for
 		// its masked products only), then you can wipe that source/segments remaining data as well.
 		//
 		// You are expected to outIndexSess->begin() before you merge(), and outIndexSess->end() afterwards, though you may
-		// want to use Trinity::persist_segment() which will persist and invoke end() for you
+		// want to use Trinity::persist_segment(outIndexSess) which will persist and invoke end() for you
                 void merge(Codecs::IndexSession *outIndexSess, simple_allocator *, std::vector<std::pair<str8_t, term_index_ctx>> *const outTerms, const uint32_t flushFreq = 0);
         };
 }
