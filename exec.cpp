@@ -2991,6 +2991,6 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 l1:
         const auto duration = Timings::Microseconds::Since(start);
 
-        if (traceCompile || true)
+        if (traceCompile)
                 SLog(ansifmt::bold, ansifmt::color_red, dotnotation_repr(matchedDocuments), " matched in ", duration_repr(duration), ansifmt::reset, " (", Timings::Microseconds::ToMillis(duration), " ms)\n");
 }
