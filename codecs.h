@@ -86,15 +86,15 @@ namespace Trinity
 			//	serialize all them to disk, free their memory, and allocate memory for the index and load it from disk)
 			// - no need to resize the IOBuffer, i.e no need for memcpy() the data to new buffers on reallocation
 			uint32_t indexOutFlushed;
-			const char *basePath;
+			char basePath[PATH_MAX];
 
 			// The segment name should be the generation
 			// e.g for path Trinity/Indices/Wikipedia/Segments/100
 			// the generation is extracted as 100, but, again, this is codec specific
                         IndexSession(const char *bp)
-				: indexOutFlushed{0}, basePath{bp}
+				: indexOutFlushed{0}
 			{
-
+				strcpy(basePath, bp);
 			}
 
 			virtual ~IndexSession()

@@ -33,7 +33,7 @@ namespace Trinity
         // Note that execution of sources does not depend on state of other sources - they are isolated so parallel processing them requires
         // no coordination.
         template <typename T, typename... Arg>
-        std::vector<std::unique_ptr<T>> exec_query(const query &in, IndexSourcesCollection *collection, IndexDocumentsFilter *f, Arg &&... args, const uint32_t flags = 0)
+        std::vector<std::unique_ptr<T>> exec_query(const query &in, IndexSourcesCollection *collection, IndexDocumentsFilter *f, const uint32_t flags, Arg &&... args)
         {
                 static_assert(std::is_base_of<MatchedIndexDocumentsFilter, T>::value, "Expected a MatchedIndexDocumentsFilter subclass");
                 const auto n = collection->sources.size();
@@ -54,7 +54,7 @@ namespace Trinity
 
         // Parallel queries execution, using std::async()
         template <typename T, typename... Arg>
-        std::vector<std::unique_ptr<T>> exec_query_par(const query &in, IndexSourcesCollection *collection, IndexDocumentsFilter *f, Arg &&... args, const uint32_t flags = 0)
+        std::vector<std::unique_ptr<T>> exec_query_par(const query &in, IndexSourcesCollection *collection, IndexDocumentsFilter *f, const uint32_t flags, Arg &&... args)
         {
                 static_assert(std::is_base_of<MatchedIndexDocumentsFilter, T>::value, "Expected a MatchedIndexDocumentsFilter subclass");
                 const auto n = collection->sources.size();

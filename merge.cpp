@@ -43,12 +43,11 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 	};
 
         std::vector<tracked_candidate> all_;
-        uint16_t rem{uint16_t(candidates.size())};
 
 	if (trace)
 		SLog("Merging ", candidates.size(), " candidates\n");
 
-        for (uint16_t i{0}; i != rem; ++i)
+        for (uint16_t i{0}; i != candidates.size(); ++i)
         {
 		if (trace)
 			SLog("Candidate ", i, " gen=", candidates[i].gen, " ", candidates[i].ap->codec_identifier(), "\n");
@@ -63,8 +62,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
         if (all_.empty())
                 return;
 
-        uint16_t toAdvance[all_.size()];
         auto all = all_.data();
+        uint16_t rem = all_.size();
+        uint16_t toAdvance[rem];
         const auto isCODEC = is->codec_identifier();
 	DocWordsSpace dws{Limits::MaxPosition}; // dummy, for materialize_hits()
 	size_t termHitsCapacity{0};

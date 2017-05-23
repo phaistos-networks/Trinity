@@ -302,7 +302,6 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                 void refill_documents(FastPForLib::FastPFor<4> &forUtil)
                 {
-
                         if (trace)
                                 SLog("Refilling documents ", documentsLeft, "\n");
 

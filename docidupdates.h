@@ -98,10 +98,7 @@ namespace Trinity
                                 if (it->test(id))
                                         return true;
                                 else if (it->drained())
-				{
                                         new (it) updated_documents_scanner(scanners[--rem]);
-					require(*it == scanners[rem]);
-				}	
                                 else
                                         ++i;
                         }
@@ -127,12 +124,13 @@ namespace Trinity
 			return 0 == rem;
 		}
 
-		static std::unique_ptr<Trinity::masked_documents_registry> make(const updated_documents *ud, const uint8_t n)
+		static std::unique_ptr<Trinity::masked_documents_registry> make(const updated_documents *ud, const std::size_t n)
                 {
 			// ASAN will complain that about alloc-dealloc-mismatch
 			// because we are using placement new operator and apparently there is no way to tell ASAN that this is fine
 			// I need to figure this out
 			// TODO: do whatever makes sense here later
+			require(n <= std::numeric_limits<uint8_t>::max());
                         auto ptr = new (malloc(sizeof(masked_documents_registry) + sizeof(updated_documents_scanner) * n)) masked_documents_registry();
 
                         ptr->rem = n;
