@@ -41,6 +41,12 @@ static std::pair<str32_t, range_base<uint16_t, uint16_t>> parse_term(ast_parser 
 
                         ctx.content.strip_prefix(pair.first);
 
+			// for e.g san francisco-based
+			// after we have parsed 'francisco' we don't want to
+			// consider '-' as a NOT operator
+			while (ctx.content.size() && ctx.content.front() == '-')
+				ctx.content.strip_prefix(1);
+
                         if (unlikely(pair.second > Trinity::Limits::MaxTermLength))
                         {
                                 // TODO: what's the right thing to do here?
@@ -1536,4 +1542,155 @@ void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a)
 				break;
                 }
         } while (stack.size());
+}
+
+// Please see Trinity's Wiki on Github for suggestions and links to useful resources
+// https://github.com/phaistos-networks/Trinity/wiki
+std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::str32_t content, Trinity::char_t *out)
+{
+        const auto *p = content.begin(), *const e = content.end(), *const b{p};
+	bool allAlphas{true};
+
+	if (p + 4 < e && isalpha(*p) && p[1] == '.' && isalnum(p[2]) && p[3] == '.' && isalpha(p[4]))
+	{
+		// Acronyms with punctuations
+		// is it e.g I.B.M, or U.S.A. ?
+		const auto threshold = out + 0xff;
+		auto o{out};
+
+		*o++ = p[0];
+		*o++ = p[2];
+		*o++ = p[4];
+
+                for (p += 5;;)
+                {
+                        if (p == e)
+				break;
+                        else if (*p == '.')
+                        {
+				++p;
+				if (p == e)
+					break;
+				else if (isalpha(*p))
+				{
+					if (unlikely(o !=threshold))
+						*o++ = *p;
+					++p;
+					continue;
+				}
+				else if (!isalnum(*p))
+					break;
+				else
+					goto l20;
+                        }
+                        else if (isalnum(*p))
+                                goto l20;
+			else
+				break;
+                }
+
+                return {p - content.data(), o - out};
+        }
+
+l20:
+        if (p != e && isalnum(*p))
+        {
+		// e.g site:google.com, or video|games
+                while (p != e && isalpha(*p))
+			++p;
+
+                if (p + 1 < e && *p == ':' && isalnum(p[1]))
+                {
+                        for (p += 2; p != e && (isalnum(*p) || *p == '.'); ++p)
+                                continue;
+                        goto l10;
+                }
+        }
+
+
+        for (;;)
+        {
+		if (*p == '|' && p + 1 < e && isalnum(p[1])) 	// special compound tokens (foo|bar)
+		{
+			for (p+=2; p != e; )
+			{
+				if (*p == '|' && p + 1 < e && isalnum(p[1]))
+					p+=2;
+				else if (isalnum(*p))
+					++p;
+				else
+					break;
+			}
+			break;
+		}
+
+		while (p != e)
+		{
+			if (isalpha(*p))
+			{
+			}
+			else if (isdigit(*p))
+			{
+				allAlphas = false;
+			}
+			else
+				break;
+			++p;
+		}
+
+		if (*p == '\'' && allAlphas)
+		{
+			// Apostrophes
+			// Can be used for clitic contractions (we're => we are), as genitive markers (John's boat), or as quotative markers
+			// This is a best-effort heuristic; you should just implement and use your own parser if you need a different behavior
+			// which is true for all other heuristics and design decisions specific to this parser implementaiton.
+			const str32_t s(b, p - b);
+
+			if (p + 1 != e && toupper(p[1]) == 'S' && (p + 2 == e || (!isalnum(p[2]) && p[2] != '\'')))
+                        {
+				if (s.EqNoCase(_S("IT")))
+				{
+					// TODO: IT'S => IT IS
+				}
+
+                                // genetive marker
+				*s.CopyTo(out) = 'S';
+
+                                return {s.size() + 2, s.size() + 1};
+                        }
+
+                        allAlphas = false;
+		}
+
+
+                if (p != b && p != e)
+                {
+                        if (*p == '-')
+                        {
+				// Hyphenated words: Sometimes this can be used as a separator e.g
+				// [New York-based], or [forty-two], but some other times it is important like 
+				// [x-men] and [pre-processing]. For now, we 'll treat it as a separator, but this is not optimal
+#if 0 // treat a separator
+                                ++p;
+                                continue;
+#endif
+                        }
+                        else if ((*p == '+' || *p == '#' )&& isalpha(p[-1]) && (p + 1 == e || !isalnum(p[1])))
+                        {
+                                // C++, C#
+                                for (++p; p != e && *p == '+'; ++p)
+                                        continue;
+                                continue;
+                        }
+                }
+
+                break;
+        }
+
+l10:
+        const uint32_t consumed = p - b;
+        const uint8_t stored = std::min<uint32_t>(consumed, 0xff);
+
+        memcpy(out, b, stored * sizeof(char_t));
+        return {consumed, stored};
 }

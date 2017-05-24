@@ -181,6 +181,7 @@ namespace Trinity
 		const char_t *contentBase;
                 simple_allocator &allocator;
                 term terms[Trinity::Limits::MaxPhraseSize];
+		// It is important that your queries token parser semantics are also implemented in your documents content parser
                 std::pair<uint32_t, uint8_t>(*token_parser)(const str32_t, char_t *);
                 std::vector<str8_t> distinctTokens;
 		// facilitates parsing

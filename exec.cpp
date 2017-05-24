@@ -6,8 +6,8 @@ using namespace Trinity;
 
 namespace // static/local this module
 {
-        static constexpr bool traceExec{false};
-        static constexpr bool traceCompile{false};
+        [[maybe_unused]] static constexpr bool traceExec{true};
+        static constexpr bool traceCompile{true};
 
         struct runtime_ctx;
 
@@ -1667,11 +1667,13 @@ static void expand_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, st
 
 static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator &a, std::vector<exec_term_id_t> &terms, std::vector<const runtime_ctx::phrase *> &phrases, std::vector<exec_node> &stack, bool &updates, const exec_node *const root)
 {
+	const auto saved{n};
+
 #define set_dirty()                     \
         do                              \
         {                               \
                 if (traceCompile)       \
-                        SLog("HERE\n"); \
+                        SLog("HERE from [", saved, "] to [", n, "]\n"); \
                 updates = true;         \
         } while (0)
 
@@ -2173,7 +2175,7 @@ static void capture_leader(const exec_node n, std::vector<exec_node> *const out,
 
 static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allocator &a, std::vector<exec_term_id_t> *leaderTermIDs, const uint32_t execFlags)
 {
-        static constexpr bool traceMetrics{false};
+        static constexpr bool traceMetrics{true};
         std::vector<exec_term_id_t> terms;
         std::vector<const runtime_ctx::phrase *> phrases;
         std::vector<exec_node> stack;
@@ -2190,7 +2192,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
         bool updates;
 
         if (traceMetrics)
-                SLog(duration_repr(Timings::Microseconds::Since(before)), " to compile\n");
+                SLog(duration_repr(Timings::Microseconds::Since(before)), " to compile to:", root, "\n");
 
         if (root.fp == constfalse_impl)
         {
@@ -2200,6 +2202,9 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 return {constfalse_impl, {}};
         }
 
+	if (traceCompile)
+		SLog("Before second pass:", root, "\n");
+
         // Second pass
         // Optimize and expand
         before = Timings::Microseconds::Tick();
@@ -2208,7 +2213,13 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 // collapse and expand nodes
                 // this was pulled out of optimize_node() in order to safeguard us from some edge conditions
                 collapse_node(root, rctx, a, terms, phrases, stack);
+
+		SLog("After collapsing:", root, "\n");
+
+
                 expand_node(root, rctx, a, terms, phrases, stack);
+
+		SLog("After expanding:", root, "\n");
 
                 updates = false;
                 root = optimize_node(root, rctx, a, terms, phrases, stack, updates, &root);
@@ -2223,7 +2234,8 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
         } while (updates);
 
         if (traceMetrics)
-                SLog(duration_repr(Timings::Microseconds::Since(before)), " to expand\n");
+                SLog(duration_repr(Timings::Microseconds::Since(before)), " to expand. Before third pass:", root, "\n");
+
 
         // Third pass
         // For matchallterms_impl and matchanyterms_impl, sort the term IDs by number of documents they match
@@ -2323,12 +2335,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " to reorder exec nodes\n");
 
         if (traceCompile)
-        {
-                SLog("COMPILED\n");
-                Print(root);
-                Print("\n");
-                //exit(0);
-        }
+                SLog("COMPILED:", root, "\n");
 
         // We now need the leader nodes so that we can get the leader term IDs from them.
         // See Trinity::query::leader_nodes()
@@ -2817,17 +2824,11 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                                 toAdvance[toAdvanceCnt++] = i;
                                 }
 
-                                if (traceExec)
-                                        SLog("DOCUMENT ", docID, " ", ptr_repr(documentsFilter), " ", documentsFilter ? documentsFilter->filter(docID) : false, "\n");
-
                                 if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
                                 {
                                         // now execute rootExecNode
                                         // and it it returns true, compute the document's score
                                         rctx.reset(docID);
-
-                                        if (traceExec)
-                                                SLog("Evaluating ", docID, "\n");
 
                                         if (eval(rootExecNode, rctx))
                                         {
@@ -2855,8 +2856,6 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                                 ++matchedDocuments;
                                         }
                                 }
-                                else if (traceExec)
-                                        SLog("Ignored ", docID, "\n");
 
                                 // Advance leader tokens/decoders
                                 do
@@ -2947,15 +2946,10 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                                 toAdvance[toAdvanceCnt++] = i;
                                 }
 
-                                if (traceExec)
-                                        SLog("DOCUMENT ", docID, " ", ptr_repr(documentsFilter), " ", documentsFilter ? documentsFilter->filter(docID) : false, "\n");
 
                                 if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
                                 {
                                         rctx.reset(docID);
-
-                                        if (traceExec)
-                                                SLog("Evaluating ", docID, "\n");
 
                                         if (eval(rootExecNode, rctx))
                                         {
@@ -2967,8 +2961,6 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                                 ++matchedDocuments;
                                         }
                                 }
-                                else if (traceExec)
-                                        SLog("Ignored ", docID, "\n");
 
                                 do
                                 {

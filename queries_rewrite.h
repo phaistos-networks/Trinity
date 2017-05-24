@@ -19,7 +19,7 @@ namespace Trinity
         template <typename L>
         static auto run_next(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l)
         {
-                static constexpr bool trace{false};
+                static constexpr bool trace{true};
                 require(i < run.size());
                 const auto token = run[i]->p->terms[0].token;
                 static thread_local std::vector<std::pair<std::pair<str32_t, uint8_t>, uint8_t>> v;
@@ -65,7 +65,7 @@ namespace Trinity
                         {
                                 SLog("Starting from ", run[i]->p->terms[0].token, " ", n, "\n");
                                 for (const auto &it : alts)
-                                        SLog("[", it.first, "] ", it.second, "\n");
+                                        SLog("alt [", it.first, "] ", it.second, "\n");
                         }
 
                         for (const auto &it : alts)
@@ -154,7 +154,7 @@ namespace Trinity
                 }
 #else
                 std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) {
-                        return b.second < a.second;
+                        return b.second < a.second; 	// sort by span
                 });
 
                 expressions.clear();
@@ -164,6 +164,9 @@ namespace Trinity
                         const auto span = p->second;
                         ast_node *node;
                         const auto saved = alts.size();
+
+			if (trace)
+				SLog("For SPAN ", span, "\n");
 
                         do
                         {
@@ -176,8 +179,11 @@ namespace Trinity
                                 if (k == alts.size())
                                 {
                                         // ignore duplicates or already seen
+					if (trace)
+						SLog("Accepting Alt [", s, "]\n");
                                         alts.push_back({s, p->first.second});
                                 }
+
                         } while (++p != e && p->second == span);
 
                         const auto n = alts.size() - saved;
@@ -198,10 +204,11 @@ namespace Trinity
                                 {
                                         if (trace)
                                                 SLog("FLAGS:", flags, "\n");
+
                                         lhs->set_alltokens_flags(flags);
                                 }
 
-                                for (uint32_t i = 1; i != n; ++i)
+                                for (uint32_t i{1}; i != n; ++i)
                                 {
                                         auto n = allocator.Alloc<ast_node>();
 
@@ -225,6 +232,9 @@ namespace Trinity
                                                         SLog("FLAGS:", flags, "\n");
                                                 n->binop.rhs->set_alltokens_flags(flags);
                                         }
+
+					if (trace)
+						SLog("CREATED:", *n, "\n");
                                 }
 
                                 node = lhs;
@@ -242,6 +252,7 @@ namespace Trinity
                                 {
                                         if (trace)
                                                 SLog("FLAGS:", flags, "\n");
+
                                         node->set_alltokens_flags(flags);
                                 }
                         }
@@ -249,7 +260,7 @@ namespace Trinity
                         expressions.push_back({node, span});
 
                         if (trace)
-                                SLog("<<<<<< [", *node, "] ", span, "\n");
+                                SLog(ansifmt::color_brown, "<<<<<< [", *node, "] ", span, ansifmt::reset, "\n");
                 }
 
 #endif
@@ -267,7 +278,7 @@ namespace Trinity
         template <typename L>
         static std::pair<ast_node *, uint8_t> run_capture(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan)
         {
-                static constexpr bool trace{false};
+                static constexpr bool trace{true};
                 auto &allocator = q.allocator;
                 auto expressions = run_next(budget, q, run, i, maxSpan, l);
 
@@ -277,11 +288,13 @@ namespace Trinity
                 {
 #if !defined(TRINITY_QUERIES_REWRITE_FILTER)
                         if (trace)
-                                SLog("No budget, returnign first ", *expressions.front().first, "\n");
+                                SLog("No budget, returning first ", *expressions.front().first, "\n");
+
                         return {expressions.front().first, i + 1};
 #else
                         if (trace)
-                                SLog("No budget, returnign first ", *expressions.back().first, "\n");
+                                SLog("No budget, returning first ", *expressions.back().first, "\n");
+
                         return {expressions.back().first, i + 1};
 #endif
                 }
@@ -487,9 +500,13 @@ namespace Trinity
         template <typename L>
         void rewrite_query(Trinity::query &q, size_t budget, const uint8_t K, L &&l)
         {
-                static constexpr bool trace{false};
+                static constexpr bool trace{true};
                 const auto before = Timings::Microseconds::Tick();
                 auto &allocator = q.allocator;
+
+		// For now, explicitly to unlimited
+		// See: https://github.com/phaistos-networks/Trinity/issues/1 ( FIXME: )
+		budget = std::numeric_limits<size_t>::max();
 
                 if (trace)
                         SLog("Initially budget: ", budget, "\n");
@@ -548,12 +565,16 @@ namespace Trinity
                         *run[0] = *lhs;
                         for (uint32_t i{1}; i != run.size(); ++i)
                                 run[i]->set_dummy();
+
                         if (trace)
                                 SLog("Final:", *lhs, "\n");
                 });
 
 		if (trace)
+		{
 	                SLog(duration_repr(Timings::Microseconds::Since(before)), " to rewrite the query\n");
+			//exit(0);
+		}
                 q.normalize();
         }
 }
