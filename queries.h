@@ -445,8 +445,11 @@ namespace Trinity
 
 			stack.clear();
 			unaryNodes.clear();
-                        stack.push_back({0, root});
-                        do
+
+			if (root)
+	                        stack.push_back({0, root});
+				
+			while (stack.size())
                         {
 				const auto pair = stack.back();
                                 auto n = pair.second;
@@ -503,7 +506,7 @@ namespace Trinity
                                         case ast_node::Type::ConstTrueExpr:
                                                 break;
                                 }
-                        } while (stack.size());
+                        }
 
                         std::sort(unaryNodes.begin(), unaryNodes.end(), [](const auto &a, const auto &b) {
                                 return a.first < b.first || (a.first == b.first && a.second->p->index < b.second->p->index);

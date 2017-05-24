@@ -174,6 +174,13 @@ namespace // static/local this module
                         }
                 };
 
+		struct cacheable_termsrun
+		{
+			docid_t lastConsideredDID;
+			const  termsrun *run;
+			bool res;
+		};
+
                 struct phrasesrun final
                 {
                         uint16_t size;
@@ -470,6 +477,40 @@ static bool matchallterms_impl(const exec_node &self, runtime_ctx &rctx)
                 }
         } while (++i != size);
 
+        return true;
+}
+
+static bool matchallterms_cacheable_impl(const exec_node &self, runtime_ctx &rctx)
+{
+        auto *const __restrict__ ctx = static_cast<runtime_ctx::cacheable_termsrun *>(self.ptr);
+
+	if (ctx->lastConsideredDID == rctx.curDocID)
+	{
+		// cached
+		return ctx->res;
+	}
+
+	const auto *const __restrict__ run = ctx->run;
+        uint16_t i{0};
+        const auto size = run->size;
+        const auto did = rctx.curDocID;
+
+	ctx->lastConsideredDID = rctx.curDocID;
+        do
+        {
+                const auto termID = run->terms[i];
+                auto *const decoder = rctx.decode_ctx.decoders[termID];
+
+                if (decoder->seek(did))
+                        rctx.capture_matched_term(termID);
+                else
+                {
+			ctx->res = false;
+                        return false;
+                }
+        } while (++i != size);
+
+	ctx->res = true;
         return true;
 }
 
@@ -946,7 +987,7 @@ static uint32_t reorder_execnode(exec_node &n, bool &updates, runtime_ctx &rctx)
         }
         else if (n.fp == logicalor_impl || n.fp == logicalnot_impl || n.fp == logicalor_fordocs_impl)
         {
-                auto ctx = static_cast<runtime_ctx::binop_ctx *>(n.ptr);
+                auto *const ctx = static_cast<runtime_ctx::binop_ctx *>(n.ptr);
                 const auto lhsCost = reorder_execnode(ctx->lhs, updates, rctx);
                 const auto rhsCost = reorder_execnode(ctx->rhs, updates, rctx);
 
@@ -954,7 +995,7 @@ static uint32_t reorder_execnode(exec_node &n, bool &updates, runtime_ctx &rctx)
         }
         else if (n.fp == unaryand_impl || n.fp == unarynot_impl)
         {
-                auto ctx = static_cast<runtime_ctx::unaryop_ctx *>(n.ptr);
+                auto *const ctx = static_cast<runtime_ctx::unaryop_ctx *>(n.ptr);
 
                 return reorder_execnode(ctx->expr, updates, rctx);
         }
@@ -2415,6 +2456,126 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 }
                 else
                         std::abort();
+        }
+
+	// https://github.com/phaistos-networks/Trinity/issues/2
+	// Now that we have compiled the query into an execution tree, and we have collected the leader tokens
+	// we have a chance for a few more optimisations that had to be deferred until we were done with the above.
+	// TODO: improve quality of this implementation
+        {
+                static constexpr bool trace{false};
+                std::vector<exec_node *> stack;
+                std::vector<exec_node *> matchalltermsNodes;
+                std::vector<exec_node *> same;
+
+                stack.push_back(&root);
+                do
+                {
+                        auto *const ptr = stack.back();
+                        const auto n = *ptr;
+
+                        stack.pop_back();
+                        if (n.fp == logicaland_impl || n.fp == logicalor_impl || n.fp == logicalor_fordocs_impl || n.fp == logicalnot_impl)
+                        {
+                                auto *const ctx = static_cast<runtime_ctx::binop_ctx *>(n.ptr);
+
+                                stack.push_back(&ctx->lhs);
+                                stack.push_back(&ctx->rhs);
+                        }
+                        else if (n.fp == unaryand_impl || n.fp == unarynot_impl || n.fp == consttrueexpr_impl)
+                        {
+                                auto *const ctx = static_cast<runtime_ctx::unaryop_ctx *>(n.ptr);
+
+                                stack.push_back(&ctx->expr);
+                        }
+                        else if (n.fp == matchallterms_impl)
+                                matchalltermsNodes.push_back(ptr);
+                } while (stack.size());
+
+                std::sort(matchalltermsNodes.begin(), matchalltermsNodes.end(), [](const auto a, const auto b) {
+                        const auto ra = static_cast<const runtime_ctx::termsrun *>(a->ptr);
+                        const auto rb = static_cast<const runtime_ctx::termsrun *>(b->ptr);
+
+                        return ra->size < rb->size;
+                });
+
+                for (uint32_t i{0}; i != matchalltermsNodes.size();)
+                {
+                        auto n = matchalltermsNodes[i];
+                        auto ra = static_cast<const runtime_ctx::termsrun *>(n->ptr);
+                        const auto cnt = ra->size; // for all term runs of this size
+                        const auto base{i};
+
+                        do
+                        {
+                                const auto n = matchalltermsNodes[i];
+
+                                if (!n)
+                                {
+                                        // collected earlier
+                                        continue;
+                                }
+
+                                const auto ra = static_cast<const runtime_ctx::termsrun *>(n->ptr);
+
+                                same.clear();
+                                same.push_back(n);
+
+                                for (uint32_t k{base}; k != matchalltermsNodes.size(); ++k)
+                                {
+                                        if (k == i)
+                                                continue;
+
+                                        auto o = matchalltermsNodes[k];
+
+                                        if (!o)
+                                        {
+                                                // collected earlier
+                                                continue;
+                                        }
+
+                                        const auto r = static_cast<runtime_ctx::termsrun *>(o->ptr);
+
+                                        if (r->size != cnt)
+                                                break;
+                                        else if (*r == *ra)
+                                        {
+                                                same.push_back(o);
+                                                matchalltermsNodes[k] = nullptr;
+                                        }
+                                }
+
+                                if (trace)
+                                        SLog("same.size = ", same.size(), "\n");
+
+                                if (same.size() != 1)
+                                {
+                                        auto ctr = rctx.allocator.Alloc<runtime_ctx::cacheable_termsrun>();
+
+                                        // need to do something about this
+                                        if (trace)
+                                        {
+                                                Print(*same.front(), "\n");
+                                                for (uint32_t i{1}; i != same.size(); ++i)
+                                                        require(*static_cast<runtime_ctx::termsrun *>(same[i - 1]->ptr) == *static_cast<runtime_ctx::termsrun *>(same[i]->ptr));
+                                        }
+
+                                        matchalltermsNodes[i] = nullptr;
+
+                                        ctr->lastConsideredDID = 0;
+                                        ctr->run = static_cast<runtime_ctx::termsrun *>(same.front()->ptr);
+                                        ctr->res = false;
+
+                                        // replace all those nodes
+                                        for (auto it : same)
+                                        {
+                                                it->fp = matchallterms_cacheable_impl;
+                                                it->ptr = ctr;
+                                        }
+                                }
+
+                        } while (++i != matchalltermsNodes.size() && ((n = matchalltermsNodes[i]) == nullptr || static_cast<const runtime_ctx::termsrun *>(n->ptr)->size == cnt));
+                }
         }
 
         std::sort(leaderTermIDs->begin(), leaderTermIDs->end());

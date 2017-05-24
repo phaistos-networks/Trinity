@@ -1173,7 +1173,7 @@ ast_node *normalize_root(ast_node *root)
         if (unlikely(ctx.tokensCnt > Limits::MaxQueryTokens))
         {
                 if (traceParser)
-                        SLog("Too many query tokens\n");
+                        SLog("Too many query tokens(", ctx.tokensCnt, ") (", Limits::MaxQueryTokens, ")\n");
 
                 root = nullptr;
         }
