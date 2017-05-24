@@ -57,7 +57,7 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
 {
         const auto *p = content.begin(), *const e = content.end(), *const b{p};
 
-	if (p + 5 < e && isalpha(*p) && p[1] == '.' && isalnum(p[2]) && p[3] == '.' && isalpha(p[4]))
+	if (p + 4 < e && isalpha(*p) && p[1] == '.' && isalnum(p[2]) && p[3] == '.' && isalpha(p[4]))
 	{
 		// is it e.g I.B.M ?
 		const auto threshold = out + 0xff;
