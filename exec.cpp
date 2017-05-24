@@ -6,8 +6,8 @@ using namespace Trinity;
 
 namespace // static/local this module
 {
-        [[maybe_unused]] static constexpr bool traceExec{true};
-        static constexpr bool traceCompile{true};
+        [[maybe_unused]] static constexpr bool traceExec{false};
+        static constexpr bool traceCompile{false};
 
         struct runtime_ctx;
 
@@ -2175,7 +2175,7 @@ static void capture_leader(const exec_node n, std::vector<exec_node> *const out,
 
 static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allocator &a, std::vector<exec_term_id_t> *leaderTermIDs, const uint32_t execFlags)
 {
-        static constexpr bool traceMetrics{true};
+        static constexpr bool traceMetrics{false};
         std::vector<exec_term_id_t> terms;
         std::vector<const runtime_ctx::phrase *> phrases;
         std::vector<exec_node> stack;
