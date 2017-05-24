@@ -19,7 +19,7 @@ namespace Trinity
         template <typename L>
         static auto run_next(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l)
         {
-                static constexpr bool trace{true};
+                static constexpr bool trace{false};
                 require(i < run.size());
                 const auto token = run[i]->p->terms[0].token;
                 static thread_local std::vector<std::pair<std::pair<str32_t, uint8_t>, uint8_t>> v;
@@ -278,7 +278,7 @@ namespace Trinity
         template <typename L>
         static std::pair<ast_node *, uint8_t> run_capture(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan)
         {
-                static constexpr bool trace{true};
+                static constexpr bool trace{false};
                 auto &allocator = q.allocator;
                 auto expressions = run_next(budget, q, run, i, maxSpan, l);
 
@@ -500,7 +500,7 @@ namespace Trinity
         template <typename L>
         void rewrite_query(Trinity::query &q, size_t budget, const uint8_t K, L &&l)
         {
-                static constexpr bool trace{true};
+                static constexpr bool trace{false};
                 const auto before = Timings::Microseconds::Tick();
                 auto &allocator = q.allocator;
 
