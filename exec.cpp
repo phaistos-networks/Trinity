@@ -2213,13 +2213,8 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 // collapse and expand nodes
                 // this was pulled out of optimize_node() in order to safeguard us from some edge conditions
                 collapse_node(root, rctx, a, terms, phrases, stack);
-
-		SLog("After collapsing:", root, "\n");
-
-
                 expand_node(root, rctx, a, terms, phrases, stack);
 
-		SLog("After expanding:", root, "\n");
 
                 updates = false;
                 root = optimize_node(root, rctx, a, terms, phrases, stack, updates, &root);
@@ -2983,6 +2978,6 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 l1:
         const auto duration = Timings::Microseconds::Since(start);
 
-        if (traceCompile || true)
+        if (traceCompile)
                 SLog(ansifmt::bold, ansifmt::color_red, dotnotation_repr(matchedDocuments), " matched in ", duration_repr(duration), ansifmt::reset, " (", Timings::Microseconds::ToMillis(duration), " ms)\n");
 }
