@@ -1145,7 +1145,8 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                         else
                         {
 #if 1
-				if (trace) SLog("skipListIdx = ", skipListIdx,  " ", skiplist.size(), " ", target, "\n");
+                                if (trace)
+                                        SLog("skipListIdx = ", skipListIdx, " ", skiplist.size(), " ", target, "\n");
 
                                 if (skipListIdx != skiplist.size())
                                 {
@@ -1154,8 +1155,8 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                                         {
                                                 const auto &it = skiplist[index];
 
-						if (trace)
-							SLog("index now = ", index, "\n");
+                                                if (trace)
+                                                        SLog("index now = ", index, "\n");
 //SLog("YES to lastDocID = ", it.lastDocID, ", documentsLeft = ", totalDocuments - it.totalDocumentsSoFar, ", ", totalHits - it.totalHitsSoFar, ", ", it.curHitsBlockHits, "\n");
 
 #if 1
@@ -1189,7 +1190,8 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                                 }
 #endif
 
-				if (trace) SLog("Will decode next block\n");
+                                if (trace)
+                                        SLog("Will decode next block\n");
                                 decode_next_block();
                         }
                 }
