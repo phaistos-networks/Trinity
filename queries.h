@@ -351,6 +351,7 @@ namespace Trinity
                 }
 
                 query(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *) = default_token_parser_impl)
+			: tokensParser{tp}
                 {
                         if (!parse(in, tp))
                                 throw Switch::data_error("Failed to parse query");
@@ -364,6 +365,7 @@ namespace Trinity
 
                 explicit query(const query &o)
                 {
+			tokensParser = o.tokensParser;
                         root = o.root ? o.root->copy(&allocator) : nullptr;
 			if (root)
 				bind_tokens_to_allocator(root, &allocator);
@@ -372,6 +374,7 @@ namespace Trinity
                 query(query &&o)
                 {
                         root = std::exchange(o.root, nullptr);
+			tokensParser = o.tokensParser;
                         allocator = std::move(o.allocator);
                 }
 
@@ -380,6 +383,7 @@ namespace Trinity
                         allocator.reuse();
 
                         root = o.root ? o.root->copy(&allocator) : nullptr;
+			tokensParser = o.tokensParser;
 			if (root)
 				bind_tokens_to_allocator(root, &allocator);
                         return *this;

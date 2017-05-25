@@ -250,6 +250,7 @@ namespace Trinity
                                         // ignore duplicates or already seen
                                         if (trace)
                                                 SLog("Accepting Alt [", s, "]\n");
+
                                         alts.push_back({s, p->first.second});
                                 }
 
