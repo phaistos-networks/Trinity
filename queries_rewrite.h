@@ -116,16 +116,18 @@ namespace Trinity
 			if (const auto res = genCtx.try_populate(key); res.offset != UINT32_MAX)
 			{
 				if (trace)
-					SLog("From cache for ", key, "\n");
+					SLog("From cache for ", key, " => ", res, "\n");
+
 				value = res;
 			}
 			else
                         {
                                 const uint32_t saved = genCtx.allAlts.size();
 
-                                l(runCtx, tokens, n, altAllocator, &genCtx.allAlts);
+                                l(runCtx, tokens, n, genCtx.allocator, &genCtx.allAlts);
 				value.Set(saved, uint16_t(genCtx.allAlts.size() - saved));
                                 genCtx.insert(key, value);
+
 				if (trace)
 					SLog("Caching ", key, " => ", value, "\n");
                         }
