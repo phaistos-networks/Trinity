@@ -1551,6 +1551,7 @@ void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a)
 // https://github.com/phaistos-networks/Trinity/wiki
 std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::str32_t content, Trinity::char_t *out)
 {
+	static constexpr bool trace{false};
         const auto *p = content.begin(), *const e = content.end(), *const b{p};
 	bool allAlphas{true};
 
@@ -1623,17 +1624,20 @@ l20:
                 for (++p; p != e && isdigit(*p); ++p)
                         continue;
 
-                if (p + 2 < e && (*p == '.' || *p == ',') && isdigit(p[1]))
+                if (p + 2 <= e && (*p == '.' || *p == ',') && isdigit(p[1]))
                 {
                         auto it = p + 2;
 
                         while (it != e && isdigit(*it))
                                 ++it;
 
-                        if (it == e || !isalpha(*it))
+			
                         {
                                 const str32_t fractional(p + 1, it - (p + 1));
                                 const auto n = content.PrefixUpto(p);
+
+				if (trace)
+					SLog("[", n, "] [", fractional, "]\n");
 
                                 if (fractional.all_of('0'))
                                 {
