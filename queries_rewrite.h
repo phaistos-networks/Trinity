@@ -16,8 +16,40 @@
 
 namespace Trinity
 {
+        struct gen_ctx
+        {
+                // Implements
+                // https://github.com/phaistos-networks/Trinity/issues/3
+                std::vector<std::pair<str32_t, uint8_t>> allAlts;
+                std::vector<std::pair<range_base<uint32_t, uint8_t>, range_base<uint32_t, uint16_t>>> cache;
+                simple_allocator allocator;
+
+                void clear()
+                {
+                        allAlts.clear();
+                        cache.clear();
+                        allocator.reuse();
+                }
+
+                range_base<uint32_t, uint16_t> try_populate(const range_base<uint32_t, uint8_t> r)
+                {
+                        for (const auto &it : cache)
+                        {
+                                if (it.first == r)
+                                        return it.second;
+                        }
+
+                        return {UINT32_MAX, 0};
+                }
+
+                void insert(const range_base<uint32_t, uint8_t> k, const range_base<uint32_t, uint16_t> v)
+                {
+                        cache.push_back({k, v});
+                }
+        };
+
         template <typename L>
-        static auto run_next(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l)
+        static auto run_next(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l, gen_ctx &genCtx)
         {
                 static constexpr bool trace{false};
                 require(i < run.size());
@@ -58,6 +90,8 @@ namespace Trinity
                 for (size_t upto = std::min<size_t>(run.size(), i + maxSpan), k{i}, n{0}; k != upto && run[k]->p->rep == 1; ++k) // mind reps
                 {
                         tokens[n] = run[k]->p->terms[0].token;
+
+#if 0 // legacy, for validations only: don't use the cache
                         alts.clear();
                         l(runCtx, tokens, ++n, altAllocator, &alts);
 
@@ -70,6 +104,36 @@ namespace Trinity
 
                         for (const auto &it : alts)
                                 v.push_back({{it.first, it.second}, n});
+#else 			 
+			// Caching can have a huge performance impact
+			// for a rather elaborate query, query rewriting dropped from 0.003s down to 971us
+			// and I suspect there's still room for improvemengt
+                        ++n;
+
+			const range_base<uint32_t, uint8_t> key{i, uint8_t(n)};
+			range_base<uint32_t, uint16_t> value;
+
+			if (const auto res = genCtx.try_populate(key); res.offset != UINT32_MAX)
+			{
+				if (trace)
+					SLog("From cache for ", key, "\n");
+				value = res;
+			}
+			else
+                        {
+                                const uint32_t saved = genCtx.allAlts.size();
+
+                                l(runCtx, tokens, n, altAllocator, &genCtx.allAlts);
+				value.Set(saved, uint16_t(genCtx.allAlts.size() - saved));
+                                genCtx.insert(key, value);
+				if (trace)
+					SLog("Caching ", key, " => ", value, "\n");
+                        }
+
+                        for (const auto i : value)
+                                v.push_back({genCtx.allAlts[i], n});
+#endif
+
                 }
 
 #if !defined(TRINITY_QUERIES_REWRITE_FILTER)
@@ -154,7 +218,7 @@ namespace Trinity
                 }
 #else
                 std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) {
-                        return b.second < a.second; 	// sort by span
+                        return b.second < a.second; // sort by span
                 });
 
                 expressions.clear();
@@ -165,8 +229,8 @@ namespace Trinity
                         ast_node *node;
                         const auto saved = alts.size();
 
-			if (trace)
-				SLog("For SPAN ", span, "\n");
+                        if (trace)
+                                SLog("For SPAN ", span, "\n");
 
                         do
                         {
@@ -179,8 +243,8 @@ namespace Trinity
                                 if (k == alts.size())
                                 {
                                         // ignore duplicates or already seen
-					if (trace)
-						SLog("Accepting Alt [", s, "]\n");
+                                        if (trace)
+                                                SLog("Accepting Alt [", s, "]\n");
                                         alts.push_back({s, p->first.second});
                                 }
 
@@ -233,8 +297,8 @@ namespace Trinity
                                                 n->binop.rhs->set_alltokens_flags(flags);
                                         }
 
-					if (trace)
-						SLog("CREATED:", *n, "\n");
+                                        if (trace)
+                                                SLog("CREATED:", *n, "\n");
                                 }
 
                                 node = lhs;
@@ -276,11 +340,11 @@ namespace Trinity
         }
 
         template <typename L>
-        static std::pair<ast_node *, uint8_t> run_capture(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan)
+        static std::pair<ast_node *, uint8_t> run_capture(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan, gen_ctx &genCtx)
         {
                 static constexpr bool trace{false};
                 auto &allocator = q.allocator;
-                auto expressions = run_next(budget, q, run, i, maxSpan, l);
+                auto expressions = run_next(budget, q, run, i, maxSpan, l, genCtx);
 
                 require(expressions.size());
 
@@ -377,7 +441,7 @@ namespace Trinity
 
                         for (uint32_t k = i + span; k != upto; ++k)
                         {
-                                const auto pair = run_capture(budget, q, run, k, l, maxSpan);
+                                const auto pair = run_capture(budget, q, run, k, l, maxSpan, genCtx);
                                 const auto expr = pair.first;
 
                                 if (!expr)
@@ -427,7 +491,7 @@ namespace Trinity
 
                 if (rem)
                 {
-                        const auto pair = run_capture(budget, q, run, i + lastspan, l, rem);
+                        const auto pair = run_capture(budget, q, run, i + lastspan, l, rem, genCtx);
                         const auto expr = pair.first;
                         auto n = allocator.Alloc<ast_node>();
 
@@ -503,10 +567,13 @@ namespace Trinity
                 static constexpr bool trace{false};
                 const auto before = Timings::Microseconds::Tick();
                 auto &allocator = q.allocator;
+		static thread_local gen_ctx genCtx;
 
-		// For now, explicitly to unlimited
-		// See: https://github.com/phaistos-networks/Trinity/issues/1 ( FIXME: )
-		budget = std::numeric_limits<size_t>::max();
+                // For now, explicitly to unlimited
+                // See: https://github.com/phaistos-networks/Trinity/issues/1 ( FIXME: )
+                budget = std::numeric_limits<size_t>::max();
+
+		genCtx.clear();
 
                 if (trace)
                         SLog("Initially budget: ", budget, "\n");
@@ -523,11 +590,11 @@ namespace Trinity
                 if (trace)
                         SLog("REWRITING:", q, "\n");
 
-		// Second argument now set to false
-		// because otherwise for e.g [iphone +with]
-		// will replace with with alternatives or with itself, and it won't preserve the operator
-		// i.e it will be turned to [iphone with].
-		// TODO: preserve operator
+                // Second argument now set to false
+                // because otherwise for e.g [iphone +with]
+                // will replace with with alternatives or with itself, and it won't preserve the operator
+                // i.e it will be turned to [iphone with].
+                // TODO: preserve operator
                 q.process_runs(false, false, true, [&](const auto &run) {
                         ast_node *lhs{nullptr};
 
@@ -540,7 +607,7 @@ namespace Trinity
 
                         for (uint32_t i{0}; i < run.size();)
                         {
-                                auto pair = run_capture(budget, q, run, i, l, K);
+                                auto pair = run_capture(budget, q, run, i, l, K, genCtx);
                                 auto expr = pair.first;
 
                                 if (trace)
@@ -570,11 +637,11 @@ namespace Trinity
                                 SLog("Final:", *lhs, "\n");
                 });
 
-		if (trace)
-		{
-	                SLog(duration_repr(Timings::Microseconds::Since(before)), " to rewrite the query\n");
-			//exit(0);
-		}
+                if (trace)
+                {
+                        SLog(duration_repr(Timings::Microseconds::Since(before)), " to rewrite the query\n");
+                        //exit(0);
+                }
                 q.normalize();
         }
 }

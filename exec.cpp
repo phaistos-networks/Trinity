@@ -616,10 +616,9 @@ static bool matchanyterms_fordocs_impl(const exec_node &self, runtime_ctx &rctx)
 static inline bool matchterm_impl(const exec_node &self, runtime_ctx &rctx)
 {
         const auto termID = exec_term_id_t(self.u16);
-        auto decoder = rctx.decode_ctx.decoders[termID];
-        const auto res = decoder->seek(rctx.curDocID);
+        auto *const __restrict__ decoder = rctx.decode_ctx.decoders[termID];
 
-        if (res)
+        if (decoder->seek(rctx.curDocID))
         {
                 rctx.capture_matched_term(termID);
                 return true;
@@ -2577,6 +2576,12 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                         } while (++i != matchalltermsNodes.size() && ((n = matchalltermsNodes[i]) == nullptr || static_cast<const runtime_ctx::termsrun *>(n->ptr)->size == cnt));
                 }
         }
+
+	// JIT:
+	// Now that are done building the execution plan (a tree of exec_nodes), it should be fairly simple to
+	// perform JIT and compile it down to x86-64 code. 
+	// Please see: https://github.com/phaistos-networks/Trinity/wiki/JIT-compilation
+
 
         std::sort(leaderTermIDs->begin(), leaderTermIDs->end());
         leaderTermIDs->resize(std::unique(leaderTermIDs->begin(), leaderTermIDs->end()) - leaderTermIDs->begin());

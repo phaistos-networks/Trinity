@@ -47,14 +47,28 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
 		throw Switch::data_error("Failed to acess ", path);
 
         auto fileSize = lseek64(fd, 0, SEEK_END);
+#ifdef TRINITY_MEMRESIDENT_INDEX
+	auto p = (uint8_t *)malloc(fileSize + 1);
+
+	if (pread64(fd, p, fileSize, 0) != fileSize)
+	{
+		free(p);
+		close(fd);
+		throw Switch::data_error("Failed to acess ", path);
+	}
+	
+	close(fd);
+	index.Set(p, fileSize);
+#else
         auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
 
         close(fd);
 	if (unlikely(fileData == MAP_FAILED))
 		throw Switch::data_error("Failed to acess ", path);
 		
-
         index.Set(static_cast<const uint8_t *>(fileData), uint32_t(fileSize));
+#endif
+
 
         snprintf(path, sizeof(path), "%s/codec", basePath);
         fd = open(path, O_RDONLY | O_LARGEFILE);

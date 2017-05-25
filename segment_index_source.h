@@ -68,7 +68,13 @@ namespace Trinity
                 ~SegmentIndexSource()
 		{
 			if (auto ptr = (void *)index.offset)
+			{
+#ifdef TRINITY_MEMRESIDENT_INDEX
+				std::free(ptr);
+#else
 				munmap(ptr, index.size());
+#endif
+			}
 		}
         };
 }
