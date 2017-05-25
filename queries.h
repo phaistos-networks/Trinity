@@ -20,7 +20,7 @@ namespace Trinity
 
         struct phrase;
 
-	// A query is an ASTree
+        // A query is an ASTree
         struct ast_node final
         {
                 union {
@@ -29,10 +29,10 @@ namespace Trinity
                                 ast_node *lhs, *rhs;
                                 Operator op;
 
-				constexpr auto normalized_operator() const noexcept
-				{
-					return op == Operator::STRICT_AND ? Operator::AND : op;
-				}
+                                constexpr auto normalized_operator() const noexcept
+                                {
+                                        return op == Operator::STRICT_AND ? Operator::AND : op;
+                                }
                         } binop;
 
                         struct
@@ -115,7 +115,6 @@ namespace Trinity
                         return type == Type::Phrase;
                 }
 
-
                 static ast_node *make(simple_allocator &a, const Type t)
                 {
                         auto r = a.Alloc<ast_node>();
@@ -178,15 +177,15 @@ namespace Trinity
         struct ast_parser final
         {
                 str32_t content;
-		const char_t *contentBase;
+                const char_t *contentBase;
                 simple_allocator &allocator;
                 term terms[Trinity::Limits::MaxPhraseSize];
-		// It is important that your queries token parser semantics are also implemented in your documents content parser
-                std::pair<uint32_t, uint8_t>(*token_parser)(const str32_t, char_t *);
+                // It is important that your queries token parser semantics are also implemented in your documents content parser
+                std::pair<uint32_t, uint8_t> (*token_parser)(const str32_t, char_t *);
                 std::vector<str8_t> distinctTokens;
-		// facilitates parsing
-		std::vector<char_t> groupTerm;
-		char_t lastParsedToken[255];
+                // facilitates parsing
+                std::vector<char_t> groupTerm;
+                char_t lastParsedToken[255];
 
                 auto *alloc_node(const ast_node::Type t)
                 {
@@ -228,40 +227,40 @@ namespace Trinity
                 // repetition; e.g for [APPLE APPLE APPLE APPLE] repetition is 5
                 // This is important; we need to capture e.g [tom tom] (the manufucacturer) and [boing boing]
                 // but we don't want to capture the same phrase/word twice if in order.
-		// This is useful in MatchedIndexDocumentsFilter::consider() implementations for scoring documents based
-		// on the query structure and the matched terms.
-		// See Trinity::rewrite_query() where we consider this when rewriting sequences
+                // This is useful in MatchedIndexDocumentsFilter::consider() implementations for scoring documents based
+                // on the query structure and the matched terms.
+                // See Trinity::rewrite_query() where we consider this when rewriting sequences
                 uint8_t rep;
 
                 // index in the query
                 uint16_t index;
-		// See assign_query_indices() for how this is assigned
-		//
-		// This is how many terms/tokens to advance from this index(i.e query token) to get to the next term in the query and skip
-		// all other tokens in the same OR group as this token.
-		//
-		// This is useful in MatchedIndexDocumentsFilter::consider()
-		//
-		// For example:
-		// [world of warcraft OR (war craft) mists of pandaria]
-		//---------------------------------------------
-		// INDEX 	|TOKEN 		|TONEXTSPAN
-		//---------------------------------------------
-		// 0 		WORLD 	 	1
-		// 1 		OF 		1
-		// 2 		WARCRAFT 	2
-		// 2 		WAR 		1
-		// 3 		CRAFT 		1
-		// 4 		MISTS 		1
-		// 5 		OF 		1
-		// 6 		PANDARIA 	1
-		// If you are going to try to match a sequence for matched term  'WARCRAFT'
-		// the only query instance of it is at index 2 and the next term in the query past
-		// any other 'equivalent' OR groups(in this case there is only one other OR expression matching warcraft, [war craft]) is 2 positions ahead to 4 (i.e to mists)
-		//
-		// The semantics of (index, toNextSpan) are somewhat complicated, but it's only because it is required for accurately and relatively effortlessly being able to
-		// capture sequences. A sequence is a 2+ consequtive tokens in a query.
-		uint8_t toNextSpan;
+                // See assign_query_indices() for how this is assigned
+                //
+                // This is how many terms/tokens to advance from this index(i.e query token) to get to the next term in the query and skip
+                // all other tokens in the same OR group as this token.
+                //
+                // This is useful in MatchedIndexDocumentsFilter::consider()
+                //
+                // For example:
+                // [world of warcraft OR (war craft) mists of pandaria]
+                //---------------------------------------------
+                // INDEX 	|TOKEN 		|TONEXTSPAN
+                //---------------------------------------------
+                // 0 		WORLD 	 	1
+                // 1 		OF 		1
+                // 2 		WARCRAFT 	2
+                // 2 		WAR 		1
+                // 3 		CRAFT 		1
+                // 4 		MISTS 		1
+                // 5 		OF 		1
+                // 6 		PANDARIA 	1
+                // If you are going to try to match a sequence for matched term  'WARCRAFT'
+                // the only query instance of it is at index 2 and the next term in the query past
+                // any other 'equivalent' OR groups(in this case there is only one other OR expression matching warcraft, [war craft]) is 2 positions ahead to 4 (i.e to mists)
+                //
+                // The semantics of (index, toNextSpan) are somewhat complicated, but it's only because it is required for accurately and relatively effortlessly being able to
+                // capture sequences. A sequence is a 2+ consequtive tokens in a query.
+                uint8_t toNextSpan;
 
                 // flags. Usually 0, but e.g if you are rewritting a [wow] to [wow OR "world of warcraft"] you
                 // maybe want "world of warcraft" flags to be 1 (i.e derived). This can be very useful for scoring matches
@@ -269,11 +268,10 @@ namespace Trinity
                 // See ast_node::set_alltokens_flags()
                 uint8_t flags;
 
-		// This is the range in the input query string
-		// This is handy for e.g spell checking runs where you want to highlight corrected tokens/phrases in the input query
-		// and you 'd rather not have to go through hoops to accomplish it
-		range_base<uint16_t, uint16_t> inputRange;
-
+                // This is the range in the input query string
+                // This is handy for e.g spell checking runs where you want to highlight corrected tokens/phrases in the input query
+                // and you 'd rather not have to go through hoops to accomplish it
+                range_base<uint16_t, uint16_t> inputRange;
 
                 term terms[0];
 
@@ -291,6 +289,22 @@ namespace Trinity
                         else
                                 return false;
                 }
+
+                // handy utility method
+                static auto make(const str8_t *tokens, const uint8_t n, simple_allocator *const a)
+                {
+                        auto p = (phrase *)a->Alloc(sizeof(phrase) + sizeof(term) * n);
+
+                        p->flags = 0;
+                        p->rep = 1;
+                        p->inputRange.reset();
+                        p->toNextSpan = 1;
+                        p->size = n;
+
+                        for (uint32_t i{0}; i != n; ++i)
+                                p->terms[i].token.Set(a->CopyOf(tokens[i].data(), tokens[i].size()), tokens[i].size());
+                        return p;
+                }
         };
 
         // see query::normalize()
@@ -303,8 +317,8 @@ namespace Trinity
         {
                 ast_node *root;
                 simple_allocator allocator{512};
-		// parse() will set tokensParser; this may come in handy elsewhere, e.g see rewrite_query() impl.
-		std::pair<uint32_t, uint8_t> (*tokensParser)(const str32_t, char_t *);
+                // parse() will set tokensParser; this may come in handy elsewhere, e.g see rewrite_query() impl.
+                std::pair<uint32_t, uint8_t> (*tokensParser)(const str32_t, char_t *);
 
                 // Normalize a query.
                 // This is invoked when you initially parse the query, but if you
@@ -312,7 +326,7 @@ namespace Trinity
                 // you must normalize it to fix any issues etc
                 //
                 // You can also use Trinity::normalize_ast() if you want to do this youserlf
-		// When you Trinity::exec_query(), it will be normalized again just in case
+                // When you Trinity::exec_query(), it will be normalized again just in case
                 bool normalize();
 
                 /*
@@ -338,10 +352,10 @@ namespace Trinity
 
                 bool parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *) = default_token_parser_impl);
 
-		// This is handy. When we copy a query to another query, we want to make sure
-		// that tokens point to the destination query allocator, not the source, because it is possible for
-		// the source query to go away
-		static void bind_tokens_to_allocator(ast_node *, simple_allocator *);
+                // This is handy. When we copy a query to another query, we want to make sure
+                // that tokens point to the destination query allocator, not the source, because it is possible for
+                // the source query to go away
+                static void bind_tokens_to_allocator(ast_node *, simple_allocator *);
 
                 query() = default;
 
@@ -351,30 +365,29 @@ namespace Trinity
                 }
 
                 query(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *) = default_token_parser_impl)
-			: tokensParser{tp}
+                    : tokensParser{tp}
                 {
                         if (!parse(in, tp))
                                 throw Switch::data_error("Failed to parse query");
                 }
 
-		query(ast_node *r)
-			: root{r}
-		{
-
-		}
+                query(ast_node *r)
+                    : root{r}
+                {
+                }
 
                 explicit query(const query &o)
                 {
-			tokensParser = o.tokensParser;
+                        tokensParser = o.tokensParser;
                         root = o.root ? o.root->copy(&allocator) : nullptr;
-			if (root)
-				bind_tokens_to_allocator(root, &allocator);
+                        if (root)
+                                bind_tokens_to_allocator(root, &allocator);
                 }
 
                 query(query &&o)
                 {
                         root = std::exchange(o.root, nullptr);
-			tokensParser = o.tokensParser;
+                        tokensParser = o.tokensParser;
                         allocator = std::move(o.allocator);
                 }
 
@@ -383,9 +396,9 @@ namespace Trinity
                         allocator.reuse();
 
                         root = o.root ? o.root->copy(&allocator) : nullptr;
-			tokensParser = o.tokensParser;
-			if (root)
-				bind_tokens_to_allocator(root, &allocator);
+                        tokensParser = o.tokensParser;
+                        if (root)
+                                bind_tokens_to_allocator(root, &allocator);
                         return *this;
                 }
 
@@ -409,19 +422,19 @@ namespace Trinity
                 // that node's value directly.
                 // This is a utility method for replacing a run (see process_runs() method) with a new
                 // expression(node)
-		//
-		// This is great for augmenting a query with synonyms e.g
-		// for query [sofa] you could replace sofa with
-		// [sofa OR couch OR sofas OR couches OR lounges OR lounge]
-		// and also great for spell checking queries. You can process_runs() and then spell check every run
-		// and if you have an alternative spelling for the run, then replace the run with a new ast that contains
-		// the original and the suggested
-		// e.g for [world of worrcraft video game] 
-		// [ ((world of worrcraft video game) OR (world of warcraft video game)) ]
-		//
-		// XXX: you need to be careful if you are replacing a node's value (e.g *n = *anotherNode)
-		// and that anotherNode is e.g a binop and either of its (lhs, rhs) references itself.
-		// In that case, just create another node (e.g use clone() method) and use that
+                //
+                // This is great for augmenting a query with synonyms e.g
+                // for query [sofa] you could replace sofa with
+                // [sofa OR couch OR sofas OR couches OR lounges OR lounge]
+                // and also great for spell checking queries. You can process_runs() and then spell check every run
+                // and if you have an alternative spelling for the run, then replace the run with a new ast that contains
+                // the original and the suggested
+                // e.g for [world of worrcraft video game]
+                // [ ((world of worrcraft video game) OR (world of warcraft video game)) ]
+                //
+                // XXX: you need to be careful if you are replacing a node's value (e.g *n = *anotherNode)
+                // and that anotherNode is e.g a binop and either of its (lhs, rhs) references itself.
+                // In that case, just create another node (e.g use clone() method) and use that
                 static void replace_run(ast_node **run, const size_t cnt, ast_node *newExprNode)
                 {
                         // Just set all nodes _except_ the first to dummy
@@ -438,26 +451,26 @@ namespace Trinity
 
                 // Make sure you check the repetition count
                 // See also ast_node::set_alltokens_flags()
-		//
-		// andOnly: if false, will also consider runs of STRICT_AND nodes
+                //
+                // andOnly: if false, will also consider runs of STRICT_AND nodes
                 template <typename L>
                 void process_runs(const bool includePhrases, const bool processStrictAND, const bool processNOT, L &&cb)
                 {
                         static thread_local std::vector<std::pair<uint32_t, ast_node *>> unaryNodes, stack;
-			static thread_local std::vector<ast_node *> run;
-			uint32_t segments{0};
+                        static thread_local std::vector<ast_node *> run;
+                        uint32_t segments{0};
 
-			stack.clear();
-			unaryNodes.clear();
+                        stack.clear();
+                        unaryNodes.clear();
 
-			if (root)
-	                        stack.push_back({0, root});
-				
-			while (stack.size())
+                        if (root)
+                                stack.push_back({0, root});
+
+                        while (stack.size())
                         {
-				const auto pair = stack.back();
+                                const auto pair = stack.back();
                                 auto n = pair.second;
-				const auto seg = pair.first;
+                                const auto seg = pair.first;
 
                                 stack.pop_back();
                                 switch (n->type)
@@ -473,27 +486,27 @@ namespace Trinity
 
                                         case ast_node::Type::BinOp:
                                                 if (n->binop.op == Operator::AND)
-						{
+                                                {
                                                         stack.push_back({seg, n->binop.lhs});
                                                         stack.push_back({seg, n->binop.rhs});
-						}
-						else if (n->binop.op == Operator::NOT)
-						{
+                                                }
+                                                else if (n->binop.op == Operator::NOT)
+                                                {
                                                         stack.push_back({seg, n->binop.lhs});
-							if (processNOT)
+                                                        if (processNOT)
                                                         {
                                                                 ++segments;
                                                                 stack.push_back({segments, n->binop.rhs});
                                                         }
                                                 }
-						else if (n->binop.op == Operator::OR)
-						{
-							++segments;
+                                                else if (n->binop.op == Operator::OR)
+                                                {
+                                                        ++segments;
                                                         stack.push_back({segments, n->binop.lhs});
-							++segments;
+                                                        ++segments;
                                                         stack.push_back({segments, n->binop.rhs});
-						}
-						else if (processStrictAND && n->binop.op == Operator::STRICT_AND)
+                                                }
+                                                else if (processStrictAND && n->binop.op == Operator::STRICT_AND)
                                                 {
                                                         stack.push_back({seg, n->binop.lhs});
                                                         stack.push_back({seg, n->binop.rhs});
@@ -501,8 +514,8 @@ namespace Trinity
                                                 break;
 
                                         case ast_node::Type::UnaryOp:
-						if (n->unaryop.op != Operator::STRICT_AND || processStrictAND)
-	                                                stack.push_back({seg, n->unaryop.expr});
+                                                if (n->unaryop.op != Operator::STRICT_AND || processStrictAND)
+                                                        stack.push_back({seg, n->unaryop.expr});
                                                 break;
 
                                         case ast_node::Type::Dummy:
@@ -516,19 +529,18 @@ namespace Trinity
                                 return a.first < b.first || (a.first == b.first && a.second->p->index < b.second->p->index);
                         });
 
-
                         for (const auto *p = unaryNodes.data(), *const e = p + unaryNodes.size(); p != e;)
-			{
-				const auto segment = p->first;
+                        {
+                                const auto segment = p->first;
 
                                 run.clear();
                                 do
-				{
-					run.push_back(p->second);
-				} while (++p != e && p->first == segment);
+                                {
+                                        run.push_back(p->second);
+                                } while (++p != e && p->first == segment);
 
                                 cb(run);
-			}
+                        }
                 }
         };
 }

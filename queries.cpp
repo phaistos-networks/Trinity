@@ -1720,6 +1720,23 @@ l20:
                         allAlphas = false;
 		}
 
+		if (allAlphas)
+		{
+			if (p == content.data() + 1 && p + 2 <= e && *p == '&' && isalpha(p[1]))
+                        {
+                                if (p + 2 == e || !isalnum(p[2]))
+                                {
+                                        // d&d, x&y
+
+					content.Prefix(3).CopyTo(out);
+					return {3, 3};
+                                }
+
+                        }
+                }
+
+
+
 
                 if (p != b && p != e)
                 {

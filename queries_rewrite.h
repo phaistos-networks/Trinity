@@ -20,6 +20,9 @@ namespace Trinity
         {
                 // Implements
                 // https://github.com/phaistos-networks/Trinity/issues/3
+		//
+		// TODO: we should probably cache the parsed node, not the tokens
+		// so that we won't be parsing them again, and again, and only copy them once cached.
                 std::vector<std::pair<str32_t, uint8_t>> allAlts;
                 std::vector<std::pair<range_base<uint32_t, uint8_t>, range_base<uint32_t, uint16_t>>> cache;
                 simple_allocator allocator;
@@ -264,6 +267,9 @@ namespace Trinity
                         {
                                 auto lhs = ast_parser(alts[saved].first, allocator, tokensParser).parse();
 
+                                if (unlikely(nullptr == lhs))
+                                        throw Switch::data_error("Failed to parse [", alts[saved].first, "]");
+
                                 //if (trace) SLog("Parsed [", alts[saved].first, "]: ", *lhs, "\n");
 
                                 if (const auto n = lhs->nodes_count(); budget >= n)
@@ -292,6 +298,9 @@ namespace Trinity
                                         n->binop.rhs = ast_parser(alts[i + saved].first, allocator, tokensParser).parse();
                                         lhs = n;
 
+					if (unlikely(nullptr == n->binop.rhs))
+						throw Switch::data_error("Failed to parse [", alts[i + saved].first, "]");
+
                                         if (const auto _n = n->binop.rhs->nodes_count(); budget >= _n)
                                                 budget -= _n;
                                         else
@@ -313,6 +322,9 @@ namespace Trinity
                         else
                         {
                                 node = Trinity::ast_parser(alts[saved].first, allocator, tokensParser).parse();
+
+				if (unlikely(nullptr == node))
+					throw Switch::data_error("Failed to parse [", alts[saved].first, "]");
 
                                 if (trace)
                                         SLog("Parsed [", alts[saved], "] ", *node, "\n");
