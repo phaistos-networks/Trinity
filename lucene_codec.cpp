@@ -1091,12 +1091,15 @@ bool Trinity::Codecs::Lucene::Decoder::next_impl()
 uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target) const noexcept
 {
         // See Google::Decoder::skiplist_search()
+	static constexpr bool trace{false};
         uint32_t idx{UINT32_MAX};
 
         for (int32_t top{int32_t(skiplist.size()) - 1}, btm{int32_t(skipListIdx)}; btm <= top;)
         {
                 const auto mid = (btm + top) / 2;
                 const auto v = skiplist[mid].lastDocID;
+
+		if (trace) SLog("mid = ", mid, " ", v, " ", target, " ", TrivialCmp(target, v), "\n");
 
                 if (target < v)
                         top = mid - 1;
@@ -1119,7 +1122,7 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target)
 
 bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
 {
-        // if we store (block freq, last docID in block) we can perhaps skip
+        // TODO: if we store (block freq, last docID in block) we can perhaps skip
         // the whole block ?
         if (trace)
                 SLog(ansifmt::bold, ansifmt::color_blue, "SKIPPING TO ", target, ansifmt::reset, "\n");
@@ -1142,6 +1145,8 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                         else
                         {
 #if 1
+				if (trace) SLog("skipListIdx = ", skipListIdx,  " ", skiplist.size(), " ", target, "\n");
+
                                 if (skipListIdx != skiplist.size())
                                 {
                                         // see if we can determine where to seek to here
@@ -1149,6 +1154,8 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                                         {
                                                 const auto &it = skiplist[index];
 
+						if (trace)
+							SLog("index now = ", index, "\n");
 //SLog("YES to lastDocID = ", it.lastDocID, ", documentsLeft = ", totalDocuments - it.totalDocumentsSoFar, ", ", totalHits - it.totalHitsSoFar, ", ", it.curHitsBlockHits, "\n");
 
 #if 1
@@ -1182,6 +1189,7 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                                 }
 #endif
 
+				if (trace) SLog("Will decode next block\n");
                                 decode_next_block();
                         }
                 }
@@ -1202,9 +1210,12 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
 
                                 return false;
                         }
-                        else if (!next_impl())
+                        else
                         {
-                                return false;
+                                skippedHits += docFreqs[docsIndex];
+                                lastDocID += docDeltas[docsIndex];
+                                ++docsIndex;
+                                update_curdoc();
                         }
                 }
         }

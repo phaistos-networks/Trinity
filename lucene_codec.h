@@ -22,7 +22,7 @@ namespace Trinity
 #else
 			static constexpr size_t BLOCK_SIZE{128};
 #endif
-			static constexpr size_t SKIPLIST_STEP{64};	 // every (SKIPLIST_STEP * BLOCK_SIZE) documents
+			static constexpr size_t SKIPLIST_STEP{1};	 // every (SKIPLIST_STEP * BLOCK_SIZE) documents
 
                         struct IndexSession final
                             : public Trinity::Codecs::IndexSession

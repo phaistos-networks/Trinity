@@ -6,8 +6,8 @@ using namespace Trinity;
 
 namespace // static/local this module
 {
-        [[maybe_unused]] static constexpr bool traceExec{false};
-        static constexpr bool traceCompile{false};
+        [[maybe_unused]] static constexpr bool traceExec{true};
+        static constexpr bool traceCompile{true};
 
         struct runtime_ctx;
 
@@ -433,8 +433,14 @@ namespace // static/local this module
                 Switch::unordered_map<str8_t, exec_term_id_t> termsDict;
                 uint16_t *curDocQueryTokensCaptured;
                 matched_document matchedDocument;
-                simple_allocator allocator;
-                simple_allocator runsAllocator{512}, ctxAllocator{1024};
+		// TODO: determine suitable allocator bank size based on some meaningful metric
+		// e.g total distinct tokens in the query, otherwise we may just end up allocating more memory than
+		// we need and for environments where memory pressure is a concern, this may be important.
+		// For now, go with large enough bank sizes for the allocators and figure out something later.
+		// We should also track allocated (from allocators) memory that is no longer needed so that we can reuse it
+		// Maybe we just need a method for allocating arbitrary amount of memory and releasing it back to the runtime ctx
+                simple_allocator allocator{4096 * 4};
+                simple_allocator runsAllocator{2048}, ctxAllocator{2048};
                 Switch::unordered_map<exec_term_id_t, std::pair<term_index_ctx, str8_t>> tctxMap;
         };
 }
@@ -2317,6 +2323,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 else if (n.fp == matchanyterms_impl)
                 {
                         // There are no real benefits to sorting terms for matchanyterms_impl but we 'll do it anyway because its cheap
+			// This is actually useful, for leaders
                         auto ctx = static_cast<runtime_ctx::termsrun *>(n.ptr);
 
                         v.clear();
@@ -2622,7 +2629,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
 
 static exec_node compile_query(ast_node *root, runtime_ctx &rctx, std::vector<exec_term_id_t> *leaderTermIDs, const uint32_t execFlags)
 {
-        simple_allocator a;
+        simple_allocator a(4096);
 
         if (!root)
         {
@@ -2669,6 +2676,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 
         // We need a copy of that query here
         // for we we will need to modify it
+	const auto _start = Timings::Microseconds::Tick();
         query q(in);
 
         // Normalize just in case
@@ -2966,7 +2974,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                         {
                                 // Select document from the leader tokens/decoders
                                 auto docID = leaderDecoders[0]->curDocument.id; // see Codecs::Decoder::curDocument comments
-                                uint8_t toAdvanceCnt{1};
+                                uint16_t toAdvanceCnt{1};
 
                                 toAdvance[0] = 0;
 
@@ -3089,7 +3097,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                         for (;;)
                         {
                                 auto docID = leaderDecoders[0]->curDocument.id;
-                                uint8_t toAdvanceCnt{1};
+                                uint16_t toAdvanceCnt{1};
 
                                 toAdvance[0] = 0;
                                 for (uint32_t i{1}; i != leaderDecodersCnt; ++i)
@@ -3143,7 +3151,8 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 
 l1:
         const auto duration = Timings::Microseconds::Since(start);
+	const auto durationAll = Timings::Microseconds::Since(_start);
 
         if (traceCompile)
-                SLog(ansifmt::bold, ansifmt::color_red, dotnotation_repr(matchedDocuments), " matched in ", duration_repr(duration), ansifmt::reset, " (", Timings::Microseconds::ToMillis(duration), " ms)\n");
+                SLog(ansifmt::bold, ansifmt::color_red, dotnotation_repr(matchedDocuments), " matched in ", duration_repr(duration), ansifmt::reset, " (", Timings::Microseconds::ToMillis(duration), " ms) ", duration_repr(durationAll), " all\n");
 }
