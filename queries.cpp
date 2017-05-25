@@ -1272,7 +1272,7 @@ ast_node *ast_node::copy(simple_allocator *const a)
                         np->rep = n->p->rep;
                         np->index = n->p->index;
                         np->toNextSpan = n->p->toNextSpan;
-                        np->flags = n->p->toNextSpan;
+                        np->flags = n->p->flags;
                         np->inputRange = n->p->inputRange;
 
                         memcpy(np->terms, n->p->terms, sizeof(np->terms[0]) * np->size);
@@ -1544,6 +1544,9 @@ void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a)
         } while (stack.size());
 }
 
+// This is a simple reference implementation of a queries tokens parser. Basic logic is implemented, but you should
+// really implement your own if you need anything more than this.
+//
 // Please see Trinity's Wiki on Github for suggestions and links to useful resources
 // https://github.com/phaistos-networks/Trinity/wiki
 std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::str32_t content, Trinity::char_t *out)
@@ -1593,7 +1596,7 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
         }
 
 l20:
-        if (p != e && isalnum(*p))
+        if (p != e && isalpha(*p))
         {
 		// e.g site:google.com, or video|games
                 while (p != e && isalpha(*p))
@@ -1607,6 +1610,57 @@ l20:
                 }
         }
 
+	if (p == content.data() && p != e && isdigit(*p))
+        {
+                // numeric transformations
+                // This is not very appropriate, all things considered
+                // We need to account for the locale and thousands/fractionals separations (, and .)
+                // e.g 1,500 => 1500
+                // 8.25 => 8.25
+                // Your parser implementation should account for it. For now, we just translate from 9.000 => 9
+                allAlphas = false;
+
+                for (++p; p != e && isdigit(*p); ++p)
+                        continue;
+
+                if (p + 2 < e && (*p == '.' || *p == ',') && isdigit(p[1]))
+                {
+                        auto it = p + 2;
+
+                        while (it != e && isdigit(*it))
+                                ++it;
+
+                        if (it == e || !isalpha(*it))
+                        {
+                                const str32_t fractional(p + 1, it - (p + 1));
+                                const auto n = content.PrefixUpto(p);
+
+                                if (fractional.all_of('0'))
+                                {
+					if (fractional.size() >= 3)
+					{
+						n.CopyTo(out);
+						fractional.CopyTo(out + n.size());
+
+						return {it - content.data(), n.size() + fractional.size()};
+					}
+					else
+					{
+						n.CopyTo(out);
+						return {it - content.data(), n.size()};
+					}
+                                }
+                                else
+                                {
+                                        n.CopyTo(out);
+                                        out[n.size()] = '.';
+                                        fractional.CopyTo(out + n.size() + 1);
+
+                                        return {it - content.data(), n.size() + 1 + fractional.size()};
+                                }
+                        }
+                }
+        }
 
         for (;;)
         {

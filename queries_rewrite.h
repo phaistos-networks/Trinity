@@ -71,6 +71,9 @@ namespace Trinity
                         // special care for reps
                         auto n = allocator.Alloc<ast_node>();
 
+			if (trace)
+				SLog("Special case, rep = ", run[i]->p->rep, " ", run[i]->p->flags, "\n");
+
                         n->type = ast_node::Type::Token;
                         n->p = run[i]->p;
                         expressions.push_back({n, 1});
