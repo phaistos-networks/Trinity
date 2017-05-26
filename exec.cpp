@@ -41,36 +41,6 @@ namespace // static/local this module
                         exec_node expr;
                 };
 
-                struct phrase final
-                {
-                        uint8_t size;
-                        exec_term_id_t termIDs[0];
-
-                        auto operator==(const phrase &o) const noexcept
-                        {
-                                if (size == o.size)
-                                {
-                                        for (uint32_t i{0}; i != size; ++i)
-                                        {
-                                                if (termIDs[i] != o.termIDs[i])
-                                                        return false;
-                                        }
-                                        return true;
-                                }
-                                else
-                                        return false;
-                        }
-
-                        bool is_set(const exec_term_id_t id) const noexcept
-                        {
-                                for (uint32_t i{0}; i != size; ++i)
-                                {
-                                        if (termIDs[i] == id)
-                                                return true;
-                                }
-                                return false;
-                        }
-                };
 
                 struct termsrun final
                 {
@@ -171,6 +141,78 @@ namespace // static/local this module
                         auto empty() const noexcept
                         {
                                 return !size;
+                        }
+                };
+
+                struct phrase final
+                {
+                        uint8_t size;
+                        exec_term_id_t termIDs[0];
+
+			uint16_t intersection(const termsrun *const tr, exec_term_id_t *const out) const noexcept
+                        {
+                                uint16_t n{0};
+
+                                for (uint32_t i{0}; i != size; ++i)
+                                {
+                                        if (const auto id = termIDs[i]; tr->is_set(id))
+                                                out[n++] = id;
+                                }
+                                return n;
+                        }
+
+			// returns terms found in run, but missing from this phrase
+			uint16_t disjoint_union(const termsrun *const tr, exec_term_id_t *const out) const noexcept
+                        {
+                                uint16_t n{0};
+				const auto cnt = tr->size;
+
+                                for (uint32_t i{0}; i != cnt; ++i)
+                                {
+                                        if (const auto id = tr->terms[i]; !is_set(id))
+                                                out[n++] = id;
+                                }
+                                return n;
+                        }
+
+                        bool intersected_by(const termsrun *const tr) const noexcept
+			{
+				if (tr->size >= size)
+				{
+					for (uint32_t i{0}; i != size;++i)
+					{
+						if (!tr->is_set(termIDs[i]))
+							return false;
+					}
+					return true;
+				}
+				else
+					return false;
+			}
+
+                        auto operator==(const phrase &o) const noexcept
+                        {
+                                if (size == o.size)
+                                {
+                                        for (uint32_t i{0}; i != size; ++i)
+                                        {
+                                                if (termIDs[i] != o.termIDs[i])
+                                                        return false;
+                                        }
+                                        return true;
+                                }
+                                else
+                                        return false;
+                        }
+
+                        bool is_set(const exec_term_id_t id) const noexcept
+                        {
+                                for (uint32_t i{0}; i != size; ++i)
+                                {
+                                        if (termIDs[i] == id)
+                                                return true;
+                                }
+                                return false;
                         }
                 };
 
@@ -325,7 +367,7 @@ namespace // static/local this module
                                 const auto tctx = idxsrc->term_ctx(term);
 
                                 if (traceCompile)
-                                        SLog(ansifmt::bold, ansifmt::color_green, "[", term, "] ", termsDict.size(), ", documents = ", tctx.documents, ansifmt::reset, "\n");
+                                        SLog(ansifmt::bold, ansifmt::color_green, "[", term, "] ", termsDict.size(), ", documents = ", tctx.documents, ansifmt::reset, " (", ptr_repr(this), ")\n");
 
                                 if (tctx.documents == 0)
                                 {
@@ -1834,6 +1876,32 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                                 set_dirty();
                                 return n;
                         }
+			else if (ctx->lhs.fp == matchphrase_impl && ctx->rhs.fp  == matchallterms_impl)
+			{
+				// ([1,2] OR ALL OF[3,1,2]) => ALL OF [3,1,2]
+				const auto *const __restrict__ run = (runtime_ctx::termsrun *)ctx->rhs.ptr;
+        			const auto *const phrase  = (runtime_ctx::phrase *)ctx->lhs.ptr;
+
+				if (phrase->intersected_by(run))
+				{
+					n = ctx->rhs;
+					set_dirty();
+					return n;
+				}
+			}
+			else if (ctx->lhs.fp == matchallterms_impl && ctx->rhs.fp  == matchphrase_impl)
+                        {
+				// ([1,2] OR ALL OF[1,3,2]) => ALL OF [1,3,2]
+                                const auto *const __restrict__ run = (runtime_ctx::termsrun *)ctx->lhs.ptr;
+                                const auto *const phrase = (runtime_ctx::phrase *)ctx->rhs.ptr;
+
+                                if (phrase->intersected_by(run))
+                                {
+                                        n = ctx->lhs;
+                                        set_dirty();
+                                        return n;
+                                }
+                        }
                 }
                 else if (n.fp == logicaland_impl)
                 {
@@ -1956,6 +2024,62 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                                                 n = ctx->rhs;
                                                 set_dirty();
                                                 return n;
+                                        }
+                                }
+                        }
+
+			if (ctx->lhs.fp == matchallterms_impl && ctx->rhs.fp == matchphrase_impl)
+			{
+				// ( pc game  hitman ) AND  "pc game" 
+				//  hitman AND "pc game"
+				// this is somewhat expensive, but worth it
+				auto run = static_cast<runtime_ctx::termsrun *>(ctx->lhs.ptr);
+				const auto phr = static_cast<const runtime_ctx::phrase *>(ctx->rhs.ptr);
+
+				if (phr->size < 128) //arbitrary
+                                {
+                                        exec_term_id_t terms[128];
+
+                                        const auto cnt = phr->disjoint_union(run, terms);
+
+                                        if (cnt == 0)
+                                        {
+                                                n = ctx->rhs;
+                                                set_dirty();
+                                                return n;
+                                        }
+                                        else if (cnt < run->size)
+                                        {
+						run->size = cnt;
+						memcpy(run->terms, terms, sizeof(terms[0]) * cnt);
+                                        }
+                                }
+                        }
+
+			if (ctx->rhs.fp == matchallterms_impl && ctx->lhs.fp == matchphrase_impl)
+			{
+				// "pc game" AND ( pc game  hitman )
+				//  "pc game" AND hitman
+				// this is somewhat expensive, but worth it
+				auto run = static_cast<runtime_ctx::termsrun *>(ctx->rhs.ptr);
+				const auto phr = static_cast<const runtime_ctx::phrase *>(ctx->lhs.ptr);
+
+				if (phr->size < 128) //arbitrary
+                                {
+                                        exec_term_id_t terms[128];
+
+                                        const auto cnt = phr->disjoint_union(run, terms);
+
+                                        if (cnt == 0)
+                                        {
+                                                n = ctx->rhs;
+                                                set_dirty();
+                                                return n;
+                                        }
+                                        else if (cnt < run->size)
+                                        {
+						run->size = cnt;
+						memcpy(run->terms, terms, sizeof(terms[0]) * cnt);
                                         }
                                 }
                         }

@@ -174,7 +174,14 @@ static std::pair<Operator, uint8_t> parse_operator_impl(ast_parser &ctx)
                 switch (f)
                 {
                         case '+':
-                                return {Operator::STRICT_AND, 1};
+				if (char_t c; s.size() > 1 && (c = s.p[1]) && !isspace(c) && c != '+')
+                                {
+					// TODO: this should have been a bit more sophisticated
+					// e.g it shouldn't return an operator for +< or other non alphanumeric characters
+                                        return {Operator::STRICT_AND, 1};
+                                }
+				break;
+
                         case '-':
                                 return {Operator::NOT, 1};
                 }
@@ -183,15 +190,6 @@ static std::pair<Operator, uint8_t> parse_operator_impl(ast_parser &ctx)
                         return {Operator::NONE, 0};
                 else
                         return {Operator::AND, 0};
-
-#if 0
-                if (isalnum(f) || f == '\"' || f == '(')
-                        return {Operator::AND, 0};
-                else
-                        return {Operator::NONE, 0};
-#else
-                return {Operator::AND, 0};
-#endif
         }
         else
                 return {Operator::NONE, 0};
@@ -1554,6 +1552,12 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
 	static constexpr bool trace{false};
         const auto *p = content.begin(), *const e = content.end(), *const b{p};
 	bool allAlphas{true};
+
+	if (*p == '+' && (p + 1 == e || (p[1] != '+' && p[1] != '-' && !isalnum(p[1]))))
+	{
+		str32_t(_S("PLUS")).CopyTo(out);
+		return {1, "PLUS"_len};
+	}
 
 	if (p + 4 < e && isalpha(*p) && p[1] == '.' && isalnum(p[2]) && p[3] == '.' && isalpha(p[4]))
 	{

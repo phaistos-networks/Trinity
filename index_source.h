@@ -34,18 +34,29 @@ namespace Trinity
 
                 term_index_ctx term_ctx(const str8_t term)
                 {
+			[[maybe_unused]] static constexpr bool trace{false};
 			std::lock_guard<std::mutex> g(cacheLock);
 
 #ifndef LEAN_SWITCH
                         term_index_ctx *ptr;
 
                         if (cache.Add(term, {}, &ptr))
+			{
                                 *ptr = resolve_term_ctx(term);
+
+				if (trace)
+					SLog("RESOLVED [", term, "] ", ptr->documents, " ", ptr_repr(this), "\n");
+			}
                         return *ptr;
 #else
                         auto p = cache.insert({term, {}});
                         if (p.second)
+			{
                                 p.first->second = resolve_term_ctx(term);
+
+				if (trace)
+					SLog("RESOLVED [", term, "] ", p.first->second.documents, " ", ptr_repr(this), "\n");
+			}
 
                         return p.first->second;
 #endif

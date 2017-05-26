@@ -362,7 +362,11 @@ namespace Trinity
                 // the source query to go away
                 static void bind_tokens_to_allocator(ast_node *, simple_allocator *);
 
-                query() = default;
+		query()
+			: root{nullptr}, tokensParser{nullptr}
+		{
+
+		}
 
                 inline operator bool() const noexcept
                 {
@@ -547,6 +551,13 @@ namespace Trinity
                                 cb(run);
                         }
                 }
+
+
+		void reset()
+		{
+			root = nullptr;
+			allocator.reuse();
+		}
         };
 }
 

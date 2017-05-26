@@ -624,6 +624,11 @@ namespace Trinity
         void rewrite_query(Trinity::query &q, size_t budget, const uint8_t K, L &&l)
         {
                 static constexpr bool trace{false};
+
+		if (!q)
+			return;
+
+
                 const auto before = Timings::Microseconds::Tick();
                 auto &allocator = q.allocator;
                 static thread_local gen_ctx genCtx;
