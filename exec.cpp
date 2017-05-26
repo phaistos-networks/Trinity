@@ -1653,10 +1653,11 @@ static void expand_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, st
                                 phrasesRunNode.fp = (n.fp == SPECIALIMPL_COLLECTION_LOGICALOR ? matchanyphrases_impl : matchallphrases_impl);
                                 phrasesRunNode.ptr = (void *)phrasesRun;
 
+                                trim_phrasesrun(phrasesRunNode, phrasesRun);
+
                                 n.fp = (n.fp == SPECIALIMPL_COLLECTION_LOGICALOR ? logicalor_impl : logicaland_impl);
                                 n.ptr = rctx.register_binop(runNode, phrasesRunNode);
 
-                                trim_phrasesrun(n, phrasesRun);
                         }
                 }
                 else if (termsCnt == 0)
@@ -2332,6 +2333,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
 
                                 if (traceCompile)
                                         SLog("OR ", termID, " ", rctx.term_ctx(termID).documents, "\n");
+
                                 v.push_back({termID, rctx.term_ctx(termID).documents});
                         }
 
