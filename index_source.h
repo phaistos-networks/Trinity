@@ -18,6 +18,7 @@ namespace Trinity
             : public RefCounted<IndexSource>
         {
               protected:
+	      	std::mutex cacheLock;
 #ifdef LEAN_SWITCH
 		std::unordered_map<str8_t, term_index_ctx> cache;
 #else
@@ -31,9 +32,9 @@ namespace Trinity
                         return gen;
                 }
 
-                // TODO: serialize access
                 term_index_ctx term_ctx(const str8_t term)
                 {
+			std::lock_guard<std::mutex> g(cacheLock);
 
 #ifndef LEAN_SWITCH
                         term_index_ctx *ptr;
