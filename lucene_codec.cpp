@@ -254,7 +254,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                         if (trace)
                                 SLog(ansifmt::bold, "REFILLING NOW, hitsLeft = ", hitsLeft, ", hitsIndex = ", hitsIndex, ", bufferedHits = ", bufferedHits, ansifmt::reset, "\n");
 
-			require(hitsIndex == 0 || hitsIndex == BLOCK_SIZE);
+                        require(hitsIndex == 0 || hitsIndex == BLOCK_SIZE);
 
                         if (hitsLeft >= BLOCK_SIZE)
                         {
@@ -365,7 +365,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                         }
                         else
                         {
-				// XXX: This is not optimal, but refactoring can wait
+                                // XXX: This is not optimal, but refactoring can wait
                                 if (trace)
                                         SLog("Slow path (bufferedHits = ", bufferedHits, ", hitsIndex = ", hitsIndex, ", rem = ", bufferedHits - hitsIndex, ") \n");
 
@@ -709,7 +709,7 @@ void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_b
 {
         if (!pos && !payload)
         {
-		// This is perfectly fine
+                // This is perfectly fine
                 return;
         }
 
@@ -1091,7 +1091,7 @@ bool Trinity::Codecs::Lucene::Decoder::next_impl()
 uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target) const noexcept
 {
         // See Google::Decoder::skiplist_search()
-	static constexpr bool trace{false};
+        static constexpr bool trace{false};
         uint32_t idx{UINT32_MAX};
 
         for (int32_t top{int32_t(skiplist.size()) - 1}, btm{int32_t(skipListIdx)}; btm <= top;)
@@ -1099,7 +1099,8 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target)
                 const auto mid = (btm + top) / 2;
                 const auto v = skiplist[mid].lastDocID;
 
-		if (trace) SLog("mid = ", mid, " ", v, " ", target, " ", TrivialCmp(target, v), "\n");
+                if (trace)
+                        SLog("mid = ", mid, " ", v, " ", target, " ", TrivialCmp(target, v), "\n");
 
                 if (target < v)
                         top = mid - 1;
@@ -1173,11 +1174,14 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
 
                                                 skippedHits = 0;
                                                 bufferedHits = 0;
+
                                                 refill_documents();
                                                 refill_hits();
                                                 update_curdoc();
+
                                                 if (trace)
                                                         SLog("SKIPPING ", it.curHitsBlockHits, "\n");
+
                                                 skippedHits = it.curHitsBlockHits;
                                                 skip_hits(skippedHits);
 
@@ -1216,8 +1220,12 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                         {
                                 skippedHits += docFreqs[docsIndex];
                                 lastDocID += docDeltas[docsIndex];
+
                                 ++docsIndex;
-                                update_curdoc();
+
+                                // see: update_curdoc();
+                                curDocument.id = lastDocID + docDeltas[docsIndex];
+                                curDocument.freq = docFreqs[docsIndex];
                         }
                 }
         }

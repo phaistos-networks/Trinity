@@ -542,9 +542,8 @@ static bool matchanyterms_impl(const exec_node &self, runtime_ctx &rctx)
         do
         {
                 const auto termID = terms[i];
-                auto decoder = rctx.decode_ctx.decoders[termID];
 
-                if (decoder->seek(did))
+                if (rctx.decode_ctx.decoders[termID]->seek(did))
                 {
                         rctx.capture_matched_term(termID);
                         res = true;
@@ -2909,7 +2908,16 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 
         matchesFilter->prepare(&dws, const_cast<const query_index_terms **>(queryIndicesTerms));
 
-        // We will specialize on (documentsOnly)
+        // We will specialize on (documentsOnly) and on wether this is a single term query or not
+	// 
+	// Please note that we if (false == documentsOnly), we materialise hits for all matched terms
+	// before invoking consider(). 
+	// We could have instead provided an API for the applications using Trinity to materialize hits in their
+	// consider() implementation -- the one benefit that would provide is that if you wanted to filter documents matched by 
+	// in consider(), e.g by timestamp or some other document specific property, then you wouldn't want to materialize hits
+	// if the document is filtered, which would save you some processing time.
+	// However, for simplicity sake, we materialize always here - and thanks to being able to provide a IndexDocumentsFilter 
+	// and filter documents in IndexDocumentsFilter::filter(), that's not a concern.
         if (!documentsOnly)
         {
                 if (rootExecNode.fp == matchterm_impl)

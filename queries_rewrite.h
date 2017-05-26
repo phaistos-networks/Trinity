@@ -26,6 +26,7 @@ namespace Trinity
                 std::vector<std::pair<str32_t, uint8_t>> allAlts;
                 std::vector<std::pair<range_base<uint32_t, uint8_t>, range_base<uint32_t, uint16_t>>> cache;
                 simple_allocator allocator;
+		uint32_t logicalIndex;
 
                 void clear()
                 {
@@ -34,8 +35,10 @@ namespace Trinity
                         allocator.reuse();
                 }
 
-                range_base<uint32_t, uint16_t> try_populate(const range_base<uint32_t, uint8_t> r)
+                range_base<uint32_t, uint16_t> try_populate(range_base<uint32_t, uint8_t> r)
                 {
+			r.offset += logicalIndex;
+
                         for (const auto &it : cache)
                         {
                                 if (it.first == r)
@@ -45,8 +48,10 @@ namespace Trinity
                         return {UINT32_MAX, 0};
                 }
 
-                void insert(const range_base<uint32_t, uint8_t> k, const range_base<uint32_t, uint16_t> v)
+                void insert(range_base<uint32_t, uint8_t> k, const range_base<uint32_t, uint16_t> v)
                 {
+			k.offset += logicalIndex;
+
                         cache.push_back({k, v});
                 }
         };
@@ -67,7 +72,7 @@ namespace Trinity
                 auto &allocator = q.allocator;
 
                 if (trace)
-                        SLog(ansifmt::bold, ansifmt::color_green, "AT ", i, " ", token, ansifmt::reset, "\n");
+                        SLog(ansifmt::bold, ansifmt::color_green, "AT ", i, " ", token, ansifmt::reset, " (maxSpan = ", maxSpan, ")\n");
 
                 if (run[i]->p->rep > 1 || run[i]->p->flags)
                 {
@@ -511,6 +516,9 @@ namespace Trinity
                         SLog("OK FINAL:", *_lhs, "\n");
                 }
 
+		if (trace)
+			SLog("rem = ", rem, "\n");
+
                 if (rem)
                 {
                         const auto pair = run_capture(budget, q, run, i + lastspan, l, rem, genCtx);
@@ -612,6 +620,11 @@ namespace Trinity
                 if (trace)
                         SLog("REWRITING:", q, "\n");
 
+		// If we are going to be processing lots of OR sub-expressions, where
+		// each is a new run, we need to know the logical index across all tokens in the query
+		// in order to properly cache alts
+		genCtx.logicalIndex = 0;
+
                 // Second argument now set to false
                 // because otherwise for e.g [iphone +with]
                 // will replace with with alternatives or with itself, and it won't preserve the operator
@@ -650,6 +663,7 @@ namespace Trinity
 
                                 i = pair.second;
                         }
+			genCtx.logicalIndex += run.size();
 
                         *run[0] = *lhs;
                         for (uint32_t i{1}; i != run.size(); ++i)
