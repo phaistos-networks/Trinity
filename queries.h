@@ -123,6 +123,11 @@ namespace Trinity
                         return r;
                 }
 
+                static ast_node *make_binop(simple_allocator &a)
+                {
+			return make(a, Type::BinOp);
+                }
+
                 ast_node *copy(simple_allocator *const a);
 
                 // see query::leader_nodes() comments

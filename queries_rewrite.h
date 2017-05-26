@@ -27,12 +27,14 @@ namespace Trinity
                 std::vector<std::pair<range_base<uint32_t, uint8_t>, range_base<uint32_t, uint16_t>>> cache;
                 simple_allocator allocator;
 		uint32_t logicalIndex;
+		uint32_t K;
 
-                void clear()
+                void clear(const uint8_t _k)
                 {
                         allAlts.clear();
                         cache.clear();
                         allocator.reuse();
+			K = _k;
                 }
 
                 range_base<uint32_t, uint16_t> try_populate(range_base<uint32_t, uint8_t> r)
@@ -66,13 +68,14 @@ namespace Trinity
                 static thread_local simple_allocator altAllocatorInstance;
                 static thread_local std::vector<std::pair<str32_t, uint8_t>> alts;
                 auto &altAllocator = altAllocatorInstance;
-                strwlen8_t tokens[maxSpan];
+		const auto normalizedMaxSpan = std::min<uint8_t>(maxSpan, genCtx.K);
+                strwlen8_t tokens[normalizedMaxSpan];
                 std::vector<std::pair<Trinity::ast_node *, uint8_t>> expressions;
                 auto tokensParser = q.tokensParser;
                 auto &allocator = q.allocator;
 
                 if (trace)
-                        SLog(ansifmt::bold, ansifmt::color_green, "AT ", i, " ", token, ansifmt::reset, " (maxSpan = ", maxSpan, ")\n");
+                        SLog(ansifmt::bold, ansifmt::color_green, "AT ", i, " ", token, ansifmt::reset, " (maxSpan = ", maxSpan, "(", normalizedMaxSpan, "))\n");
 
                 if (run[i]->p->rep > 1 || run[i]->p->flags)
                 {
@@ -98,7 +101,11 @@ namespace Trinity
                 v.push_back({{{token.data(), uint32_t(token.size())}, 0}, 1});
                 altAllocator.reuse();
 
-                for (size_t upto = std::min<size_t>(run.size(), i + maxSpan), k{i}, n{0}; k != upto && run[k]->p->rep == 1; ++k) // mind reps
+
+
+
+
+                for (size_t upto = std::min<size_t>(run.size(), i + normalizedMaxSpan), k{i}, n{0}; k != upto && run[k]->p->rep == 1; ++k) // mind reps
                 {
                         tokens[n] = run[k]->p->terms[0].token;
 
@@ -147,6 +154,10 @@ namespace Trinity
                                 v.push_back({genCtx.allAlts[i], n});
 #endif
                 }
+
+
+
+
 
 #if !defined(TRINITY_QUERIES_REWRITE_FILTER)
                 std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) {
@@ -315,6 +326,7 @@ namespace Trinity
                                         {
                                                 if (trace)
                                                         SLog("FLAGS:", flags, "\n");
+
                                                 n->binop.rhs->set_alltokens_flags(flags);
                                         }
 
@@ -373,7 +385,7 @@ namespace Trinity
                 auto &allocator = q.allocator;
                 auto expressions = run_next(budget, q, run, i, maxSpan, l, genCtx);
 
-                require(expressions.size());
+                expect(expressions.size());
 
                 if (0 == budget)
                 {
@@ -390,6 +402,8 @@ namespace Trinity
 #endif
                 }
 
+
+
                 if (expressions.size() == 1)
                 {
                         if (trace)
@@ -398,7 +412,8 @@ namespace Trinity
                         return {expressions.front().first, i + 1};
                 }
 
-                require(expressions.size());
+
+
 // This is a bit complicated, but it produces optimal results in optimal amount of time
 #if !defined(TRINITY_QUERIES_REWRITE_FILTER)
                 const auto max = expressions.back().second;
@@ -420,10 +435,9 @@ namespace Trinity
                         {
                                 const auto pair = run_capture(budget, q, run, k, l, maxSpan);
                                 const auto expr = pair.first;
-                                auto n = allocator.Alloc<ast_node>();
+				auto n = ast_node::make_binop(allocator);
 
                                 maxIdx = std::max<size_t>(maxIdx, pair.second);
-                                n->type = ast_node::Type::BinOp;
                                 n->binop.op = Operator::AND;
                                 n->binop.lhs = lhs;
                                 n->binop.rhs = expr;
@@ -436,17 +450,24 @@ namespace Trinity
                         if (trace)
                                 SLog("LHS:", *lhs, "\n");
 
-                        auto n = allocator.Alloc<ast_node>();
+			auto n = ast_node::make_binop(allocator);
 
-                        n->type = ast_node::Type::BinOp;
                         n->binop.op = Operator::OR;
                         n->binop.lhs = _lhs;
                         n->binop.rhs = lhs;
                         _lhs = n;
                 }
 #else
-                require(expressions.size());
-                const auto max = expressions.front().second;
+
+
+#if 0
+		uint8_t max{1};
+
+		for (const auto &it : expressions)
+			max = std::max(max, it.second);
+#else
+		const auto max = expressions.front().second;
+#endif
                 auto _lhs = expressions.front().first;
                 auto firstExpression = _lhs;
                 ast_node *C{nullptr};
@@ -474,10 +495,9 @@ namespace Trinity
                                 if (!expr)
                                         return {nullptr, 0};
 
-                                auto n = allocator.Alloc<ast_node>();
+				auto n = ast_node::make_binop(allocator);
 
                                 maxIdx = std::max<size_t>(maxIdx, pair.second);
-                                n->type = ast_node::Type::BinOp;
                                 n->binop.op = Operator::AND;
                                 n->binop.lhs = lhs;
                                 n->binop.rhs = expr;
@@ -490,9 +510,8 @@ namespace Trinity
                         if (trace)
                                 SLog("LHS:", *lhs, "\n");
 
-                        auto n = allocator.Alloc<ast_node>();
+			auto n = ast_node::make_binop(allocator);
 
-                        n->type = ast_node::Type::BinOp;
                         n->binop.op = Operator::OR;
                         n->binop.lhs = _lhs;
                         n->binop.rhs = lhs;
@@ -507,6 +526,17 @@ namespace Trinity
                 // and your callback for two tokens(t1,t2) will output (t1t2). e.g for (foo,bar) => foobar
                 // Without this bit here, we 'll end up compiling to
                 // foobar OR (foo barping OR bar AND ping)
+		//
+		// XXX: 
+		// a problem is that rem can exceed K (max span)
+		// in which case, we are probably not doing the right thing.
+		// I am not sure this is the right way to deal with this situation; need to consider alternatives
+		// e.g for  [ FOO BAR PING APPLE IPAD WORLD OF WARCRAFT MISTS OF PANDARIA]
+		// where we concatenate all two adjacent tokens e.g foo bar => foobar
+		// we end up with sutations where rem = 5, even if K = 3
+		//
+		// UPDATE: run_next() now caps provided maxSpan to K provided in rewrite_query()
+		// which should help. see normalizedMaxSpan def.
                 const auto lastspan = max;
                 const auto rem = maxIdx - i - lastspan;
 
@@ -516,19 +546,18 @@ namespace Trinity
                         SLog("OK FINAL:", *_lhs, "\n");
                 }
 
-		if (trace)
+		if (traceFix)
 			SLog("rem = ", rem, "\n");
 
                 if (rem)
                 {
                         const auto pair = run_capture(budget, q, run, i + lastspan, l, rem, genCtx);
                         const auto expr = pair.first;
-                        auto n = allocator.Alloc<ast_node>();
+			auto n = ast_node::make_binop(allocator);
 
                         if (traceFix)
-                                SLog("Expr:", *expr, "\n");
+                                SLog("Expr(", rem, "):", *expr, "\n");
 
-                        n->type = ast_node::Type::BinOp;
                         n->binop.op = Operator::AND;
                         n->binop.lhs = firstExpression;
                         n->binop.rhs = expr;
@@ -603,10 +632,11 @@ namespace Trinity
                 // See: https://github.com/phaistos-networks/Trinity/issues/1 ( FIXME: )
                 budget = std::numeric_limits<size_t>::max();
 
-                genCtx.clear();
+                genCtx.clear(K);
 
                 if (trace)
                         SLog("Initially budget: ", budget, "\n");
+
                 if (const auto n = q.root->nodes_count(); n < budget)
                         budget -= n;
                 else
@@ -652,9 +682,8 @@ namespace Trinity
                                         lhs = expr;
                                 else
                                 {
-                                        auto n = allocator.Alloc<ast_node>();
+					auto n = ast_node::make_binop(allocator);
 
-                                        n->type = ast_node::Type::BinOp;
                                         n->binop.op = Operator::AND;
                                         n->binop.lhs = lhs;
                                         n->binop.rhs = expr;
@@ -678,6 +707,7 @@ namespace Trinity
                         SLog(duration_repr(Timings::Microseconds::Since(before)), " to rewrite the query\n");
                         //exit(0);
                 }
+
                 q.normalize();
         }
 }
