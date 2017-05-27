@@ -7,7 +7,7 @@ using namespace Trinity;
 namespace // static/local this module
 {
         [[maybe_unused]] static constexpr bool traceExec{false};
-        static constexpr bool traceCompile{false};
+        static constexpr bool traceCompile{true};
 
         struct runtime_ctx;
 
@@ -1411,7 +1411,15 @@ static exec_node compile_node(const ast_node *const n, runtime_ctx &rctx, simple
         return res;
 }
 
-static bool same(const exec_node &a, const exec_node &b)
+static const exec_node *stronger(const exec_node &a, const exec_node &b) noexcept
+{
+	if (a.fp == matchallphrases_impl || a.fp == matchphrase_impl)
+		return &a;
+	else
+		return &b;
+}
+
+static bool same(const exec_node &a, const exec_node &b) noexcept
 {
         if (a.fp == matchallterms_impl && b.fp == a.fp)
         {
@@ -1776,7 +1784,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         set_dirty();
                 }
         }
-        if (n.fp == unaryand_impl)
+        else if (n.fp == unaryand_impl)
         {
                 auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
 
@@ -1854,7 +1862,12 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         }
                         else if (same(ctx->lhs, ctx->rhs))
                         {
-                                n = ctx->lhs;
+				auto s = stronger(ctx->lhs, ctx->rhs);
+
+				if (s == &ctx->lhs)
+					n = ctx->rhs;
+				else
+					n = ctx->lhs;
                                 set_dirty();
                                 return n;
                         }
@@ -1913,7 +1926,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         }
                         else if (same(ctx->lhs, ctx->rhs))
                         {
-                                n = ctx->lhs;
+                                n = *stronger(ctx->lhs, ctx->rhs);
                                 set_dirty();
                                 return n;
                         }
@@ -1990,7 +2003,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
 
                         if (same(ctx->lhs, ctx->rhs))
                         {
-                                n = ctx->lhs;
+				n = *stronger(ctx->lhs, ctx->rhs);
                                 set_dirty();
                                 return n;
                         }
@@ -2052,6 +2065,8 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                                         {
 						run->size = cnt;
 						memcpy(run->terms, terms, sizeof(terms[0]) * cnt);
+						set_dirty();
+						return n;
                                         }
                                 }
                         }
@@ -2080,6 +2095,8 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                                         {
 						run->size = cnt;
 						memcpy(run->terms, terms, sizeof(terms[0]) * cnt);
+						set_dirty();
+						return n;
                                         }
                                 }
                         }
@@ -2175,6 +2192,45 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         n.fp = dummyop_impl;
                         set_dirty();
                 }
+        }
+	else if (n.fp == matchallphrases_impl)
+        {
+		// ("a b", "a b c") => ("a b c")
+                auto *const __restrict__ run = static_cast<runtime_ctx::phrasesrun *>(n.ptr);
+                auto size = run->size;
+		const auto saved{size};
+
+                for (uint32_t i{0}; i < size;)
+                {
+                        const auto p = run->phrases[i];
+                        bool any{false};
+
+                        for (uint32_t k{0}; k < size;)
+                        {
+                                if (k != i)
+                                {
+                                        if (auto o = run->phrases[k]; o->size >= p->size)
+                                        {
+                                                if (memcmp(p->termIDs, o->termIDs, p->size * sizeof(exec_term_id_t)) == 0)
+                                                {
+                                                        run->phrases[i] = run->phrases[--size];
+                                                        any = true;
+							break;
+                                                }
+                                        }
+                                }
+                                ++k;
+                        }
+
+			if (!any)
+				++i;
+                }
+
+		if (saved != size)
+		{
+                	run->size = size;
+			set_dirty();
+		}
         }
 
         return n;
