@@ -77,6 +77,8 @@ namespace Trinity
                 if (trace)
                         SLog(ansifmt::bold, ansifmt::color_green, "AT ", i, " ", token, ansifmt::reset, " (maxSpan = ", maxSpan, "(", normalizedMaxSpan, "))\n");
 
+		alts.clear();
+
                 if (run[i]->p->rep > 1 || run[i]->p->flags)
                 {
                         // special care for reps
@@ -147,7 +149,11 @@ namespace Trinity
                                 genCtx.insert(key, value);
 
                                 if (trace)
+				{
                                         SLog("Caching ", key, " => ", value, "\n");
+					for (uint32_t i{saved}; i != genCtx.allAlts.size(); ++i)
+						SLog(genCtx.allAlts[i], "\n");
+				}
                         }
 
                         for (const auto i : value)
@@ -194,12 +200,11 @@ namespace Trinity
 
                                 for (uint32_t i{1}; i != alts.size(); ++i)
                                 {
-                                        auto n = allocator.Alloc<ast_node>();
+					auto n = ast_node::make_binop(allocator);
 
                                         if (budget)
                                                 --budget;
 
-                                        n->type = ast_node::Type::BinOp;
                                         n->binop.op = Operator::OR;
                                         n->binop.lhs = lhs;
                                         n->binop.rhs = ast_parser(alts[i].first, allocator, tokensParser).parse();
@@ -286,8 +291,6 @@ namespace Trinity
                                 if (unlikely(nullptr == lhs))
                                         throw Switch::data_error("Failed to parse [", alts[saved].first, "]");
 
-                                //if (trace) SLog("Parsed [", alts[saved].first, "]: ", *lhs, "\n");
-
                                 if (const auto n = lhs->nodes_count(); budget >= n)
                                         budget -= n;
                                 else
@@ -303,12 +306,11 @@ namespace Trinity
 
                                 for (uint32_t i{1}; i != n; ++i)
                                 {
-                                        auto n = allocator.Alloc<ast_node>();
+					auto n = ast_node::make_binop(allocator);
 
                                         if (budget)
                                                 --budget;
 
-                                        n->type = ast_node::Type::BinOp;
                                         n->binop.op = Operator::OR;
                                         n->binop.lhs = lhs;
                                         n->binop.rhs = ast_parser(alts[i + saved].first, allocator, tokensParser).parse();
@@ -431,8 +433,14 @@ namespace Trinity
                         const auto span = it.second;
                         auto lhs = it.first;
 
+			if (trace)
+			SLog("Considering expression ", *lhs, "\n");
+
                         for (uint32_t k = i + span; k != upto; ++k)
                         {
+				if (trace)
+					SLog("will capture for [", *lhs, "] at ", k, "\n");
+
                                 const auto pair = run_capture(budget, q, run, k, l, maxSpan);
                                 const auto expr = pair.first;
 				auto n = ast_node::make_binop(allocator);
@@ -475,9 +483,14 @@ namespace Trinity
 
                 require(_lhs);
                 if (trace)
-                        SLog("Last:", *_lhs, ", max = ", max, "\n");
+		{
+			for (const auto &it : expressions)
+				SLog("For expression [", *it.first, "] ", it.second, "\n");
 
-                static constexpr bool traceFix{false};
+                        SLog("Last:", *_lhs, ", max = ", max, "\n");
+		}
+
+                static constexpr bool traceFix{true};
                 const bool _D = traceFix ? _lhs->p->terms[0].token.Eq(_S("foobar")) : false;
 
                 for (uint32_t _i{1}; _i != expressions.size(); ++_i)
@@ -487,15 +500,25 @@ namespace Trinity
                         const auto span = it.second;
                         auto lhs = it.first;
 
-                        for (uint32_t k = i + span; k != upto; ++k)
+			if (trace)
+				SLog(ansifmt::color_brown, "EXPR:", *it.first, "              span = ", it.second, ansifmt::reset, "\n");
+
+                        //WAS: for (uint32_t k = i + span; k < upto; ++k)
+			for (uint32_t k = i + span; k < upto; )
                         {
+                                if (trace)
+                                        SLog(ansifmt::color_magenta, "Will capture for [", *lhs, "] at (i = ", i, ", k = ", k, ")", ansifmt::reset, "\n");
+
                                 const auto pair = run_capture(budget, q, run, k, l, maxSpan, genCtx);
                                 const auto expr = pair.first;
 
                                 if (!expr)
                                         return {nullptr, 0};
 
-				auto n = ast_node::make_binop(allocator);
+                                auto n = ast_node::make_binop(allocator);
+
+                                if (trace)
+                                        SLog("GOT for expr [", *lhs, "] .rhs = [", *expr, "](", pair.second, ", upto = ", upto, "), from ", k, "\n");
 
                                 maxIdx = std::max<size_t>(maxIdx, pair.second);
                                 n->binop.op = Operator::AND;
@@ -503,8 +526,7 @@ namespace Trinity
                                 n->binop.rhs = expr;
                                 lhs = n;
 
-                                if (trace)
-                                        SLog("GOT for expr [", *lhs, "] .rhs = [", *expr, "], from ", k, "\n");
+                                k += pair.second;
                         }
 
                         if (trace)
@@ -631,7 +653,8 @@ namespace Trinity
 
                 const auto before = Timings::Microseconds::Tick();
                 auto &allocator = q.allocator;
-                static thread_local gen_ctx genCtx;
+                static thread_local gen_ctx genCtxTL;
+		auto &genCtx = genCtxTL;
 
                 // For now, explicitly to unlimited
                 // See: https://github.com/phaistos-networks/Trinity/issues/1 ( FIXME: )
