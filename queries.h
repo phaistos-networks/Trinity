@@ -130,6 +130,9 @@ namespace Trinity
 
                 ast_node *copy(simple_allocator *const a);
 
+		// same as copy(), except we are not copying tokens
+                ast_node *shallow_copy(simple_allocator *const a);
+
                 // see query::leader_nodes() comments
                 bool any_leader_tokens() const;
 

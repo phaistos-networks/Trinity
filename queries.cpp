@@ -1299,6 +1299,39 @@ ast_node *ast_node::copy(simple_allocator *const a)
         return res;
 }
 
+ast_node *ast_node::shallow_copy(simple_allocator *const a)
+{
+        const ast_node *const n{this};
+        auto res = ast_node::make(*a, n->type);
+
+        switch (res->type)
+        {
+                case ast_node::Type::Token:
+                case ast_node::Type::Phrase:
+                        res->p = n->p;
+                        break;
+
+                case ast_node::Type::ConstTrueExpr:
+                        res->expr = n->expr->shallow_copy(a);
+                        break;
+
+                case ast_node::Type::UnaryOp:
+                        res->unaryop.op = n->unaryop.op;
+                        res->unaryop.expr = n->unaryop.expr->shallow_copy(a);
+                        break;
+
+                case ast_node::Type::BinOp:
+                        res->binop.op = n->binop.op;
+                        res->binop.lhs = n->binop.lhs->shallow_copy(a);
+                        res->binop.rhs = n->binop.rhs->shallow_copy(a);
+                        break;
+
+                default:
+                        break;
+        }
+        return res;
+}
+
 static void capture_leader(ast_node *const n, std::vector<ast_node *> *const out, const size_t threshold)
 {
         switch (n->type)

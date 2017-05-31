@@ -13,6 +13,7 @@
 // and (united, states) => [usa]
 // we will ignore the second (united, states) rule because we already matched it earlier (we process by match span descending)
 #define TRINITY_QUERIES_REWRITE_FILTER 1
+#define _TRINITY_QRW_USECACHE 1
 
 namespace Trinity
 {
@@ -65,9 +66,11 @@ namespace Trinity
                 require(i < run.size());
                 const auto token = run[i]->p->terms[0].token;
                 static thread_local std::vector<std::pair<std::pair<str32_t, uint8_t>, uint8_t>> v;
-                static thread_local simple_allocator altAllocatorInstance;
                 static thread_local std::vector<std::pair<str32_t, uint8_t>> alts;
+#ifndef _TRINITY_QRW_USECACHE
+                static thread_local simple_allocator altAllocatorInstance;
                 auto &altAllocator = altAllocatorInstance;
+#endif
 		const auto normalizedMaxSpan = std::min<uint8_t>(maxSpan, genCtx.K);
                 strwlen8_t tokens[normalizedMaxSpan];
                 std::vector<std::pair<Trinity::ast_node *, uint8_t>> expressions;
@@ -101,7 +104,10 @@ namespace Trinity
 
                 v.clear();
                 v.push_back({{{token.data(), uint32_t(token.size())}, 0}, 1});
+
+#ifndef _TRINITY_QRW_USECACHE
                 altAllocator.reuse();
+#endif
 
 
 
@@ -111,19 +117,20 @@ namespace Trinity
                 {
                         tokens[n] = run[k]->p->terms[0].token;
 
-#if 0 // legacy, for validations only: don't use the cache
-                        alts.clear();
-                        l(runCtx, tokens, ++n, altAllocator, &alts);
+#ifndef _TRINITY_QRW_USECACHE
+			// legacy, for validations only: don't use the cache
+			alts.clear();
+			l(runCtx, tokens, ++n, altAllocator, &alts);
 
-                        if (trace)
-                        {
-                                SLog("Starting from ", run[i]->p->terms[0].token, " ", n, "\n");
-                                for (const auto &it : alts)
-                                        SLog("alt [", it.first, "] ", it.second, "\n");
-                        }
+			if (trace)
+			{
+				SLog("Starting from ", run[i]->p->terms[0].token, " ", n, "\n");
+				for (const auto &it : alts)
+					SLog("alt [", it.first, "] ", it.second, "\n");
+			}
 
-                        for (const auto &it : alts)
-                                v.push_back({{it.first, it.second}, n});
+			for (const auto &it : alts)
+				v.push_back({{it.first, it.second}, n});
 #else
                         // Caching can have a huge performance impact
                         // for a rather elaborate query, query rewriting dropped from 0.003s down to 971us
@@ -367,8 +374,8 @@ namespace Trinity
                         if (trace)
                                 SLog(ansifmt::color_brown, "<<<<<< [", *node, "] ", span, ansifmt::reset, "\n");
                 }
-
 #endif
+
 
                 if (trace)
                 {
@@ -380,232 +387,183 @@ namespace Trinity
                 return expressions;
         }
 
+
+
+	// We are going to be processing the list from back to forth(in reverse)
+	static ast_node *trail_of(std::vector<std::pair<range32_t, ast_node *>> &list, std::size_t stop, simple_allocator &a, const std::size_t depth)
+        {
+                static constexpr bool trace{false};
+
+                if (0 == stop)
+                        return nullptr;
+
+                // Identify list range where it.first.stop() == stop
+                // list has been sorted earlier so we can rely on that ordering scheme
+                range32_t nodesRange;
+                const auto listSize = list.size();
+
+                for (uint32_t i{0}; i != listSize; ++i)
+                {
+                        if (list[i].first.stop() == stop)
+                        {
+                                nodesRange.offset = i;
+
+                                do
+                                {
+
+                                } while (++i != list.size() && list[i].first.stop() == stop);
+                                nodesRange.len = i - nodesRange.offset;
+                                break;
+                        }
+                }
+
+                if (nodesRange.empty())
+                {
+                        // how's that possible?
+                        // XXX: not sure rteturning nullptr is what we should be doing here
+                        return nullptr;
+                }
+
+                ast_node *nodes[nodesRange.size() + 1];
+                std::size_t nodesSize{0};
+
+                // Process range, one distinct offset/time(in case there are multiple, though there shouldn't be)
+                for (uint32_t i = nodesRange.offset, e = nodesRange.stop(); i < e;)
+                {
+                        const auto base{i};
+                        const auto offset = list[i].first.offset;
+                        auto rhs = list[base].second->shallow_copy(&a);
+
+                        do
+                        {
+
+                        } while (++i != e && list[i].first.offset == offset);
+
+                        if (trace)
+                                SLog("Dealing with offset ", offset, " for ", *list[base].second, "\n");
+
+                        // Now, get the trail, and use stop this offset
+                        const auto lhs = trail_of(list, offset, a, depth + 1);
+                        ast_node *n;
+
+                        if (!lhs)
+                        {
+                                // Likely because (0 == offset)
+                                if (trace)
+                                        SLog("NO lhs\n");
+
+                                n = rhs;
+                        }
+                        else
+                        {
+                                // Join into a binary op
+                                n = ast_node::make_binop(a);
+
+                                n->binop.op = Operator::AND;
+                                n->binop.lhs = lhs;
+                                n->binop.rhs = rhs;
+                        }
+
+                        nodes[nodesSize++] = n;
+                }
+
+                if (trace)
+                        SLog("nodes.size = ", nodesSize, " for ", stop, "\n");
+
+                ast_node *res;
+
+                if (nodesSize == 1)
+                {
+                        res = nodes[0];
+                }
+                else if (nodesSize)
+                {
+                        // Multiple for this stop
+                        // group them using Operator::OR
+                        auto lhs = nodes[0];
+
+                        for (uint32_t i{1}; i != nodesSize; ++i)
+                        {
+                                auto rhs = nodes[i];
+                                auto n = ast_node::make_binop(a);
+
+                                n->binop.op = Operator::OR;
+                                n->binop.lhs = lhs;
+                                n->binop.rhs = rhs;
+                                lhs = n;
+                        }
+
+                        res = lhs;
+                }
+                else
+                        res = nullptr;
+
+                if (trace)
+                {
+                        if (!res)
+                                SLog("res = nullptr\n");
+                        else
+                                SLog("res = ", *res, "\n");
+                }
+
+                return res;
+        }
+
         template <typename L>
         static std::pair<ast_node *, uint8_t> run_capture(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan, gen_ctx &genCtx)
         {
                 static constexpr bool trace{false};
-                auto &allocator = q.allocator;
-                auto expressions = run_next(budget, q, run, i, maxSpan, l, genCtx);
+                [[maybe_unused]] auto &allocator = q.allocator;
+                static thread_local std::vector<std::pair<range32_t, ast_node *>> list_tl;
+		auto &list{list_tl};
+                const auto baseIndex{i};
+                std::size_t highest_stop{0};
 
-                expect(expressions.size());
+                // Turns out, this is a simple matter of using a radix-tree like construction scheme
+                // Instead of relying on the previously concienved and used heuristic which was somewhat complicated and it broke down in some weird edge cases
+                // that wasn't worth investigating vs replacing with a simple and, likely, more efficient design.
 
-                if (0 == budget)
+	
+		// 1. Collect all candidates for every index in run[] => (range, ast_node *)
+                list.clear();
+                for (uint32_t it{i}; it != run.size(); ++it)
                 {
-#if !defined(TRINITY_QUERIES_REWRITE_FILTER)
-                        if (trace)
-                                SLog("No budget, returning first ", *expressions.front().first, "\n");
+                        auto e = run_next(budget, q, run, it, maxSpan, l, genCtx);
+                        const auto normalized = it - baseIndex;
 
-                        return {expressions.front().first, i + 1};
-#else
-                        if (trace)
-                                SLog("No budget, returning first ", *expressions.back().first, "\n");
-
-                        return {expressions.back().first, i + 1};
-#endif
-                }
-
-
-
-                if (expressions.size() == 1)
-                {
-                        if (trace)
-                                SLog("SINGLE expression ", *expressions.front().first, "\n");
-
-                        return {expressions.front().first, i + 1};
-                }
-
-
-
-// This is a bit complicated, but it produces optimal results in optimal amount of time
-#if !defined(TRINITY_QUERIES_REWRITE_FILTER)
-                const auto max = expressions.back().second;
-                const auto upto = i + max;
-                auto _lhs = expressions.back().first;
-                size_t maxIdx{i + 1};
-
-                expressions.pop_back();
-
-                if (trace)
-                        SLog("Last:", *_lhs, ", max = ", max, "\n");
-
-                for (auto &it : expressions)
-                {
-                        const auto span = it.second;
-                        auto lhs = it.first;
-
-			if (trace)
-			SLog("Considering expression ", *lhs, "\n");
-
-                        for (uint32_t k = i + span; k != upto; ++k)
+                        for (const auto &eit : e)
                         {
-				if (trace)
-					SLog("will capture for [", *lhs, "] at ", k, "\n");
-
-                                const auto pair = run_capture(budget, q, run, k, l, maxSpan);
-                                const auto expr = pair.first;
-				auto n = ast_node::make_binop(allocator);
-
-                                maxIdx = std::max<size_t>(maxIdx, pair.second);
-                                n->binop.op = Operator::AND;
-                                n->binop.lhs = lhs;
-                                n->binop.rhs = expr;
-                                lhs = n;
-
-                                if (trace)
-                                        SLog("GOT for expr [", *lhs, "] [", *expr, "], from ", k, "\n");
+                                highest_stop = std::max<size_t>(highest_stop, normalized + eit.second);
+                                list.push_back({{normalized, eit.second}, eit.first}); // range [offset, end) => ast_node
                         }
-
-                        if (trace)
-                                SLog("LHS:", *lhs, "\n");
-
-			auto n = ast_node::make_binop(allocator);
-
-                        n->binop.op = Operator::OR;
-                        n->binop.lhs = _lhs;
-                        n->binop.rhs = lhs;
-                        _lhs = n;
-                }
-#else
-
-
-#if 0
-		uint8_t max{1};
-
-		for (const auto &it : expressions)
-			max = std::max(max, it.second);
-#else
-		const auto max = expressions.front().second;
-#endif
-                auto _lhs = expressions.front().first;
-                auto firstExpression = _lhs;
-                ast_node *C{nullptr};
-                size_t maxIdx{i + 1};
-
-                require(_lhs);
-                if (trace)
-		{
-			for (const auto &it : expressions)
-				SLog("For expression [", *it.first, "] ", it.second, "\n");
-
-                        SLog("Last:", *_lhs, ", max = ", max, "\n");
-		}
-
-                static constexpr bool traceFix{true};
-                const bool _D = traceFix ? _lhs->p->terms[0].token.Eq(_S("foobar")) : false;
-
-                for (uint32_t _i{1}; _i != expressions.size(); ++_i)
-                {
-                        auto &it = expressions[_i];
-                        const auto upto = i + max;
-                        const auto span = it.second;
-                        auto lhs = it.first;
-
-			if (trace)
-				SLog(ansifmt::color_brown, "EXPR:", *it.first, "              span = ", it.second, ansifmt::reset, "\n");
-
-                        //WAS: for (uint32_t k = i + span; k < upto; ++k)
-			for (uint32_t k = i + span; k < upto; )
-                        {
-                                if (trace)
-                                        SLog(ansifmt::color_magenta, "Will capture for [", *lhs, "] at (i = ", i, ", k = ", k, ")", ansifmt::reset, "\n");
-
-                                const auto pair = run_capture(budget, q, run, k, l, maxSpan, genCtx);
-                                const auto expr = pair.first;
-
-                                if (!expr)
-                                        return {nullptr, 0};
-
-                                auto n = ast_node::make_binop(allocator);
-
-                                if (trace)
-                                        SLog("GOT for expr [", *lhs, "] .rhs = [", *expr, "](", pair.second, ", upto = ", upto, "), from ", k, "\n");
-
-                                maxIdx = std::max<size_t>(maxIdx, pair.second);
-                                n->binop.op = Operator::AND;
-                                n->binop.lhs = lhs;
-                                n->binop.rhs = expr;
-                                lhs = n;
-
-                                k += pair.second;
-                        }
-
-                        if (trace)
-                                SLog("LHS:", *lhs, "\n");
-
-			auto n = ast_node::make_binop(allocator);
-
-                        n->binop.op = Operator::OR;
-                        n->binop.lhs = _lhs;
-                        n->binop.rhs = lhs;
-
-                        if (!C)
-                                C = n;
-
-                        _lhs = n;
                 }
 
-                // consider [foo bar ping]
-                // and your callback for two tokens(t1,t2) will output (t1t2). e.g for (foo,bar) => foobar
-                // Without this bit here, we 'll end up compiling to
-                // foobar OR (foo barping OR bar AND ping)
-		//
-		// XXX: 
-		// a problem is that rem can exceed K (max span)
-		// in which case, we are probably not doing the right thing.
-		// I am not sure this is the right way to deal with this situation; need to consider alternatives
-		// e.g for  [ FOO BAR PING APPLE IPAD WORLD OF WARCRAFT MISTS OF PANDARIA]
-		// where we concatenate all two adjacent tokens e.g foo bar => foobar
-		// we end up with sutations where rem = 5, even if K = 3
-		//
-		// UPDATE: run_next() now caps provided maxSpan to K provided in rewrite_query()
-		// which should help. see normalizedMaxSpan def.
-                const auto lastspan = max;
-                const auto rem = maxIdx - i - lastspan;
-
-                if (traceFix)
-                {
-                        SLog(ansifmt::bold, ansifmt::color_brown, "maxIdx = ", maxIdx, ", i = ", i, ", lastspan = ", lastspan, ", _D = ", _D, ", rem = ", rem, ansifmt::reset, "\n");
-                        SLog("OK FINAL:", *_lhs, "\n");
-                }
-
-		if (traceFix)
-			SLog("rem = ", rem, "\n");
-
-                if (rem)
-                {
-                        const auto pair = run_capture(budget, q, run, i + lastspan, l, rem, genCtx);
-                        const auto expr = pair.first;
-			auto n = ast_node::make_binop(allocator);
-
-                        if (traceFix)
-                                SLog("Expr(", rem, "):", *expr, "\n");
-
-                        n->binop.op = Operator::AND;
-                        n->binop.lhs = firstExpression;
-                        n->binop.rhs = expr;
-
-                        if (traceFix)
-                                SLog("WELL:", *n, "\n");
-
-                        require(C);
-                        C->binop.lhs = n;
-
-                        if (traceFix)
-                                SLog("FINAL:", *_lhs, "\n");
-                }
-                else if (traceFix)
-                        SLog("Not needed\n");
-
-//if (_D) { exit(0); }
-#endif
+	
+		// 2. Sort by range stop DESC, offset ASC
+                std::sort(list.begin(), list.end(), [](const auto &a, const auto &b) {
+                        return b.first.stop() < a.first.stop() || (b.first.stop() == a.first.stop() && a.first.offset < b.first.offset);
+                });
 
                 if (trace)
                 {
-                        require(_lhs);
-                        SLog("OUTPUT:", *_lhs, "\n");
+                        for (const auto &it : list)
+                                Print(it.first, ":", *it.second, "\n");
+
+                        SLog("highest_stop = ", highest_stop, "\n");
                 }
 
-                return {_lhs, maxIdx};
+		// 3. Use trail_of() to recursvely process everything collected in list[]
+                const auto output = trail_of(list, highest_stop, genCtx.allocator, 0);
+
+		if (trace)
+                {
+                        if (!output)
+                                SLog("NO OUTPUT\n");
+                        else
+                                SLog("output:", *output, "\n");
+                }
+
+                return {output, run.size()}; // we process the whole run
         }
 
         // Very handy utility function that faciliaties query rewrites
@@ -615,6 +573,8 @@ namespace Trinity
         //
         // Example:
         /*
+	 *
+
 	Trinity::rewrite_query(inputQuery, 3, [](const auto runCtx, const auto tokens, const auto cnt, auto &allocator, auto out)
 	{
 		if (cnt == 1)
@@ -632,15 +592,12 @@ namespace Trinity
 			if (tokens[0].Eq(_S("WORLD"))  && tokens[1].Eq(_S("OF")) || tokens[2].Eq(_S("WARCRAFT")))
 				out->push_back({"WOW", 1});
 		}}
+	}
 
 		You probably want another runs pass in order to e.g convert all stop word nodes to
 		<stopword> so that <the> becomes optional
 
-		See RECIPES
-
-		XXX: [foo bar   ping]
-		This FAILS  if we e.g return [foobar] from [foo bar]
-		ALSO: [foo bar 512    8192]
+  	*	
 	*/
         template <typename L>
         void rewrite_query(Trinity::query &q, size_t budget, const uint8_t K, L &&l)
@@ -649,7 +606,6 @@ namespace Trinity
 
 		if (!q)
 			return;
-
 
                 const auto before = Timings::Microseconds::Tick();
                 auto &allocator = q.allocator;
@@ -700,7 +656,7 @@ namespace Trinity
 
                         for (uint32_t i{0}; i < run.size();)
                         {
-                                auto pair = run_capture(budget, q, run, i, l, K, genCtx);
+                                const auto pair = run_capture(budget, q, run, i, l, K, genCtx);
                                 auto expr = pair.first;
 
                                 if (trace)
@@ -718,6 +674,7 @@ namespace Trinity
                                         lhs = n;
                                 }
 
+				// in practice, pair.second will be == run.size(), but allow for different values
                                 i = pair.second;
                         }
 			genCtx.logicalIndex += run.size();

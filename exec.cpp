@@ -7,7 +7,7 @@ using namespace Trinity;
 namespace // static/local this module
 {
         [[maybe_unused]] static constexpr bool traceExec{false};
-        static constexpr bool traceCompile{true};
+        static constexpr bool traceCompile{false};
 
         struct runtime_ctx;
 
