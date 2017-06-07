@@ -7,40 +7,251 @@
 /// many, many query nodes and somehow trimming during execution, this is a good compromise.
 #pragma once
 #include "queries.h"
+#include <set>
 
 // This is important so that we will disregard dupes, and also, if e.g
 // (united, states, of, america) => [usa]
 // and (united, states) => [usa]
 // we will ignore the second (united, states) rule because we already matched it earlier (we process by match span descending)
 #define TRINITY_QUERIES_REWRITE_FILTER 1
+// This is no longer necessary because of the new algorithm's semantics
 #define _TRINITY_QRW_USECACHE 1
 
 namespace Trinity
 {
+        struct flow;
+        struct flow_ent
+        {
+                enum class Type : uint8_t
+                {
+                        Node,
+                        Flow
+                } type;
+
+                union {
+                        ast_node *n;
+                        flow *f;
+                };
+
+                flow_ent(ast_node *const node)
+                    : type{Type::Node}, n{node}
+                {
+                }
+
+                flow_ent(flow *const _flow)
+                    : type{Type::Flow}, f{_flow}
+                {
+                }
+
+                inline ast_node *materialize(simple_allocator &a) const;
+
+                flow_ent()
+                    : n{nullptr}
+                {
+                }
+
+                flow_ent(const flow_ent &o)
+                {
+                        type = o.type;
+                        n = o.n;
+                }
+
+                flow_ent(flow_ent &&o)
+                {
+                        type = o.type;
+                        n = o.n;
+                }
+
+                auto &operator=(const flow_ent &o)
+                {
+                        type = o.type;
+                        n = o.n;
+                        return *this;
+                }
+
+                auto &operator=(flow_ent &&o)
+                {
+                        type = o.type;
+                        n = o.n;
+                        return *this;
+                }
+        };
+
+        struct flow
+        {
+                range32_t range;
+                flow *parent{nullptr};
+                Operator op{Operator::OR};
+                std::vector<flow_ent> ents;
+
+                void replace_child_flow(flow *from, flow *to)
+                {
+                        for (auto &it : ents)
+                        {
+                                if (it.type == flow_ent::Type::Flow && it.f == from)
+                                {
+                                        it.f = to;
+                                        to->parent = this;
+                                }
+                        }
+                }
+
+                flow(flow &&o)
+                    : range{o.range}, parent{o.parent}, op{o.op}
+                {
+                        ents = std::move(o.ents);
+                }
+
+                auto &operator=(flow &&o)
+                {
+                        range = o.range;
+                        parent = o.parent;
+                        op = o.op;
+                        ents = std::move(o.ents);
+                        return *this;
+                }
+
+                // with no contructor (e.g not even flow() = default;) it will break in so many ways
+                flow() = default;
+
+                bool overlaps(const range32_t range) const noexcept;
+
+                void push_back_flow(flow *const f)
+                {
+                        f->parent = this;
+                        ents.push_back({f});
+                }
+
+                bool replace_self(flow *with)
+                {
+                        if (auto p = parent)
+                        {
+                                for (uint32_t i{0}; i != p->ents.size(); ++i)
+                                {
+                                        if (p->ents[i].type == flow_ent::Type::Flow && p->ents[i].f == this)
+                                        {
+                                                with->range.Set(UINT32_MAX, 0);
+                                                with->parent = parent;
+                                                p->ents[i].f = with;
+                                                for (auto &it : ents)
+                                                {
+                                                        if (it.type == flow_ent::Type::Flow && it.f->parent == this)
+                                                                it.f->parent = with;
+                                                }
+
+                                                return true;
+                                        }
+                                }
+                        }
+                        return false;
+                }
+
+                inline void push_back_node(const std::pair<range32_t, ast_node *> p, simple_allocator &a, std::vector<flow *> &, uint32_t &, const Operator op = Operator::AND);
+
+                ast_node *materialize(simple_allocator &a) const
+                {
+                        static ast_node dummy{.type = ast_node::Type::Dummy};
+
+                        if (const auto n = ents.size())
+                        {
+                                ast_node *lhs{nullptr};
+
+                                for (uint32_t i{0}; i != n;)
+                                {
+                                        ast_node *node;
+
+                                        if (ents[i].type == flow_ent::Type::Flow)
+                                        {
+                                                // sequences of flows in ents[] need to be combined with OR
+                                                auto localLHS = ents[i].materialize(a);
+                                                const auto op = ents[i].f->op;
+
+                                                for (++i; i != n && ents[i].type == flow_ent::Type::Flow && ents[i].f->op == op; ++i)
+                                                {
+                                                        auto b = ast_node::make_binop(a);
+
+                                                        b->binop.op = op;
+                                                        b->binop.lhs = localLHS;
+                                                        b->binop.rhs = ents[i].materialize(a);
+                                                        localLHS = b;
+                                                }
+                                                node = localLHS;
+                                        }
+                                        else
+                                        {
+                                                node = ents[i++].materialize(a);
+                                        }
+
+                                        if (!lhs)
+                                                lhs = node;
+                                        else
+                                        {
+                                                auto bn = ast_node::make_binop(a);
+
+                                                bn->binop.op = Operator::AND;
+                                                bn->binop.lhs = lhs;
+                                                bn->binop.rhs = node;
+                                                lhs = bn;
+                                        }
+                                }
+
+                                return lhs ?: &dummy;
+                        }
+
+                        return &dummy;
+                }
+
+                void validate() const noexcept
+                {
+                        std::size_t n{0};
+
+                        for (auto it = this->parent; it; it = it->parent)
+                        {
+                                if (++n == 100)
+                                        std::abort();
+                        }
+                }
+        };
+
+        inline flow *flow_for_node(const std::pair<range32_t, ast_node *> p, simple_allocator &a, std::vector<flow *> &, uint32_t &);
+
         struct gen_ctx
         {
-                // Implements
-                // https://github.com/phaistos-networks/Trinity/issues/3
-		//
-		// TODO: we should probably cache the parsed node, not the tokens
-		// so that we won't be parsing them again, and again, and only copy them once cached.
                 std::vector<std::pair<str32_t, uint8_t>> allAlts;
                 std::vector<std::pair<range_base<uint32_t, uint8_t>, range_base<uint32_t, uint16_t>>> cache;
                 simple_allocator allocator;
-		uint32_t logicalIndex;
-		uint32_t K;
+                // could have used just one container insted of two, and a map or multimap for tracking flows by range
+		// TODO: we can just reuse allocatedFlows (reusable = std::move(allocatedFlows)) 
+                std::vector<flow *> allocatedFlows, flows, flows_1, flows_2;
+                uint32_t logicalIndex;
+                uint32_t K;
+
+                template <typename... T>
+                auto new_flow(T &&... o)
+                {
+                        auto res = allocator.construct<flow>(std::forward<T>(o)...);
+
+                        allocatedFlows.push_back(res);
+                        return res;
+                }
 
                 void clear(const uint8_t _k)
                 {
+                        while (allocatedFlows.size())
+                        {
+                                allocatedFlows.back()->~flow();
+                                allocatedFlows.pop_back();
+                        }
+
                         allAlts.clear();
                         cache.clear();
                         allocator.reuse();
-			K = _k;
+                        K = _k;
                 }
 
                 range_base<uint32_t, uint16_t> try_populate(range_base<uint32_t, uint8_t> r)
                 {
-			r.offset += logicalIndex;
+                        r.offset += logicalIndex;
 
                         for (const auto &it : cache)
                         {
@@ -53,12 +264,13 @@ namespace Trinity
 
                 void insert(range_base<uint32_t, uint8_t> k, const range_base<uint32_t, uint16_t> v)
                 {
-			k.offset += logicalIndex;
+                        k.offset += logicalIndex;
 
                         cache.push_back({k, v});
                 }
         };
 
+        // generate a list of expressions(ast_nodes) from a run, starting at (i), upto (i + maxSpan)
         template <typename L>
         static auto run_next(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l, gen_ctx &genCtx)
         {
@@ -71,7 +283,7 @@ namespace Trinity
                 static thread_local simple_allocator altAllocatorInstance;
                 auto &altAllocator = altAllocatorInstance;
 #endif
-		const auto normalizedMaxSpan = std::min<uint8_t>(maxSpan, genCtx.K);
+                const auto normalizedMaxSpan = std::min<uint8_t>(maxSpan, genCtx.K);
                 strwlen8_t tokens[normalizedMaxSpan];
                 std::vector<std::pair<Trinity::ast_node *, uint8_t>> expressions;
                 auto tokensParser = q.tokensParser;
@@ -80,7 +292,7 @@ namespace Trinity
                 if (trace)
                         SLog(ansifmt::bold, ansifmt::color_green, "AT ", i, " ", token, ansifmt::reset, " (maxSpan = ", maxSpan, "(", normalizedMaxSpan, "))\n");
 
-		alts.clear();
+                alts.clear();
 
                 if (run[i]->p->rep > 1 || run[i]->p->flags)
                 {
@@ -109,28 +321,24 @@ namespace Trinity
                 altAllocator.reuse();
 #endif
 
-
-
-
-
                 for (size_t upto = std::min<size_t>(run.size(), i + normalizedMaxSpan), k{i}, n{0}; k != upto && run[k]->p->rep == 1; ++k) // mind reps
                 {
                         tokens[n] = run[k]->p->terms[0].token;
 
 #ifndef _TRINITY_QRW_USECACHE
-			// legacy, for validations only: don't use the cache
-			alts.clear();
-			l(runCtx, tokens, ++n, altAllocator, &alts);
+                        // legacy, for validations only: don't use the cache
+                        alts.clear();
+                        l(runCtx, tokens, ++n, altAllocator, &alts);
 
-			if (trace)
-			{
-				SLog("Starting from ", run[i]->p->terms[0].token, " ", n, "\n");
-				for (const auto &it : alts)
-					SLog("alt [", it.first, "] ", it.second, "\n");
-			}
+                        if (trace)
+                        {
+                                SLog("Starting from ", run[i]->p->terms[0].token, " ", n, "\n");
+                                for (const auto &it : alts)
+                                        SLog("alt [", it.first, "] ", it.second, "\n");
+                        }
 
-			for (const auto &it : alts)
-				v.push_back({{it.first, it.second}, n});
+                        for (const auto &it : alts)
+                                v.push_back({{it.first, it.second}, n});
 #else
                         // Caching can have a huge performance impact
                         // for a rather elaborate query, query rewriting dropped from 0.003s down to 971us
@@ -156,21 +364,17 @@ namespace Trinity
                                 genCtx.insert(key, value);
 
                                 if (trace)
-				{
+                                {
                                         SLog("Caching ", key, " => ", value, "\n");
-					for (uint32_t i{saved}; i != genCtx.allAlts.size(); ++i)
-						SLog(genCtx.allAlts[i], "\n");
-				}
+                                        for (uint32_t i{saved}; i != genCtx.allAlts.size(); ++i)
+                                                SLog(genCtx.allAlts[i], "\n");
+                                }
                         }
 
                         for (const auto i : value)
                                 v.push_back({genCtx.allAlts[i], n});
 #endif
                 }
-
-
-
-
 
 #if !defined(TRINITY_QUERIES_REWRITE_FILTER)
                 std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) {
@@ -207,7 +411,7 @@ namespace Trinity
 
                                 for (uint32_t i{1}; i != alts.size(); ++i)
                                 {
-					auto n = ast_node::make_binop(allocator);
+                                        auto n = ast_node::make_binop(allocator);
 
                                         if (budget)
                                                 --budget;
@@ -313,7 +517,7 @@ namespace Trinity
 
                                 for (uint32_t i{1}; i != n; ++i)
                                 {
-					auto n = ast_node::make_binop(allocator);
+                                        auto n = ast_node::make_binop(allocator);
 
                                         if (budget)
                                                 --budget;
@@ -323,8 +527,8 @@ namespace Trinity
                                         n->binop.rhs = ast_parser(alts[i + saved].first, allocator, tokensParser).parse();
                                         lhs = n;
 
-					if (unlikely(nullptr == n->binop.rhs))
-						throw Switch::data_error("Failed to parse [", alts[i + saved].first, "]");
+                                        if (unlikely(nullptr == n->binop.rhs))
+                                                throw Switch::data_error("Failed to parse [", alts[i + saved].first, "]");
 
                                         if (const auto _n = n->binop.rhs->nodes_count(); budget >= _n)
                                                 budget -= _n;
@@ -349,8 +553,8 @@ namespace Trinity
                         {
                                 node = Trinity::ast_parser(alts[saved].first, allocator, tokensParser).parse();
 
-				if (unlikely(nullptr == node))
-					throw Switch::data_error("Failed to parse [", alts[saved].first, "]");
+                                if (unlikely(nullptr == node))
+                                        throw Switch::data_error("Failed to parse [", alts[saved].first, "]");
 
                                 if (trace)
                                         SLog("Parsed [", alts[saved], "] ", *node, "\n");
@@ -376,7 +580,6 @@ namespace Trinity
                 }
 #endif
 
-
                 if (trace)
                 {
                         SLog(ansifmt::bold, ansifmt::color_blue, "CAPTURED EXPRESSIONS", ansifmt::reset, "\n");
@@ -387,183 +590,375 @@ namespace Trinity
                 return expressions;
         }
 
-
-
-	// We are going to be processing the list from back to forth(in reverse)
-	static ast_node *trail_of(std::vector<std::pair<range32_t, ast_node *>> &list, std::size_t stop, simple_allocator &a, const std::size_t depth)
-        {
-                static constexpr bool trace{false};
-
-                if (0 == stop)
-                        return nullptr;
-
-                // Identify list range where it.first.stop() == stop
-                // list has been sorted earlier so we can rely on that ordering scheme
-                range32_t nodesRange;
-                const auto listSize = list.size();
-
-                for (uint32_t i{0}; i != listSize; ++i)
-                {
-                        if (list[i].first.stop() == stop)
-                        {
-                                nodesRange.offset = i;
-
-                                do
-                                {
-
-                                } while (++i != list.size() && list[i].first.stop() == stop);
-                                nodesRange.len = i - nodesRange.offset;
-                                break;
-                        }
-                }
-
-                if (nodesRange.empty())
-                {
-                        // how's that possible?
-                        // XXX: not sure rteturning nullptr is what we should be doing here
-                        return nullptr;
-                }
-
-                ast_node *nodes[nodesRange.size() + 1];
-                std::size_t nodesSize{0};
-
-                // Process range, one distinct offset/time(in case there are multiple, though there shouldn't be)
-                for (uint32_t i = nodesRange.offset, e = nodesRange.stop(); i < e;)
-                {
-                        const auto base{i};
-                        const auto offset = list[i].first.offset;
-                        auto rhs = list[base].second->shallow_copy(&a);
-
-                        do
-                        {
-
-                        } while (++i != e && list[i].first.offset == offset);
-
-                        if (trace)
-                                SLog("Dealing with offset ", offset, " for ", *list[base].second, "\n");
-
-                        // Now, get the trail, and use stop this offset
-                        const auto lhs = trail_of(list, offset, a, depth + 1);
-                        ast_node *n;
-
-                        if (!lhs)
-                        {
-                                // Likely because (0 == offset)
-                                if (trace)
-                                        SLog("NO lhs\n");
-
-                                n = rhs;
-                        }
-                        else
-                        {
-                                // Join into a binary op
-                                n = ast_node::make_binop(a);
-
-                                n->binop.op = Operator::AND;
-                                n->binop.lhs = lhs;
-                                n->binop.rhs = rhs;
-                        }
-
-                        nodes[nodesSize++] = n;
-                }
-
-                if (trace)
-                        SLog("nodes.size = ", nodesSize, " for ", stop, "\n");
-
-                ast_node *res;
-
-                if (nodesSize == 1)
-                {
-                        res = nodes[0];
-                }
-                else if (nodesSize)
-                {
-                        // Multiple for this stop
-                        // group them using Operator::OR
-                        auto lhs = nodes[0];
-
-                        for (uint32_t i{1}; i != nodesSize; ++i)
-                        {
-                                auto rhs = nodes[i];
-                                auto n = ast_node::make_binop(a);
-
-                                n->binop.op = Operator::OR;
-                                n->binop.lhs = lhs;
-                                n->binop.rhs = rhs;
-                                lhs = n;
-                        }
-
-                        res = lhs;
-                }
-                else
-                        res = nullptr;
-
-                if (trace)
-                {
-                        if (!res)
-                                SLog("res = nullptr\n");
-                        else
-                                SLog("res = ", *res, "\n");
-                }
-
-                return res;
-        }
-
         template <typename L>
         static std::pair<ast_node *, uint8_t> run_capture(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan, gen_ctx &genCtx)
         {
-                static constexpr bool trace{false};
+                static constexpr bool trace{true};
                 [[maybe_unused]] auto &allocator = q.allocator;
                 static thread_local std::vector<std::pair<range32_t, ast_node *>> list_tl;
-		auto &list{list_tl};
+                auto &list{list_tl};
                 const auto baseIndex{i};
-                std::size_t highest_stop{0};
 
-                // Turns out, this is a simple matter of using a radix-tree like construction scheme
-                // Instead of relying on the previously concienved and used heuristic which was somewhat complicated and it broke down in some weird edge cases
-                // that wasn't worth investigating vs replacing with a simple and, likely, more efficient design.
-
-	
-		// 1. Collect all candidates for every index in run[] => (range, ast_node *)
+                // New faster, simpler, more efficient, and likely correct scheme
+                // Beats all past attempts and alternative schemes that required all kind of heuristics and recursion.
+                // 1. Collect all (range, tokens list)s in this run
                 list.clear();
-                for (uint32_t it{i}; it != run.size(); ++it)
+                for (uint32_t it{i}, cnt = run.size(); it != cnt; ++it)
                 {
                         auto e = run_next(budget, q, run, it, maxSpan, l, genCtx);
                         const auto normalized = it - baseIndex;
 
                         for (const auto &eit : e)
-                        {
-                                highest_stop = std::max<size_t>(highest_stop, normalized + eit.second);
                                 list.push_back({{normalized, eit.second}, eit.first}); // range [offset, end) => ast_node
-                        }
                 }
 
-	
-		// 2. Sort by range stop DESC, offset ASC
+                // This is what makes everything work.
+                // 2. Sorting the list _properly_
+                // Figuring out the right order is extremely important; it's what make this scheme design possible
                 std::sort(list.begin(), list.end(), [](const auto &a, const auto &b) {
-                        return b.first.stop() < a.first.stop() || (b.first.stop() == a.first.stop() && a.first.offset < b.first.offset);
+
+                        //return a.first.stop() < b.first.stop() || (a.first.stop() == b.first.stop() && a.first.offset < b.first.offset); 	// SORT METHOD #1
+                        //return a.first.stop() < b.first.stop() || (a.first.stop() == b.first.stop() && b.first.offset < a.first.offset); 	// SORT METHOD #2
+                        return a.first.offset < b.first.offset || (a.first.offset == b.first.offset && b.first.stop() < a.first.stop()); 	// SORT METHOD #3
+
                 });
 
                 if (trace)
                 {
-                        for (const auto &it : list)
-                                Print(it.first, ":", *it.second, "\n");
+                        for (uint32_t i{0}; i != list.size(); ++i)
+                        {
+                                const auto &it = list[i];
 
-                        SLog("highest_stop = ", highest_stop, "\n");
+                                Print(i, ": ", it.first, ":", *it.second, "\n");
+                        }
                 }
 
-		// 3. Use trail_of() to recursvely process everything collected in list[]
-                const auto output = trail_of(list, highest_stop, genCtx.allocator, 0);
+                auto &flows = genCtx.flows;
+                uint32_t maxStop{0};
+                std::set<flow *> S[2], localSet;
+                std::vector<flow *> localFlows;
+                const auto find_flows_by_range = [&](const auto range, auto *const v1, auto *const v2) {
+                        v1->clear();
+                        v2->clear();
 
-		if (trace)
+                        for (const auto f : flows)
+                        {
+                                f->validate();
+                                if (f->range.offset == range.offset)
+                                        v1->push_back(f);
+                                else if (f->range.stop() == range.offset)
+                                        v2->push_back(f);
+                        }
+                };
+                [[maybe_unused]] const auto consider_stop = [&](const uint32_t stop) noexcept
                 {
-                        if (!output)
-                                SLog("NO OUTPUT\n");
+                        maxStop = std::max<uint32_t>(stop, maxStop);
+                };
+                // Fast-simple way to identify the common ancestor among a list of flows[]
+                // TODO: we can probably avoid using std::set<> here which would make sense, but let's consider alternatives later
+                [[maybe_unused]] const auto common_anchestor = [&](flow **const flows, const size_t cnt, const bool oneFlowUseParent = false) -> flow * {
+                        if (cnt == 0)
+                                return nullptr;
+                        else if (cnt == 1)
+                        {
+                                if (oneFlowUseParent)
+                                        return flows[0]->parent ?: flows[0];
+                                else
+                                        return flows[0];
+                        }
+
+                        uint16_t active{0};
+                        const auto penultimate{cnt - 1};
+
+                        flows[0]->validate();
+
+                        S[0].clear();
+                        for (auto it{flows[0]}; it; it = it->parent)
+                                S[0].insert(it);
+
+                        for (uint32_t i{1}; i != penultimate; ++i)
+                        {
+                                flows[i]->validate();
+                                for (auto it{flows[i]}; it; it = it->parent)
+                                {
+                                        if (S[active].count(it))
+                                                S[1 - active].insert(it);
+                                }
+
+                                S[active].clear();
+                                active = 1 - active;
+                        }
+
+                        for (auto it{flows[penultimate]}; it; it = it->parent)
+                        {
+                                if (S[active].count(it))
+                                        return it;
+                        }
+
+                        return nullptr;
+                };
+
+                flows.clear();
+
+                // Create a root here
+                // This is not strictly required(we could check if there is a root, and if not, assign the first flow to the root)
+                // but this is a good idea, because we won't need to do that, and because we can rely on it to be the common ancestor for most flows/paths
+                auto root = genCtx.new_flow();
+                auto &atOffset = genCtx.flows_1;
+                auto &atStop = genCtx.flows_2;
+
+                root->range.Set(UINT32_MAX, 0);
+                flows.push_back(root);
+
+                for (const auto p : list)
+                {
+                        atOffset.clear();
+                        atStop.clear();
+                        find_flows_by_range(p.first, &atOffset, &atStop);
+
+                        SLog("\n\n", ansifmt::bold, ansifmt::color_green, "Processing ", p.first, ansifmt::reset, " ", *p.second, " =>  maxStop = ", maxStop, " (", atOffset.size(), ", ", atStop.size(), ") (", flows.size(), " flows)\n");
+                        SLog("root:", *root->materialize(genCtx.allocator), ": ", *root, "\n");
+
+#if 0
+                        for (const auto f : flows)
+                                SLog("Registered ", f->range, ":(", f->op, ", parent:", ptr_repr(f->parent), ", self:", ptr_repr(f), ") ", *f->materialize(genCtx.allocator), "\n");
+#endif
+
+                        if (atOffset.empty())
+                        {
+                                if (atStop.empty())
+                                {
+                                        [[maybe_unused]] auto nf = flow_for_node(p, genCtx.allocator, flows, maxStop);
+
+                                        require(p.first.offset == 0);
+                                        root->push_back_flow(nf);
+                                        SLog("Registered first\n");
+                                }
+                                else
+                                {
+
+                                l10:
+                                        if (atStop.size() == 1)
+                                        {
+                                                auto front = atStop.front();
+
+                                                SLog("front:", *front, "\n");
+
+                                                for (auto p = front->parent; p; p = p->parent)
+                                                        SLog("up:", *p, "\n");
+
+                                                [[maybe_unused]] auto nf = flow_for_node(p, genCtx.allocator, flows, maxStop);
+
+                                                SLog("Will just append to a flow ", ptr_repr(atStop.front()), "\n");
+                                                SLog("Before:", *atStop.front(), "\n");
+                                                nf->op = Operator::AND;
+                                                atStop.front()->push_back_flow(nf);
+
+                                                SLog("NOW:", *atStop.front(), "\n");
+                                                SLog("root:", *root->materialize(genCtx.allocator), "\n");
+
+                                                SLog("hierarchy after appended\n");
+                                                for (auto p = nf->parent; p; p = p->parent)
+                                                        SLog("up:", *p, "\n");
+                                        }
+                                        else
+                                        {
+                                                // atOffset.empty == true && atStop.size() > 1
+                                                SLog("Candidates\n");
+
+                                                for (auto f : atStop)
+                                                {
+                                                        SLog(*f->materialize(genCtx.allocator), " ", *f, "\n");
+
+                                                        for (auto p = f->parent; p; p = p->parent)
+                                                                SLog("up:", *p, "\n");
+                                                }
+
+                                                // this needs to be intelligent enoguh
+                                                // i.e it should accept the common ancestor from: (MACBOOKPRO OR (MAC BOOK  OR MACBOOK)) 	-- for PRO
+                                                // but not from: (WORLD ((OF (WAR OR WARCRAFT)) OR OFWAR))   -- for CRAFT
+                                                // If we can figure this out, we are probably fine.
+                                                // Maybe we should check common ancestor, if there is another flow with range.stop() >= p.stop()
+                                                // XXX: breaks down for mac book pro lap top
+                                                // need to consider overlap for each candidate
+                                                if (auto ac = common_anchestor(atStop.data(), atStop.size(), true); ac && false == ac->overlaps(p.first))
+                                                {
+                                                        SLog("common:", *ac->materialize(genCtx.allocator), "\n");
+
+                                                        [[maybe_unused]] auto nf = flow_for_node(p, genCtx.allocator, flows, maxStop);
+
+                                                        nf->op = Operator::AND;
+                                                        ac->push_back_flow(nf);
+
+                                                        SLog("AC now:", *ac->materialize(genCtx.allocator), "\n");
+                                                }
+                                                else
+                                                {
+                                                        if (ac)
+                                                        {
+                                                                SLog("Have common ancestor[", *ac->materialize(genCtx.allocator), "] but overlaps\n");
+                                                                Print("\n\n");
+                                                        }
+                                                        else
+                                                                SLog("No common ancestor\n");
+
+                                                        for (auto f : atStop)
+                                                        {
+                                                                auto clone = p.second->shallow_copy(&genCtx.allocator);
+
+                                                                f->push_back_node({p.first, clone}, genCtx.allocator, flows, maxStop, Operator::AND);
+                                                        }
+                                                }
+
+                                                SLog("root:", *root->materialize(genCtx.allocator), "\n");
+                                        }
+                                }
+                        }
                         else
-                                SLog("output:", *output, "\n");
+                        {
+                                if (atStop.empty()) // atOffset.empty() == false && atStop.empty() == true
+                                {
+                                        [[maybe_unused]] auto nf = flow_for_node(p, genCtx.allocator, flows, maxStop);
+                                        auto ca = common_anchestor(atOffset.data(), atOffset.size(), true);
+
+                                        if (ca)
+                                        {
+                                                for (const auto f : atOffset)
+                                                        SLog("Candidate:", *f->materialize(genCtx.allocator), "\n");
+
+                                                SLog("Will merge, common ancestor:", ptr_repr(ca), " ", *ca->materialize(genCtx.allocator), " ", ca->ents.size(), ": ", *ca, "\n");
+                                        }
+                                        else
+                                        {
+                                                SLog("no common ancestor\n");
+                                                for (const auto f : atOffset)
+                                                        SLog(*f->materialize(genCtx.allocator), "\n");
+
+                                                exit(0);
+                                        }
+
+                                        if (atOffset.size() == 1)
+                                        {
+                                                auto pg = genCtx.new_flow();
+                                                auto g = genCtx.new_flow();
+                                                auto first = atOffset.front();
+
+                                                pg->push_back_flow(g);
+                                                if (first->replace_self(pg))
+                                                {
+                                                }
+
+                                                first->op = Operator::OR;
+                                                nf->op = Operator::OR;
+                                                g->push_back_flow(first);
+                                                g->push_back_flow(nf);
+
+                                                SLog("Created container:", *pg->materialize(genCtx.allocator), "\n");
+                                                SLog("g = ", ptr_repr(g), ", pg = ", ptr_repr(pg), "\n");
+
+                                                for (auto f : atOffset)
+                                                {
+                                                        SLog("flow of ", ptr_repr(f), " ", *f, "\n");
+                                                        for (auto p = f->parent; p; p = p->parent)
+                                                                SLog(ptr_repr(p), ":", *p, "\n");
+                                                }
+
+                                                auto ac = common_anchestor(atOffset.data(), atOffset.size(), true);
+
+                                                SLog("ac = ", ptr_repr(ac), "\n");
+                                                require(ac == g);
+                                        }
+                                        else
+                                        {
+                                                for (auto f : atOffset)
+                                                {
+                                                        SLog("flow ", ptr_repr(f), ": ", *f, "\n");
+                                                        for (auto p = f->parent; p; p = p->parent)
+                                                                SLog(ptr_repr(p), ":", *p, "\n");
+                                                }
+
+                                                Print("\n\n");
+
+                                                auto g = genCtx.new_flow();
+
+                                                if (auto p = ca->parent)
+                                                        p->replace_child_flow(ca, g);
+
+                                                g->op = ca->op;
+                                                g->push_back_flow(ca);
+                                                g->push_back_flow(nf);
+                                                ca->op = nf->op = Operator::OR;
+
+                                                for (auto f : atOffset)
+                                                {
+                                                        SLog("flow ", ptr_repr(f), " ", *f, "\n");
+                                                        for (auto p = f->parent; p; p = p->parent)
+                                                                SLog(ptr_repr(p), ":", *p, "\n");
+                                                }
+
+                                                auto ac = common_anchestor(atOffset.data(), atOffset.size(), true);
+
+                                                SLog("ac = ", ptr_repr(ac), ":", *ac, "\n");
+                                        }
+                                }
+                                else // false == atOffset.empty() && false == atStop.empty()
+                                {
+                                        [[maybe_unused]] auto nf = flow_for_node(p, genCtx.allocator, flows, maxStop);
+
+                                        for (auto f : atOffset)
+                                        {
+                                                SLog("atOffset:", *f->materialize(genCtx.allocator), "\n");
+                                                for (auto p = f->parent; p; p = p->parent)
+                                                        SLog("up:", *p, "\n");
+                                        }
+                                        for (auto f : atStop)
+                                        {
+                                                SLog("atStop:", *f->materialize(genCtx.allocator), "\n");
+                                                for (auto p = f->parent; p; p = p->parent)
+                                                        SLog("up:", *p, "\n");
+                                        }
+
+                                        auto ca = common_anchestor(atOffset.data(), atOffset.size(), false);
+                                        auto g = genCtx.new_flow();
+
+                                        if (ca)
+                                                SLog("CA = ", *ca->materialize(genCtx.allocator), " ", *ca, "\n");
+                                        else
+                                        {
+                                                SLog("ca = nullptr\n");
+                                                exit(1);
+                                        }
+
+                                        if (auto p = ca->parent)
+                                                p->replace_child_flow(ca, g);
+
+                                        g->op = ca->op;
+                                        g->push_back_flow(ca);
+                                        g->push_back_flow(nf);
+                                        ca->op = nf->op = Operator::OR;
+
+                                        for (auto f : atOffset)
+                                        {
+                                                SLog("atOffset:", *f->materialize(genCtx.allocator), "\n");
+                                                for (auto p = f->parent; p; p = p->parent)
+                                                        SLog("up:", *p, "\n");
+                                        }
+                                        for (auto f : atStop)
+                                        {
+                                                SLog("atStop:", *f->materialize(genCtx.allocator), "\n");
+                                                for (auto p = f->parent; p; p = p->parent)
+                                                        SLog("up:", *p, "\n");
+                                        }
+
+                                        SLog("root ", *root->materialize(genCtx.allocator), "\n");
+                                }
+                        }
                 }
 
-                return {output, run.size()}; // we process the whole run
+                SLog(ansifmt::bold, ansifmt::color_green, "FINAL:", ansifmt::reset, *root->materialize(genCtx.allocator), "  ", *root, "\n");
+                exit(0);
+
+                return {nullptr, run.size()}; // we process the whole run
         }
 
         // Very handy utility function that faciliaties query rewrites
@@ -602,15 +997,15 @@ namespace Trinity
         template <typename L>
         void rewrite_query(Trinity::query &q, size_t budget, const uint8_t K, L &&l)
         {
-                static constexpr bool trace{false};
+                static constexpr bool trace{true};
 
-		if (!q)
-			return;
+                if (!q)
+                        return;
 
                 const auto before = Timings::Microseconds::Tick();
                 auto &allocator = q.allocator;
                 static thread_local gen_ctx genCtxTL;
-		auto &genCtx = genCtxTL;
+                auto &genCtx = genCtxTL;
 
                 // For now, explicitly to unlimited
                 // See: https://github.com/phaistos-networks/Trinity/issues/1 ( FIXME: )
@@ -634,10 +1029,10 @@ namespace Trinity
                 if (trace)
                         SLog("REWRITING:", q, "\n");
 
-		// If we are going to be processing lots of OR sub-expressions, where
-		// each is a new run, we need to know the logical index across all tokens in the query
-		// in order to properly cache alts
-		genCtx.logicalIndex = 0;
+                // If we are going to be processing lots of OR sub-expressions, where
+                // each is a new run, we need to know the logical index across all tokens in the query
+                // in order to properly cache alts
+                genCtx.logicalIndex = 0;
 
                 // Second argument now set to false
                 // because otherwise for e.g [iphone +with]
@@ -666,7 +1061,7 @@ namespace Trinity
                                         lhs = expr;
                                 else
                                 {
-					auto n = ast_node::make_binop(allocator);
+                                        auto n = ast_node::make_binop(allocator);
 
                                         n->binop.op = Operator::AND;
                                         n->binop.lhs = lhs;
@@ -674,10 +1069,10 @@ namespace Trinity
                                         lhs = n;
                                 }
 
-				// in practice, pair.second will be == run.size(), but allow for different values
+                                // in practice, pair.second will be == run.size(), but allow for different values
                                 i = pair.second;
                         }
-			genCtx.logicalIndex += run.size();
+                        genCtx.logicalIndex += run.size();
 
                         *run[0] = *lhs;
                         for (uint32_t i{1}; i != run.size(); ++i)
@@ -687,12 +1082,70 @@ namespace Trinity
                                 SLog("Final:", *lhs, "\n");
                 });
 
-                if (trace)
+                if (trace || true)
                 {
                         SLog(duration_repr(Timings::Microseconds::Since(before)), " to rewrite the query\n");
-                        //exit(0);
+                        exit(0);
                 }
 
                 q.normalize();
         }
+}
+
+Trinity::flow *Trinity::flow_for_node(std::pair<range32_t, ast_node *> p, simple_allocator &a, std::vector<Trinity::flow *> &flows, uint32_t &maxStop)
+{
+        auto f = new Trinity::flow();
+
+        maxStop = std::max<std::size_t>(maxStop, p.first.stop());
+        f->range = p.first;
+        f->ents.push_back({p.second});
+        flows.push_back(f);
+        return f;
+}
+
+void Trinity::flow::push_back_node(const std::pair<range32_t, ast_node *> p, simple_allocator &a, std::vector<Trinity::flow *> &flows, uint32_t &maxStop, const Operator op)
+{
+        push_back_flow(flow_for_node(p, a, flows, maxStop));
+}
+
+Trinity::ast_node *Trinity::flow_ent::materialize(simple_allocator &a) const
+{
+        if (type == Type::Node)
+                return n;
+        else
+                return f->materialize(a);
+}
+
+bool Trinity::flow::overlaps(const range32_t r) const noexcept
+{
+        if (range.offset < (UINT32_MAX / 2) && range.stop() >= r.stop())
+                return true;
+
+        for (const auto &it : ents)
+        {
+                if (it.type == flow_ent::Type::Flow && it.f->overlaps(r))
+                        return true;
+        }
+
+        return false;
+}
+
+static void PrintImpl(Buffer &b, const Trinity::flow_ent &ent)
+{
+        if (ent.type == Trinity::flow_ent::Type::Flow)
+                b.append(*ent.f);
+        else
+                b.append(*ent.n);
+}
+
+static void PrintImpl(Buffer &b, const Trinity::flow &f)
+{
+        b.append('[');
+        if (f.ents.size())
+        {
+                for (const auto &it : f.ents)
+                        b.append(it, ", "_s32);
+                b.shrink_by(2);
+        }
+        b.append(']');
 }
