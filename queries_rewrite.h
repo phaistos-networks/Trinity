@@ -77,6 +77,7 @@ namespace Trinity
                 }
         };
 
+	struct gen_ctx;
         struct flow
         {
                 range32_t range;
@@ -146,7 +147,6 @@ namespace Trinity
                         return false;
                 }
 
-                inline void push_back_node(const std::pair<range32_t, ast_node *> p, simple_allocator &a, std::vector<flow *> &, uint32_t &, const Operator op = Operator::AND);
 
                 ast_node *materialize(simple_allocator &a) const
                 {
@@ -203,6 +203,7 @@ namespace Trinity
 
                 void validate() const noexcept
                 {
+#if 0
                         std::size_t n{0};
 
                         for (auto it = this->parent; it; it = it->parent)
@@ -210,26 +211,40 @@ namespace Trinity
                                 if (++n == 100)
                                         std::abort();
                         }
+#endif
                 }
+
+	        inline void push_back_node(const std::pair<range32_t, ast_node *> p, gen_ctx &, std::vector<flow *> &, uint32_t &, const Operator op = Operator::AND);
         };
 
-        inline flow *flow_for_node(const std::pair<range32_t, ast_node *> p, simple_allocator &a, std::vector<flow *> &, uint32_t &);
+        inline flow *flow_for_node(const std::pair<range32_t, ast_node *> p, gen_ctx &, std::vector<flow *> &, uint32_t &);
 
         struct gen_ctx
         {
                 std::vector<std::pair<str32_t, uint8_t>> allAlts;
                 std::vector<std::pair<range_base<uint32_t, uint8_t>, range_base<uint32_t, uint16_t>>> cache;
-                simple_allocator allocator;
+                simple_allocator allocator, flowsAllocator{4096};
                 // could have used just one container insted of two, and a map or multimap for tracking flows by range
 		// TODO: we can just reuse allocatedFlows (reusable = std::move(allocatedFlows)) 
                 std::vector<flow *> allocatedFlows, flows, flows_1, flows_2;
                 uint32_t logicalIndex;
                 uint32_t K;
 
+		void prepare_run_capture()
+		{
+			flows.clear();
+                        while (allocatedFlows.size())
+                        {
+                                allocatedFlows.back()->~flow();
+                                allocatedFlows.pop_back();
+                        }
+			flowsAllocator.reuse();
+		}
+
                 template <typename... T>
                 auto new_flow(T &&... o)
                 {
-                        auto res = allocator.construct<flow>(std::forward<T>(o)...);
+                        auto res = flowsAllocator.construct<flow>(std::forward<T>(o)...);
 
                         allocatedFlows.push_back(res);
                         return res;
@@ -237,12 +252,6 @@ namespace Trinity
 
                 void clear(const uint8_t _k)
                 {
-                        while (allocatedFlows.size())
-                        {
-                                allocatedFlows.back()->~flow();
-                                allocatedFlows.pop_back();
-                        }
-
                         allAlts.clear();
                         cache.clear();
                         allocator.reuse();
@@ -269,6 +278,7 @@ namespace Trinity
                         cache.push_back({k, v});
                 }
         };
+
 
         // generate a list of expressions(ast_nodes) from a run, starting at (i), upto (i + maxSpan)
         template <typename L>
@@ -593,11 +603,13 @@ namespace Trinity
         template <typename L>
         static std::pair<ast_node *, uint8_t> run_capture(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan, gen_ctx &genCtx)
         {
-                static constexpr bool trace{true};
+                static constexpr bool trace{false};
                 [[maybe_unused]] auto &allocator = q.allocator;
                 static thread_local std::vector<std::pair<range32_t, ast_node *>> list_tl;
                 auto &list{list_tl};
                 const auto baseIndex{i};
+
+		genCtx.prepare_run_capture();
 
                 // New faster, simpler, more efficient, and likely correct scheme
                 // Beats all past attempts and alternative schemes that required all kind of heuristics and recursion.
@@ -619,7 +631,7 @@ namespace Trinity
 
                         //return a.first.stop() < b.first.stop() || (a.first.stop() == b.first.stop() && a.first.offset < b.first.offset); 	// SORT METHOD #1
                         //return a.first.stop() < b.first.stop() || (a.first.stop() == b.first.stop() && b.first.offset < a.first.offset); 	// SORT METHOD #2
-                        return a.first.offset < b.first.offset || (a.first.offset == b.first.offset && b.first.stop() < a.first.stop()); 	// SORT METHOD #3
+                        return a.first.offset < b.first.offset || (a.first.offset == b.first.offset && b.first.stop() < a.first.stop()); // SORT METHOD #3
 
                 });
 
@@ -716,23 +728,30 @@ namespace Trinity
                         atStop.clear();
                         find_flows_by_range(p.first, &atOffset, &atStop);
 
-                        SLog("\n\n", ansifmt::bold, ansifmt::color_green, "Processing ", p.first, ansifmt::reset, " ", *p.second, " =>  maxStop = ", maxStop, " (", atOffset.size(), ", ", atStop.size(), ") (", flows.size(), " flows)\n");
-                        SLog("root:", *root->materialize(genCtx.allocator), ": ", *root, "\n");
+                        if (trace)
+                        {
+                                SLog("\n\n", ansifmt::bold, ansifmt::color_green, "Processing ", p.first, ansifmt::reset, " ", *p.second, " =>  maxStop = ", maxStop, " (", atOffset.size(), ", ", atStop.size(), ") (", flows.size(), " flows)\n");
+                                SLog("root:", *root->materialize(genCtx.allocator), ": ", *root, "\n");
 
 #if 0
                         for (const auto f : flows)
                                 SLog("Registered ", f->range, ":(", f->op, ", parent:", ptr_repr(f->parent), ", self:", ptr_repr(f), ") ", *f->materialize(genCtx.allocator), "\n");
 #endif
+                        }
 
                         if (atOffset.empty())
                         {
                                 if (atStop.empty())
                                 {
-                                        [[maybe_unused]] auto nf = flow_for_node(p, genCtx.allocator, flows, maxStop);
+                                        [[maybe_unused]] auto nf = flow_for_node(p, genCtx, flows, maxStop);
 
                                         require(p.first.offset == 0);
                                         root->push_back_flow(nf);
-                                        SLog("Registered first\n");
+
+                                        if (trace)
+                                        {
+                                                SLog("Registered first\n");
+                                        }
                                 }
                                 else
                                 {
@@ -742,36 +761,49 @@ namespace Trinity
                                         {
                                                 auto front = atStop.front();
 
-                                                SLog("front:", *front, "\n");
+                                                if (trace)
+                                                {
+                                                        SLog("front:", *front, "\n");
 
-                                                for (auto p = front->parent; p; p = p->parent)
-                                                        SLog("up:", *p, "\n");
+                                                        for (auto p = front->parent; p; p = p->parent)
+                                                                SLog("up:", *p, "\n");
+                                                }
 
-                                                [[maybe_unused]] auto nf = flow_for_node(p, genCtx.allocator, flows, maxStop);
+                                                [[maybe_unused]] auto nf = flow_for_node(p, genCtx, flows, maxStop);
 
-                                                SLog("Will just append to a flow ", ptr_repr(atStop.front()), "\n");
-                                                SLog("Before:", *atStop.front(), "\n");
+                                                if (trace)
+                                                {
+                                                        SLog("Will just append to a flow ", ptr_repr(atStop.front()), "\n");
+                                                        SLog("Before:", *atStop.front(), "\n");
+                                                }
+
                                                 nf->op = Operator::AND;
                                                 atStop.front()->push_back_flow(nf);
 
-                                                SLog("NOW:", *atStop.front(), "\n");
-                                                SLog("root:", *root->materialize(genCtx.allocator), "\n");
+                                                if (trace)
+                                                {
+                                                        SLog("NOW:", *atStop.front(), "\n");
+                                                        SLog("root:", *root->materialize(genCtx.allocator), "\n");
 
-                                                SLog("hierarchy after appended\n");
-                                                for (auto p = nf->parent; p; p = p->parent)
-                                                        SLog("up:", *p, "\n");
+                                                        SLog("hierarchy after appended\n");
+                                                        for (auto p = nf->parent; p; p = p->parent)
+                                                                SLog("up:", *p, "\n");
+                                                }
                                         }
                                         else
                                         {
                                                 // atOffset.empty == true && atStop.size() > 1
-                                                SLog("Candidates\n");
-
-                                                for (auto f : atStop)
+                                                if (trace)
                                                 {
-                                                        SLog(*f->materialize(genCtx.allocator), " ", *f, "\n");
+                                                        SLog("Candidates\n");
 
-                                                        for (auto p = f->parent; p; p = p->parent)
-                                                                SLog("up:", *p, "\n");
+                                                        for (auto f : atStop)
+                                                        {
+                                                                SLog(*f->materialize(genCtx.allocator), " ", *f, "\n");
+
+                                                                for (auto p = f->parent; p; p = p->parent)
+                                                                        SLog("up:", *p, "\n");
+                                                        }
                                                 }
 
                                                 // this needs to be intelligent enoguh
@@ -783,34 +815,46 @@ namespace Trinity
                                                 // need to consider overlap for each candidate
                                                 if (auto ac = common_anchestor(atStop.data(), atStop.size(), true); ac && false == ac->overlaps(p.first))
                                                 {
-                                                        SLog("common:", *ac->materialize(genCtx.allocator), "\n");
+                                                        if (trace)
+                                                        {
+                                                                SLog("common:", *ac->materialize(genCtx.allocator), "\n");
+                                                        }
 
-                                                        [[maybe_unused]] auto nf = flow_for_node(p, genCtx.allocator, flows, maxStop);
+                                                        [[maybe_unused]] auto nf = flow_for_node(p, genCtx, flows, maxStop);
 
                                                         nf->op = Operator::AND;
                                                         ac->push_back_flow(nf);
 
-                                                        SLog("AC now:", *ac->materialize(genCtx.allocator), "\n");
+                                                        if (trace)
+                                                        {
+                                                                SLog("AC now:", *ac->materialize(genCtx.allocator), "\n");
+                                                        }
                                                 }
                                                 else
                                                 {
-                                                        if (ac)
+                                                        if (trace)
                                                         {
-                                                                SLog("Have common ancestor[", *ac->materialize(genCtx.allocator), "] but overlaps\n");
-                                                                Print("\n\n");
+                                                                if (ac)
+                                                                {
+                                                                        SLog("Have common ancestor[", *ac->materialize(genCtx.allocator), "] but overlaps\n");
+                                                                        Print("\n\n");
+                                                                }
+                                                                else
+                                                                        SLog("No common ancestor\n");
                                                         }
-                                                        else
-                                                                SLog("No common ancestor\n");
 
                                                         for (auto f : atStop)
                                                         {
                                                                 auto clone = p.second->shallow_copy(&genCtx.allocator);
 
-                                                                f->push_back_node({p.first, clone}, genCtx.allocator, flows, maxStop, Operator::AND);
+                                                                f->push_back_node({p.first, clone}, genCtx, flows, maxStop, Operator::AND);
                                                         }
                                                 }
 
-                                                SLog("root:", *root->materialize(genCtx.allocator), "\n");
+                                                if (trace)
+                                                {
+                                                        SLog("root:", *root->materialize(genCtx.allocator), "\n");
+                                                }
                                         }
                                 }
                         }
@@ -818,23 +862,29 @@ namespace Trinity
                         {
                                 if (atStop.empty()) // atOffset.empty() == false && atStop.empty() == true
                                 {
-                                        [[maybe_unused]] auto nf = flow_for_node(p, genCtx.allocator, flows, maxStop);
+                                        [[maybe_unused]] auto nf = flow_for_node(p, genCtx, flows, maxStop);
                                         auto ca = common_anchestor(atOffset.data(), atOffset.size(), true);
 
                                         if (ca)
                                         {
-                                                for (const auto f : atOffset)
-                                                        SLog("Candidate:", *f->materialize(genCtx.allocator), "\n");
+                                                if (trace)
+                                                {
+                                                        for (const auto f : atOffset)
+                                                                SLog("Candidate:", *f->materialize(genCtx.allocator), "\n");
 
-                                                SLog("Will merge, common ancestor:", ptr_repr(ca), " ", *ca->materialize(genCtx.allocator), " ", ca->ents.size(), ": ", *ca, "\n");
+                                                        SLog("Will merge, common ancestor:", ptr_repr(ca), " ", *ca->materialize(genCtx.allocator), " ", ca->ents.size(), ": ", *ca, "\n");
+                                                }
                                         }
                                         else
                                         {
-                                                SLog("no common ancestor\n");
-                                                for (const auto f : atOffset)
-                                                        SLog(*f->materialize(genCtx.allocator), "\n");
+                                                if (trace)
+                                                {
+                                                        SLog("no common ancestor\n");
+                                                        for (const auto f : atOffset)
+                                                                SLog(*f->materialize(genCtx.allocator), "\n");
+                                                }
 
-                                                exit(0);
+                                                IMPLEMENT_ME();
                                         }
 
                                         if (atOffset.size() == 1)
@@ -853,31 +903,39 @@ namespace Trinity
                                                 g->push_back_flow(first);
                                                 g->push_back_flow(nf);
 
-                                                SLog("Created container:", *pg->materialize(genCtx.allocator), "\n");
-                                                SLog("g = ", ptr_repr(g), ", pg = ", ptr_repr(pg), "\n");
-
-                                                for (auto f : atOffset)
+                                                if (trace)
                                                 {
-                                                        SLog("flow of ", ptr_repr(f), " ", *f, "\n");
-                                                        for (auto p = f->parent; p; p = p->parent)
-                                                                SLog(ptr_repr(p), ":", *p, "\n");
+                                                        SLog("Created container:", *pg->materialize(genCtx.allocator), "\n");
+                                                        SLog("g = ", ptr_repr(g), ", pg = ", ptr_repr(pg), "\n");
+
+                                                        for (auto f : atOffset)
+                                                        {
+                                                                SLog("flow of ", ptr_repr(f), " ", *f, "\n");
+                                                                for (auto p = f->parent; p; p = p->parent)
+                                                                        SLog(ptr_repr(p), ":", *p, "\n");
+                                                        }
                                                 }
 
-                                                auto ac = common_anchestor(atOffset.data(), atOffset.size(), true);
+                                                if (trace)
+                                                {
+                                                        auto ac = common_anchestor(atOffset.data(), atOffset.size(), true);
 
-                                                SLog("ac = ", ptr_repr(ac), "\n");
-                                                require(ac == g);
+                                                        SLog("ac = ", ptr_repr(ac), "\n");
+                                                        require(ac == g);
+                                                }
                                         }
                                         else
                                         {
-                                                for (auto f : atOffset)
+                                                if (trace)
                                                 {
-                                                        SLog("flow ", ptr_repr(f), ": ", *f, "\n");
-                                                        for (auto p = f->parent; p; p = p->parent)
-                                                                SLog(ptr_repr(p), ":", *p, "\n");
+                                                        for (auto f : atOffset)
+                                                        {
+                                                                SLog("flow ", ptr_repr(f), ": ", *f, "\n");
+                                                                for (auto p = f->parent; p; p = p->parent)
+                                                                        SLog(ptr_repr(p), ":", *p, "\n");
+                                                        }
+                                                        Print("\n\n");
                                                 }
-
-                                                Print("\n\n");
 
                                                 auto g = genCtx.new_flow();
 
@@ -889,44 +947,57 @@ namespace Trinity
                                                 g->push_back_flow(nf);
                                                 ca->op = nf->op = Operator::OR;
 
-                                                for (auto f : atOffset)
+                                                if (trace)
                                                 {
-                                                        SLog("flow ", ptr_repr(f), " ", *f, "\n");
-                                                        for (auto p = f->parent; p; p = p->parent)
-                                                                SLog(ptr_repr(p), ":", *p, "\n");
+                                                        for (auto f : atOffset)
+                                                        {
+                                                                SLog("flow ", ptr_repr(f), " ", *f, "\n");
+                                                                for (auto p = f->parent; p; p = p->parent)
+                                                                        SLog(ptr_repr(p), ":", *p, "\n");
+                                                        }
+
+                                                        auto ac = common_anchestor(atOffset.data(), atOffset.size(), true);
+
+                                                        SLog("ac = ", ptr_repr(ac), ":", *ac, "\n");
                                                 }
-
-                                                auto ac = common_anchestor(atOffset.data(), atOffset.size(), true);
-
-                                                SLog("ac = ", ptr_repr(ac), ":", *ac, "\n");
                                         }
                                 }
                                 else // false == atOffset.empty() && false == atStop.empty()
                                 {
-                                        [[maybe_unused]] auto nf = flow_for_node(p, genCtx.allocator, flows, maxStop);
+                                        [[maybe_unused]] auto nf = flow_for_node(p, genCtx, flows, maxStop);
 
-                                        for (auto f : atOffset)
+                                        if (trace)
                                         {
-                                                SLog("atOffset:", *f->materialize(genCtx.allocator), "\n");
-                                                for (auto p = f->parent; p; p = p->parent)
-                                                        SLog("up:", *p, "\n");
-                                        }
-                                        for (auto f : atStop)
-                                        {
-                                                SLog("atStop:", *f->materialize(genCtx.allocator), "\n");
-                                                for (auto p = f->parent; p; p = p->parent)
-                                                        SLog("up:", *p, "\n");
+                                                for (auto f : atOffset)
+                                                {
+                                                        SLog("atOffset:", *f->materialize(genCtx.allocator), "\n");
+                                                        for (auto p = f->parent; p; p = p->parent)
+                                                                SLog("up:", *p, "\n");
+                                                }
+                                                for (auto f : atStop)
+                                                {
+                                                        SLog("atStop:", *f->materialize(genCtx.allocator), "\n");
+                                                        for (auto p = f->parent; p; p = p->parent)
+                                                                SLog("up:", *p, "\n");
+                                                }
                                         }
 
                                         auto ca = common_anchestor(atOffset.data(), atOffset.size(), false);
                                         auto g = genCtx.new_flow();
 
-                                        if (ca)
-                                                SLog("CA = ", *ca->materialize(genCtx.allocator), " ", *ca, "\n");
-                                        else
+                                        if (trace)
                                         {
-                                                SLog("ca = nullptr\n");
-                                                exit(1);
+                                                if (ca)
+                                                        SLog("CA = ", *ca->materialize(genCtx.allocator), " ", *ca, "\n");
+                                                else
+                                                {
+                                                        SLog("ca = nullptr\n");
+                                                        exit(1);
+                                                }
+                                        }
+                                        else if (!ca)
+                                        {
+                                                IMPLEMENT_ME();
                                         }
 
                                         if (auto p = ca->parent)
@@ -937,28 +1008,32 @@ namespace Trinity
                                         g->push_back_flow(nf);
                                         ca->op = nf->op = Operator::OR;
 
-                                        for (auto f : atOffset)
+                                        if (trace)
                                         {
-                                                SLog("atOffset:", *f->materialize(genCtx.allocator), "\n");
-                                                for (auto p = f->parent; p; p = p->parent)
-                                                        SLog("up:", *p, "\n");
-                                        }
-                                        for (auto f : atStop)
-                                        {
-                                                SLog("atStop:", *f->materialize(genCtx.allocator), "\n");
-                                                for (auto p = f->parent; p; p = p->parent)
-                                                        SLog("up:", *p, "\n");
-                                        }
+                                                for (auto f : atOffset)
+                                                {
+                                                        SLog("atOffset:", *f->materialize(genCtx.allocator), "\n");
+                                                        for (auto p = f->parent; p; p = p->parent)
+                                                                SLog("up:", *p, "\n");
+                                                }
+                                                for (auto f : atStop)
+                                                {
+                                                        SLog("atStop:", *f->materialize(genCtx.allocator), "\n");
+                                                        for (auto p = f->parent; p; p = p->parent)
+                                                                SLog("up:", *p, "\n");
+                                                }
 
-                                        SLog("root ", *root->materialize(genCtx.allocator), "\n");
+                                                SLog("root ", *root->materialize(genCtx.allocator), "\n");
+                                        }
                                 }
                         }
                 }
 
-                SLog(ansifmt::bold, ansifmt::color_green, "FINAL:", ansifmt::reset, *root->materialize(genCtx.allocator), "  ", *root, "\n");
-                exit(0);
+                auto res = root->materialize(genCtx.allocator);
 
-                return {nullptr, run.size()}; // we process the whole run
+                SLog(ansifmt::bold, ansifmt::color_green, "FINAL:", ansifmt::reset, *res, "  ", *root, "\n");
+
+                return {res, run.size()}; // we process the whole run
         }
 
         // Very handy utility function that faciliaties query rewrites
@@ -1092,9 +1167,9 @@ namespace Trinity
         }
 }
 
-Trinity::flow *Trinity::flow_for_node(std::pair<range32_t, ast_node *> p, simple_allocator &a, std::vector<Trinity::flow *> &flows, uint32_t &maxStop)
+Trinity::flow *Trinity::flow_for_node(std::pair<range32_t, ast_node *> p, Trinity::gen_ctx &ctx, std::vector<Trinity::flow *> &flows, uint32_t &maxStop)
 {
-        auto f = new Trinity::flow();
+	auto f = ctx.new_flow();
 
         maxStop = std::max<std::size_t>(maxStop, p.first.stop());
         f->range = p.first;
@@ -1103,9 +1178,9 @@ Trinity::flow *Trinity::flow_for_node(std::pair<range32_t, ast_node *> p, simple
         return f;
 }
 
-void Trinity::flow::push_back_node(const std::pair<range32_t, ast_node *> p, simple_allocator &a, std::vector<Trinity::flow *> &flows, uint32_t &maxStop, const Operator op)
+void Trinity::flow::push_back_node(const std::pair<range32_t, ast_node *> p, Trinity::gen_ctx &ctx, std::vector<Trinity::flow *> &flows, uint32_t &maxStop, const Operator op)
 {
-        push_back_flow(flow_for_node(p, a, flows, maxStop));
+        push_back_flow(flow_for_node(p, ctx, flows, maxStop));
 }
 
 Trinity::ast_node *Trinity::flow_ent::materialize(simple_allocator &a) const
