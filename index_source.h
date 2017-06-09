@@ -5,6 +5,7 @@
 #include <switch_refcnt.h>
 #include <unordered_map>
 #include <switch_mallocators.h>
+#include <mutex>
 
 namespace Trinity
 {
