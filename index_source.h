@@ -3,6 +3,8 @@
 #include <switch.h>
 #include <switch_dictionary.h>
 #include <switch_refcnt.h>
+#include <unordered_map>
+#include <switch_mallocators.h>
 
 namespace Trinity
 {
@@ -19,11 +21,8 @@ namespace Trinity
         {
               protected:
 	      	std::mutex cacheLock;
-#ifdef LEAN_SWITCH
+		simple_allocator keysAllocator{512};
 		std::unordered_map<str8_t, term_index_ctx> cache;
-#else
-                Switch::unordered_map<str8_t, term_index_ctx> cache;
-#endif
                 uint64_t gen{0}; // See IndexSourcesCollection
 
               public:
@@ -37,29 +36,27 @@ namespace Trinity
 			[[maybe_unused]] static constexpr bool trace{false};
 			std::lock_guard<std::mutex> g(cacheLock);
 
-#ifndef LEAN_SWITCH
-                        term_index_ctx *ptr;
+			auto p = cache.insert({term, {}});
 
-                        if (cache.Add(term, {}, &ptr))
-			{
-                                *ptr = resolve_term_ctx(term);
-
-				if (trace)
-					SLog("RESOLVED [", term, "] ", ptr->documents, " ", ptr_repr(this), "\n");
-			}
-                        return *ptr;
-#else
-                        auto p = cache.insert({term, {}});
                         if (p.second)
 			{
+				// unordered_map<>::value_type is std::pair<const Key, T>
+				// so we can't really change e.g p.first->first.p
+				// so we 'll just remove and create again
+#if 0
+				p.first->first.p = keysAllocator.CopyOf(term.data(), term.size());
                                 p.first->second = resolve_term_ctx(term);
+#else
+			
+				cache.erase(term);
+				p = cache.insert({ {keysAllocator.CopyOf(term.data(), term.size()), term.size()}, resolve_term_ctx(term) });
+#endif
 
 				if (trace)
 					SLog("RESOLVED [", term, "] ", p.first->second.documents, " ", ptr_repr(this), "\n");
 			}
 
                         return p.first->second;
-#endif
                 }
 
 #if 0 		// This would probably be a good idea, but we don't need this, and it would make some optimisations in updated_documents_scanner::test() possible because

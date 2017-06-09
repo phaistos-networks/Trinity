@@ -125,7 +125,11 @@ namespace Trinity
 
                 static ast_node *make_binop(simple_allocator &a)
                 {
-			return make(a, Type::BinOp);
+			auto res =  make(a, Type::BinOp);
+
+			// so that we 'll catch this if necessary
+			res->binop.lhs = res->binop.rhs = nullptr;
+			return res;
                 }
 
                 ast_node *copy(simple_allocator *const a);

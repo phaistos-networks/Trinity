@@ -18,7 +18,7 @@ namespace Trinity
 		// 
 		// It is also helpful if you want to e.g build a prefix-search people search system(like LinkedIn's) where you want to match all users matching the query, and you really don't care
 		// for which of the terms (or their hits) to do so. If you expand the last token (prefix-expansion), which couild lead to e.g 100s of new terms, you should consider this option(over x2 perfomrance boost).
-		DocumentsOnly = 1
+		DocumentsOnly = 1,
 	};
 
         void exec_query(const query &in, IndexSource *, masked_documents_registry *const maskedDocumentsRegistry, MatchedIndexDocumentsFilter *, IndexDocumentsFilter *const f = nullptr, const uint32_t flags = 0);

@@ -1,21 +1,9 @@
 // Query rewrites is as important, maybe even more so, than a good ranking (precision) function.
 // However, it's also important to consider the final query complexity. A simple query with say, 5-8 terms, can easily blow up to
 // be extremely concpet, many 100s of nodes in size, so you need to compromise and accept tradeoffs.
-//
-// Having a "budget" helps, although its not optimal; query normalization may drop nodes count, by a large factor, and when the query is compiled the actual final
-// nodes generated may be even fewe, by an even larger factor -- but we want rewrites to be fast, so short of normalizing the query after every rewrite, and/or accepting
-/// many, many query nodes and somehow trimming during execution, this is a good compromise.
 #pragma once
 #include "queries.h"
 #include <set>
-
-// This is important so that we will disregard dupes, and also, if e.g
-// (united, states, of, america) => [usa]
-// and (united, states) => [usa]
-// we will ignore the second (united, states) rule because we already matched it earlier (we process by match span descending)
-#define TRINITY_QUERIES_REWRITE_FILTER 1
-// This is no longer necessary because of the new algorithm's semantics
-#define _TRINITY_QRW_USECACHE 1
 
 namespace Trinity
 {
@@ -115,7 +103,7 @@ namespace Trinity
                 // with no contructor (e.g not even flow() = default;) it will break in so many ways
                 flow() = default;
 
-                bool overlaps(const range32_t range) const noexcept;
+                inline bool overlaps(const range32_t range) const noexcept;
 
                 void push_back_flow(flow *const f)
                 {
@@ -221,14 +209,17 @@ namespace Trinity
 
         struct gen_ctx
         {
-                std::vector<std::pair<str32_t, uint8_t>> allAlts;
-                std::vector<std::pair<range_base<uint32_t, uint8_t>, range_base<uint32_t, uint16_t>>> cache;
-                simple_allocator allocator, flowsAllocator{4096};
-                // could have used just one container insted of two, and a map or multimap for tracking flows by range
-		// TODO: we can just reuse allocatedFlows (reusable = std::move(allocatedFlows)) 
-                std::vector<flow *> allocatedFlows, flows, flows_1, flows_2;
                 uint32_t logicalIndex;
                 uint32_t K;
+
+                simple_allocator allocator, flowsAllocator{4096};
+                // Could have used just one container insted of two, and a map or multimap for tracking flows by range
+		// TODO: we can just reuse allocatedFlows (reusable = std::move(allocatedFlows)) 
+		// (we shoudn't use a single std::vector<flow *> for all allocated flows and for tracking because
+		// we really only need to track 'useful' flows)
+                std::vector<flow *> allocatedFlows, flows, flows_1, flows_2;
+                std::set<flow *> S[2];
+
 
 		void prepare_run_capture()
 		{
@@ -252,47 +243,23 @@ namespace Trinity
 
                 void clear(const uint8_t _k)
                 {
-                        allAlts.clear();
-                        cache.clear();
                         allocator.reuse();
                         K = _k;
-                }
-
-                range_base<uint32_t, uint16_t> try_populate(range_base<uint32_t, uint8_t> r)
-                {
-                        r.offset += logicalIndex;
-
-                        for (const auto &it : cache)
-                        {
-                                if (it.first == r)
-                                        return it.second;
-                        }
-
-                        return {UINT32_MAX, 0};
-                }
-
-                void insert(range_base<uint32_t, uint8_t> k, const range_base<uint32_t, uint16_t> v)
-                {
-                        k.offset += logicalIndex;
-
-                        cache.push_back({k, v});
                 }
         };
 
 
         // generate a list of expressions(ast_nodes) from a run, starting at (i), upto (i + maxSpan)
         template <typename L>
-        static auto run_next(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l, gen_ctx &genCtx)
+        static auto run_next(std::size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l, gen_ctx &genCtx)
         {
                 static constexpr bool trace{false};
                 require(i < run.size());
                 const auto token = run[i]->p->terms[0].token;
                 static thread_local std::vector<std::pair<std::pair<str32_t, uint8_t>, uint8_t>> v;
                 static thread_local std::vector<std::pair<str32_t, uint8_t>> alts;
-#ifndef _TRINITY_QRW_USECACHE
                 static thread_local simple_allocator altAllocatorInstance;
                 auto &altAllocator = altAllocatorInstance;
-#endif
                 const auto normalizedMaxSpan = std::min<uint8_t>(maxSpan, genCtx.K);
                 strwlen8_t tokens[normalizedMaxSpan];
                 std::vector<std::pair<Trinity::ast_node *, uint8_t>> expressions;
@@ -300,11 +267,11 @@ namespace Trinity
                 auto &allocator = q.allocator;
 
                 if (trace)
-                        SLog(ansifmt::bold, ansifmt::color_green, "AT ", i, " ", token, ansifmt::reset, " (maxSpan = ", maxSpan, "(", normalizedMaxSpan, "))\n");
+                        SLog(ansifmt::bold, ansifmt::color_green, "AT ", i, " ", token, ansifmt::reset, " (maxSpan = ", maxSpan, "(", normalizedMaxSpan, "), budget = ", budget, ")\n");
 
                 alts.clear();
 
-                if (run[i]->p->rep > 1 || run[i]->p->flags)
+                if (run[i]->p->rep > 1 || run[i]->p->flags || 0 == budget)
                 {
                         // special care for reps
                         auto n = allocator.Alloc<ast_node>();
@@ -316,7 +283,7 @@ namespace Trinity
                         n->p = run[i]->p;
                         expressions.push_back({n, 1});
 
-                        if (budget)
+                        if (budget && budget != std::numeric_limits<std::size_t>::max())
                                 --budget;
                         return expressions;
                 }
@@ -327,16 +294,13 @@ namespace Trinity
                 v.clear();
                 v.push_back({{{token.data(), uint32_t(token.size())}, 0}, 1});
 
-#ifndef _TRINITY_QRW_USECACHE
                 altAllocator.reuse();
-#endif
 
-                for (size_t upto = std::min<size_t>(run.size(), i + normalizedMaxSpan), k{i}, n{0}; k != upto && run[k]->p->rep == 1; ++k) // mind reps
+
+#if 0
+                for (std::size_t upto = std::min<std::size_t>(run.size(), i + normalizedMaxSpan), k{i}, n{0}; k != upto && run[k]->p->rep == 1; ++k) // mind reps
                 {
                         tokens[n] = run[k]->p->terms[0].token;
-
-#ifndef _TRINITY_QRW_USECACHE
-                        // legacy, for validations only: don't use the cache
                         alts.clear();
                         l(runCtx, tokens, ++n, altAllocator, &alts);
 
@@ -349,123 +313,38 @@ namespace Trinity
 
                         for (const auto &it : alts)
                                 v.push_back({{it.first, it.second}, n});
-#else
-                        // Caching can have a huge performance impact
-                        // for a rather elaborate query, query rewriting dropped from 0.003s down to 971us
-                        // and I suspect there's still room for improvemengt
-                        ++n;
-
-                        const range_base<uint32_t, uint8_t> key{i, uint8_t(n)};
-                        range_base<uint32_t, uint16_t> value;
-
-                        if (const auto res = genCtx.try_populate(key); res.offset != UINT32_MAX)
-                        {
-                                if (trace)
-                                        SLog("From cache for ", key, " => ", res, "\n");
-
-                                value = res;
-                        }
-                        else
-                        {
-                                const uint32_t saved = genCtx.allAlts.size();
-
-                                l(runCtx, tokens, n, genCtx.allocator, &genCtx.allAlts);
-                                value.Set(saved, uint16_t(genCtx.allAlts.size() - saved));
-                                genCtx.insert(key, value);
-
-                                if (trace)
-                                {
-                                        SLog("Caching ", key, " => ", value, "\n");
-                                        for (uint32_t i{saved}; i != genCtx.allAlts.size(); ++i)
-                                                SLog(genCtx.allAlts[i], "\n");
-                                }
-                        }
-
-                        for (const auto i : value)
-                                v.push_back({genCtx.allAlts[i], n});
-#endif
                 }
+#else
+		// Looks like we should do this in reverse
+		// i.e consider longer sequences before shorter sequences
+		// This facilitates considering longer sequences before shorter sequences in our callback
+                const std::size_t upto = std::min<std::size_t>(run.size(), i + normalizedMaxSpan);
+                std::size_t n{0};
 
-#if !defined(TRINITY_QUERIES_REWRITE_FILTER)
-                std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) {
-                        return a.second < b.second;
-                });
+		for (auto end{i}; end != upto && run[end]->p->rep == 1; ++end)
+			tokens[n++] = run[end]->p->terms[0].token;
 
-                expressions.clear();
-                for (const auto *p = v.data(), *const e = p + v.size(); p != e;)
+		while (n)
                 {
-                        const auto span = p->second;
-                        ast_node *node;
+                        l(runCtx, tokens, n, altAllocator, &alts);
 
-                        alts.clear();
-                        do
-                        {
-                                alts.push_back({p->first.first, p->first.second});
-                        } while (++p != e && p->second == span);
+                        for (const auto &it : alts)
+                                v.push_back({{it.first, it.second}, n});
 
-                        if (alts.size() > 1)
-                        {
-                                auto lhs = ast_parser(alts.front().first, allocator, tokensParser).parse();
-
-                                if (const auto n = lhs->nodes_count(); budget >= n)
-                                        budget -= n;
-                                else
-                                        budget = 0;
-
-                                if (const auto flags = alts.front().second)
-                                {
-                                        if (trace)
-                                                SLog("FLAGS:", flags, "\n");
-                                        lhs->set_alltokens_flags(flags);
-                                }
-
-                                for (uint32_t i{1}; i != alts.size(); ++i)
-                                {
-                                        auto n = ast_node::make_binop(allocator);
-
-                                        if (budget)
-                                                --budget;
-
-                                        n->binop.op = Operator::OR;
-                                        n->binop.lhs = lhs;
-                                        n->binop.rhs = ast_parser(alts[i].first, allocator, tokensParser).parse();
-                                        lhs = n;
-
-                                        if (const auto n = n->binop.rhs->nodes_count(); budget >= n)
-                                                budget -= n;
-                                        else
-                                                budget = 0;
-
-                                        if (const auto flags = alts[i].second)
-                                        {
-                                                if (trace)
-                                                        SLog("FLAGS:", flags, "\n");
-                                                n->binop.rhs->set_alltokens_flags(flags);
-                                        }
-                                }
-
-                                node = lhs;
-                        }
-                        else
-                        {
-                                node = Trinity::ast_parser(alts.front().first, allocator, tokensParser).parse();
-
-                                if (const auto n = node->nodes_count(); budget >= n)
-                                        budget -= n;
-                                else
-                                        budget = 0;
-
-                                if (const auto flags = alts.front().second)
-                                {
-                                        if (trace)
-                                                SLog("FLAGS:", flags, "\n");
-                                        node->set_alltokens_flags(flags);
-                                }
-                        }
-
-                        expressions.push_back({node, span});
+                        --n;
                 }
-#else
+#endif
+
+
+		// Now with the new algo, we don't really need to group
+		// all alts in an OR group; we can just parse them and emit them directly one after the other into
+		// expressions[]. This could be potentially beneficial as well. 
+		// TODO: consider this implementation.
+		//
+		// This is important so that we will disregard dupes, and also, if e.g
+		// (united, states, of, america) => [usa]
+		// and (united, states) => [usa]
+		// we will ignore the second (united, states) rule because we already matched it earlier (we process by match span descending)
                 std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) {
                         return b.second < a.second; // sort by span
                 });
@@ -512,10 +391,13 @@ namespace Trinity
                                 if (unlikely(nullptr == lhs))
                                         throw Switch::data_error("Failed to parse [", alts[saved].first, "]");
 
-                                if (const auto n = lhs->nodes_count(); budget >= n)
-                                        budget -= n;
-                                else
-                                        budget = 0;
+				if (budget && budget != std::numeric_limits<std::size_t>::max())
+                                {
+                                        if (const auto n = lhs->nodes_count(); budget >= n)
+                                                budget -= n;
+                                        else
+                                                budget = 0;
+				}
 
                                 if (const auto flags = alts[saved].second)
                                 {
@@ -525,11 +407,11 @@ namespace Trinity
                                         lhs->set_alltokens_flags(flags);
                                 }
 
-                                for (uint32_t i{1}; i != n; ++i)
+                                for (uint32_t i{1}; budget && i != n; ++i)
                                 {
                                         auto n = ast_node::make_binop(allocator);
 
-                                        if (budget)
+                                        if (budget && budget != std::numeric_limits<std::size_t>::max())
                                                 --budget;
 
                                         n->binop.op = Operator::OR;
@@ -540,10 +422,13 @@ namespace Trinity
                                         if (unlikely(nullptr == n->binop.rhs))
                                                 throw Switch::data_error("Failed to parse [", alts[i + saved].first, "]");
 
-                                        if (const auto _n = n->binop.rhs->nodes_count(); budget >= _n)
-                                                budget -= _n;
-                                        else
-                                                budget = 0;
+					if (budget && budget != std::numeric_limits<std::size_t>::max())
+                                        {
+                                                if (const auto _n = n->binop.rhs->nodes_count(); budget >= _n)
+                                                        budget -= _n;
+                                                else
+                                                        budget = 0;
+                                        }
 
                                         if (const auto flags = alts[i + saved].second)
                                         {
@@ -569,10 +454,13 @@ namespace Trinity
                                 if (trace)
                                         SLog("Parsed [", alts[saved], "] ", *node, "\n");
 
-                                if (const auto n = node->nodes_count(); budget >= n)
-                                        budget -= n;
-                                else
-                                        budget = 0;
+				if (budget && budget != std::numeric_limits<std::size_t>::max())
+                                {
+                                        if (const auto n = node->nodes_count(); budget >= n)
+                                                budget -= n;
+                                        else
+                                                budget = 0;
+                                }
 
                                 if (const auto flags = alts[saved].second)
                                 {
@@ -588,7 +476,6 @@ namespace Trinity
                         if (trace)
                                 SLog(ansifmt::color_brown, "<<<<<< [", *node, "] ", span, ansifmt::reset, "\n");
                 }
-#endif
 
                 if (trace)
                 {
@@ -603,7 +490,7 @@ namespace Trinity
 	// TODO: all kinds of IMPLEMENT_ME(), also
 	// not sure the use of replace_self() makes sense. Need to reproduce the problem though
         template <typename L>
-        static std::pair<ast_node *, uint8_t> run_capture(size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan, gen_ctx &genCtx)
+        static std::pair<ast_node *, uint8_t> run_capture(std::size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan, gen_ctx &genCtx)
         {
                 static constexpr bool trace{false};
                 [[maybe_unused]] auto &allocator = q.allocator;
@@ -654,8 +541,7 @@ namespace Trinity
 
                 auto &flows = genCtx.flows;
                 uint32_t maxStop{0};
-                std::set<flow *> S[2], localSet;
-                std::vector<flow *> localFlows;
+		auto &S = genCtx.S;
                 const auto find_flows_by_range = [&](const auto range, auto *const v1, auto *const v2) {
                         v1->clear();
                         v2->clear();
@@ -1068,7 +954,9 @@ namespace Trinity
 
                 auto res = root->materialize(genCtx.allocator);
 
+#if 0
                 SLog(ansifmt::bold, ansifmt::color_green, "FINAL:", ansifmt::reset, *res, "  ", *root, "\n");
+#endif
 
                 return {res, run.size()}; // we process the whole run
         }
@@ -1102,14 +990,20 @@ namespace Trinity
 	}
 
 		You probably want another runs pass in order to e.g convert all stop word nodes to
-		<stopword> so that <the> becomes optional
+		<stopword> so that <the> becomes optional.
 
+		Currently, the budget is an approximate threshold which controls our run sequence=>expressions extrapolation.
+		If it's set to std::numeric_limits<std::size_t>::max(), it's not taken into account, otherwise, for every expression we 'll compute the number
+		of nodes it is comprised of, and deduct that from the budget; once the budget has reached 0, we will not attempt to match a sequence to multiple alternatives.
+
+		TODO: In a future revision, budget semantics should be implemented in run_capture() where this makes a lot more sense, because we are bound to rewrite, extend, duplicate etc there
+		and that would be more appropriate, and accurate, to adjust the budget there.
   	*	
 	*/
         template <typename L>
-        void rewrite_query(Trinity::query &q, size_t budget, const uint8_t K, L &&l)
+        void rewrite_query(Trinity::query &q, std::size_t budget, const uint8_t K, L &&l)
         {
-                static constexpr bool trace{true};
+                static constexpr bool trace{false};
 
                 if (!q)
                         return;
@@ -1119,19 +1013,18 @@ namespace Trinity
                 static thread_local gen_ctx genCtxTL;
                 auto &genCtx = genCtxTL;
 
-                // For now, explicitly to unlimited
-                // See: https://github.com/phaistos-networks/Trinity/issues/1 ( FIXME: )
-                budget = std::numeric_limits<size_t>::max();
-
                 genCtx.clear(K);
 
                 if (trace)
                         SLog("Initially budget: ", budget, "\n");
 
-                if (const auto n = q.root->nodes_count(); n < budget)
-                        budget -= n;
-                else
-                        budget = 0;
+		if (budget && budget != std::numeric_limits<std::size_t>::max())
+                {
+                        if (const auto n = q.root->nodes_count(); n < budget)
+                                budget -= n;
+                        else
+                                budget = 0;
+                }
 
                 if (trace)
                         SLog("Then budget ", budget, "\n");
@@ -1194,11 +1087,8 @@ namespace Trinity
                                 SLog("Final:", *lhs, "\n");
                 });
 
-                if (trace || true)
-                {
+                if (trace)
                         SLog(duration_repr(Timings::Microseconds::Since(before)), " to rewrite the query\n");
-                        exit(0);
-                }
 
                 q.normalize();
         }
