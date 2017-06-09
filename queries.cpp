@@ -65,7 +65,9 @@ static std::pair<str32_t, range_base<uint16_t, uint16_t>> parse_term(ast_parser 
                 }
 
                 if (ctx.content.empty() || (ctx.groupTerm.size() && ctx.groupTerm.back() == ctx.content.front()))
+		{
                         return {{}, {}};
+		}
                 else
                 {
                         // whitespace or other content here
@@ -186,7 +188,7 @@ static std::pair<Operator, uint8_t> parse_operator_impl(ast_parser &ctx)
                                 return {Operator::NOT, 1};
                 }
 
-                if (ctx.groupTerm.size() && ctx.groupTerm.front() == f)
+                if (ctx.groupTerm.size() && ctx.groupTerm.back() == f)
                         return {Operator::NONE, 0};
                 else
                         return {Operator::AND, 0};
@@ -209,11 +211,17 @@ static auto parse_operator(ast_parser &ctx)
         return parse_operator_impl(ctx);
 }
 
+// define for more verbose representation of binops
+#define _VERBOSE_DESCR 1
+
 static void PrintImpl(Buffer &b, const Operator op)
 {
         switch (op)
         {
                 case Operator::AND:
+#ifdef _VERBOSE_DESCR
+			b.append("<and>"_s8);
+#endif
                         break;
 
                 case Operator::STRICT_AND:
@@ -289,13 +297,20 @@ void PrintImpl(Buffer &b, const Trinity::ast_node &n)
 			require(n.binop.lhs);
 			require(n.binop.rhs);
 
+#ifdef _VERBOSE_DESCR
+                        static const bool useparens{true};
+#else
                         const bool useparens = n.binop.op != Operator::AND || n.binop.lhs->type == ast_node::Type::BinOp || n.binop.rhs->type == ast_node::Type::BinOp;
+#endif
+
 
                         if (useparens)
                                 b.append('(');
 
                         b.append(*n.binop.lhs);
+#ifndef _VERBOSE_DESCR
                         if (n.binop.op != Operator::AND)
+#endif
                                 b.append(' ');
                         b.append(ansifmt::color_green, ansifmt::bold, n.binop.op, ansifmt::reset);
                         b.append(' ', *n.binop.rhs);

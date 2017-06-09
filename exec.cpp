@@ -481,8 +481,8 @@ namespace // static/local this module
 		// For now, go with large enough bank sizes for the allocators and figure out something later.
 		// We should also track allocated (from allocators) memory that is no longer needed so that we can reuse it
 		// Maybe we just need a method for allocating arbitrary amount of memory and releasing it back to the runtime ctx
-                simple_allocator allocator{4096 * 4};
-                simple_allocator runsAllocator{2048}, ctxAllocator{2048};
+                simple_allocator allocator{4096 * 6};
+                simple_allocator runsAllocator{4096}, ctxAllocator{4096};
                 Switch::unordered_map<exec_term_id_t, std::pair<term_index_ctx, str8_t>> tctxMap;
         };
 }
@@ -1006,7 +1006,7 @@ static inline bool logicalor_fordocs_impl(const exec_node &self, runtime_ctx &rc
 #define SPECIALIMPL_COLLECTION_LOGICALOR ((void *)uintptr_t(UINTPTR_MAX - 1))
 #define SPECIALIMPL_COLLECTION_LOGICALAND ((void *)uintptr_t(UINTPTR_MAX - 2))
 
-static uint32_t reorder_execnode(exec_node &n, bool &updates, runtime_ctx &rctx)
+static uint64_t reorder_execnode(exec_node &n, bool &updates, runtime_ctx &rctx)
 {
         if (n.fp == matchterm_impl)
                 return rctx.term_ctx(n.u16).documents;
@@ -1049,10 +1049,10 @@ static uint32_t reorder_execnode(exec_node &n, bool &updates, runtime_ctx &rctx)
         {
                 auto ctx = static_cast<runtime_ctx::unaryop_ctx *>(n.ptr);
 
-                reorder_execnode(ctx->expr, updates, rctx);
-                // it is important to return UINT32_MAX - 1 so that it will not result in a binop's (lhs, rhs) swap
+                // it is important to return UINT64_MAX - 1 so that it will not result in a binop's (lhs, rhs) swap
                 // we need to special-case the handling of those nodes
-                return UINT32_MAX - 1;
+                reorder_execnode(ctx->expr, updates, rctx);
+                return UINT64_MAX - 1;
         }
         else if (n.fp == matchallterms_impl)
         {
@@ -1063,7 +1063,7 @@ static uint32_t reorder_execnode(exec_node &n, bool &updates, runtime_ctx &rctx)
         else if (n.fp == matchanyterms_impl || n.fp == matchanyterms_fordocs_impl)
         {
                 const auto run = static_cast<const runtime_ctx::termsrun *>(n.ptr);
-                uint32_t sum{0};
+                uint64_t sum{0};
 
                 for (uint32_t i{0}; i != run->size; ++i)
                         sum += rctx.term_ctx(run->terms[i]).documents;
@@ -1078,7 +1078,7 @@ static uint32_t reorder_execnode(exec_node &n, bool &updates, runtime_ctx &rctx)
         else if (n.fp == matchanyphrases_impl || n.fp == matchanyphrases_fordocs_impl)
         {
                 const auto *const __restrict__ run = (runtime_ctx::phrasesrun *)n.ptr;
-                uint32_t sum{0};
+                uint64_t sum{0};
 
                 for (uint32_t i{0}; i != run->size; ++i)
                         sum += rctx.term_ctx(run->phrases[i]->termIDs[0]).documents;
@@ -1163,6 +1163,24 @@ static void reorder(ast_node *n, reorder_ctx *const ctx)
                                 ctx->dirty = true;
                                 return;
                         }
+		
+			if (rhs->type == ast_node::Type::ConstTrueExpr && lhs->type != ast_node::Type::ConstTrueExpr)
+                        {
+				// 09.06.2k17: make sure this makes sense
+				// [foo <the>]  => [ <the> foo ]
+                                std::swap(n->binop.lhs, n->binop.rhs);
+                                ctx->dirty = true;
+                                return;
+                        }
+
+			if (lhs->type != ast_node::Type::ConstTrueExpr && rhs->type == ast_node::Type::BinOp && rhs->binop.op == n->binop.op  && rhs->binop.lhs->type == ast_node::Type::ConstTrueExpr)
+			{
+				// 09.06.2k17: make sure this makes sense
+				// [foo ( <the> bar )] =>   [<the> (foo bar)]
+				std::swap(n->binop.lhs, rhs->binop.lhs);
+				ctx->dirty = true;
+				return;
+			}
                 }
 
                 if (n->binop.op == Operator::AND || n->binop.op == Operator::STRICT_AND)
@@ -1174,8 +1192,27 @@ static void reorder(ast_node *n, reorder_ctx *const ctx)
                                         // [expr AND unary] => [unary AND expr]
                                         std::swap(n->binop.lhs, n->binop.rhs);
                                         ctx->dirty = true;
+					return;
                                 }
                         }
+
+			if (rhs->type == ast_node::Type::ConstTrueExpr && lhs->type != ast_node::Type::ConstTrueExpr)
+                        {
+				// 09.06.2k17: make sure this makes sense
+				// [foo <the>]  => [ <the> foo ]
+                                std::swap(n->binop.lhs, n->binop.rhs);
+                                ctx->dirty = true;
+                                return;
+                        }
+
+			if (lhs->type != ast_node::Type::ConstTrueExpr && rhs->type == ast_node::Type::BinOp && rhs->binop.op == n->binop.op  && rhs->binop.lhs->type == ast_node::Type::ConstTrueExpr)
+			{
+				// 09.06.2k17: make sure this makes sense
+				// [foo ( <the> bar )] =>   [<the> (foo bar)]
+				std::swap(n->binop.lhs, rhs->binop.lhs);
+				ctx->dirty = true;
+				return;
+			}
                 }
                 else if (n->binop.op == Operator::NOT)
                 {
@@ -1202,6 +1239,7 @@ static void reorder(ast_node *n, reorder_ctx *const ctx)
                                         n->binop.rhs = lrhs;
 
                                         ctx->dirty = true;
+					return;
                                 }
                         }
                 }
@@ -1477,6 +1515,7 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
 
                         if (ctx->lhs.fp == consttrueexpr_impl && ctx->rhs.fp == consttrueexpr_impl)
                         {
+				// [<foo> AND <bar>] => [ <foo,bar> ]
                                 auto *const __restrict__ lhsCtx = (runtime_ctx::unaryop_ctx *)ctx->lhs.ptr;
                                 auto *const __restrict__ rhsCtx = (runtime_ctx::unaryop_ctx *)ctx->rhs.ptr;
 
@@ -1489,6 +1528,29 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
                                         n.ptr = lhsCtx;
                                         n.fp = consttrueexpr_impl;
                                         return;
+                                }
+                        }
+
+			if (ctx->lhs.fp == consttrueexpr_impl && ctx->rhs.fp == logicaland_impl)
+                        {
+				// <foo> AND (<bar> AND whatever)
+				// <foo, bar> AND whatever
+                                auto *const __restrict__ lhsCtx = (runtime_ctx::unaryop_ctx *)ctx->lhs.ptr;
+                                auto *const __restrict__ rhsCtx = (runtime_ctx::binop_ctx *)ctx->rhs.ptr;
+
+                                if (rhsCtx->lhs.fp == consttrueexpr_impl)
+                                {
+                                        auto *const __restrict__ otherCtx = (runtime_ctx::unaryop_ctx *)rhsCtx->lhs.ptr;
+
+                                        if (auto ptr = try_collect_impl(lhsCtx->expr,
+                                                                        otherCtx->expr, a, SPECIALIMPL_COLLECTION_LOGICALAND, matchallterms_impl))
+                                        {
+                                                lhsCtx->expr.fp = reinterpret_cast<decltype(lhsCtx->expr.fp)>(SPECIALIMPL_COLLECTION_LOGICALAND);
+                                                lhsCtx->expr.ptr = ptr;
+
+                                                ctx->rhs = rhsCtx->rhs;
+                                                return;
+                                        }
                                 }
                         }
                 }
@@ -1511,6 +1573,7 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
 
                         if (ctx->lhs.fp == consttrueexpr_impl && ctx->rhs.fp == consttrueexpr_impl)
                         {
+				// [<foo> OR <bar>] => [ OR<foo, bar> ]
                                 auto *const __restrict__ lhsCtx = (runtime_ctx::unaryop_ctx *)ctx->lhs.ptr;
                                 auto *const __restrict__ rhsCtx = (runtime_ctx::unaryop_ctx *)ctx->rhs.ptr;
 
@@ -1525,6 +1588,30 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
                                         return;
                                 }
                         }
+
+			if (ctx->lhs.fp == consttrueexpr_impl && ctx->rhs.fp == logicalor_impl)
+                        {
+				// <foo> OR (<bar> OR whatever)
+				// <foo, bar> OR whatever
+                                auto *const __restrict__ lhsCtx = (runtime_ctx::unaryop_ctx *)ctx->lhs.ptr;
+                                auto *const __restrict__ rhsCtx = (runtime_ctx::binop_ctx *)ctx->rhs.ptr;
+
+                                if (rhsCtx->lhs.fp == consttrueexpr_impl)
+                                {
+                                        auto *const __restrict__ otherCtx = (runtime_ctx::unaryop_ctx *)rhsCtx->lhs.ptr;
+
+                                        if (auto ptr = try_collect_impl(lhsCtx->expr,
+                                                                        otherCtx->expr, a, SPECIALIMPL_COLLECTION_LOGICALOR, matchanyterms_impl))
+                                        {
+                                                lhsCtx->expr.fp = reinterpret_cast<decltype(lhsCtx->expr.fp)>(SPECIALIMPL_COLLECTION_LOGICALOR);
+                                                lhsCtx->expr.ptr = ptr;
+
+                                                ctx->rhs = rhsCtx->rhs;
+                                                return;
+                                        }
+                                }
+                        }
+
                 }
         }
 }
