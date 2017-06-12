@@ -163,11 +163,11 @@ static std::pair<Operator, uint8_t> parse_operator_impl(ast_parser &ctx)
         auto s = ctx.content;
         Operator res;
 
-        if (s.StripPrefix(_S("AND")))
+        if (0 == (ctx.parserFlags & uint32_t(ast_parser::Flags::ANDAsToken)) && s.StripPrefix(_S("AND")))
                 res = Operator::STRICT_AND;
-        else if (s.StripPrefix(_S("OR")))
+        else if (0 == (ctx.parserFlags & uint32_t(ast_parser::Flags::ORAsToken)) && s.StripPrefix(_S("OR")))
                 res = Operator::OR;
-        else if (s.StripPrefix(_S("NOT")))
+        else if (0 == (ctx.parserFlags & uint32_t(ast_parser::Flags::NOTAsToken)) && s.StripPrefix(_S("NOT")))
                 res = Operator::NOT;
         else if (s)
         {
@@ -175,6 +175,14 @@ static std::pair<Operator, uint8_t> parse_operator_impl(ast_parser &ctx)
 
                 switch (f)
                 {
+			case '|':
+				// google supports this operator. so does amazon.com (amazon doesn't support OR). Jet.com doesn't support OR at all
+                                do
+                                {
+                                        s.strip_prefix(1);
+                                } while (s && s.front() == '|');
+                                return {Operator::OR, s.p - ctx.content.p};
+
                         case '+':
 				if (char_t c; s.size() > 1 && (c = s.p[1]) && !isspace(c) && c != '+')
                                 {
@@ -1509,9 +1517,9 @@ std::vector<ast_node *> &query::nodes(ast_node *root, std::vector<ast_node *> *c
         return *res;
 }
 
-bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *))
+bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *), const uint32_t parseFlags)
 {
-        ast_parser ctx{in, allocator, tp};
+        ast_parser ctx{in, allocator, tp, parseFlags};
 
         tokensParser = tp; // May come in handy later
         root = parse_expr(ctx);

@@ -188,12 +188,24 @@ namespace Trinity
         // Keep in mind that you can always copy nodes/asts using ast_node::copy()
         struct ast_parser final
         {
+		enum class Flags : uint32_t
+		{
+			// Treat OR as a regular token
+			// Amazon.com treats (AND, NOT, OR) as regular tokens, but they do support '|' AND '-' AND '+' operators
+			ORAsToken = 1,
+			// Treat NOT as a regular token
+			NOTAsToken = 1<<1,
+			// Treat AND as a regular token
+			ANDAsToken = 1<<2
+		};
+
                 str32_t content;
                 const char_t *contentBase;
                 simple_allocator &allocator;
                 term terms[Trinity::Limits::MaxPhraseSize];
                 // It is important that your queries token parser semantics are also implemented in your documents content parser
                 std::pair<uint32_t, uint8_t> (*token_parser)(const str32_t, char_t *);
+		const uint32_t parserFlags;
                 std::vector<str8_t> distinctTokens;
                 // facilitates parsing
                 std::vector<char_t> groupTerm;
@@ -204,8 +216,8 @@ namespace Trinity
                         return ast_node::make(allocator, t);
                 }
 
-                ast_parser(const str32_t input, simple_allocator &a, std::pair<uint32_t, uint8_t> (*p)(const str32_t, char_t *) = default_token_parser_impl)
-                    : content{input}, contentBase{content.data()}, allocator{a}, token_parser{p}
+                ast_parser(const str32_t input, simple_allocator &a, std::pair<uint32_t, uint8_t> (*p)(const str32_t, char_t *) = default_token_parser_impl, const uint32_t parserFlags_ = 0)
+                    : content{input}, contentBase{content.data()}, allocator{a}, token_parser{p}, parserFlags{parserFlags_}
                 {
                 }
 
@@ -362,7 +374,7 @@ namespace Trinity
 		 */
                 void leader_nodes(std::vector<ast_node *> *const out);
 
-                bool parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *) = default_token_parser_impl);
+                bool parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *) = default_token_parser_impl, uint32_t parserFlags = 0);
 
                 // This is handy. When we copy a query to another query, we want to make sure
                 // that tokens point to the destination query allocator, not the source, because it is possible for
@@ -380,10 +392,10 @@ namespace Trinity
                         return root;
                 }
 
-                query(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *) = default_token_parser_impl)
+                query(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *) = default_token_parser_impl, const uint32_t parserFlags = 0)
                     : tokensParser{tp}
                 {
-                        if (!parse(in, tp))
+                        if (!parse(in, tp, parserFlags))
                                 throw Switch::data_error("Failed to parse query");
                 }
 
