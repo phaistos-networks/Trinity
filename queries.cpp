@@ -125,6 +125,7 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                         std::copy(terms, terms + n, p->terms);
                         p->rep = 1;
 			p->toNextSpan = n;
+			p->rewriteGroup = 0;
                         p->flags = 0;
 			p->inputRange = range;
                         node->p = p;
@@ -149,6 +150,7 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                 p->terms[0] = t;
                 p->rep = 1;
 		p->toNextSpan = 1;
+		p->rewriteGroup = 0;
                 p->flags = 0;
 		p->inputRange = pair.second;
                 node->p = p;
@@ -261,22 +263,38 @@ void PrintImpl(Buffer &b, const Trinity::phrase &p)
         if (p.size)
                 b.shrink_by(1);
         b.append('"');
+#if 1
+	b.append('<');
+	b.append("idx:", p.index, " span:", p.toNextSpan);
         if (p.rep > 1)
-                b.append('(', p.rep, ')');
+                b.append(" rep:", p.rep);
 	if (p.flags)
-		b.append("(F:", p.flags, ')');
-        b.append('[', p.index, ',', p.toNextSpan, ']');
+		b.append(" f:", p.flags);
+	if (p.rewriteGroup)
+		b.append(" rg:", p.rewriteGroup);
+	if (b.back() == '<')
+		b.shrink_by(1);
+	else
+		b.append('>');
+#endif
 }
 
 static void print_token(Buffer &b, const phrase *const p)
 {
         b.append(p->terms[0].token);
-#if 0
+#if 1
+	b.append('<');
+	b.append("idx:", p->index, " span:", p->toNextSpan);
         if (p->rep > 1)
-                b.append('(', p->rep, ')');
-        b.append('[', p->index, ',', p->toNextSpan, ']');
+                b.append(" rep:", p->rep);
 	if (p->flags)
-		b.append("(F:", p->flags, ")");
+		b.append(" f:", p->flags);
+	if (p->rewriteGroup)
+		b.append(" rg:", p->rewriteGroup);
+	if (b.back() == '<')
+		b.shrink_by(1);
+	else
+		b.append('>');
 #endif
 }
 
@@ -1295,6 +1313,7 @@ ast_node *ast_node::copy(simple_allocator *const a)
                         np->toNextSpan = n->p->toNextSpan;
                         np->flags = n->p->flags;
                         np->inputRange = n->p->inputRange;
+			np->rewriteGroup = n->p->rewriteGroup;
 
                         memcpy(np->terms, n->p->terms, sizeof(np->terms[0]) * np->size);
                         res->p = np;
@@ -1407,6 +1426,33 @@ bool query::normalize()
         }
         else
                 return false;
+}
+
+void ast_node::set_rewrite_group(const uint16_t g)
+{
+        switch (type)
+        {
+                case Type::Token:
+                case Type::Phrase:
+                        p->rewriteGroup = g;
+                        break;
+
+                case Type::BinOp:
+                        binop.lhs->set_rewrite_group(g);
+                        binop.rhs->set_rewrite_group(g);
+                        break;
+
+                case Type::UnaryOp:
+                        unaryop.expr->set_rewrite_group(g);
+                        break;
+
+                case Type::ConstTrueExpr:
+                        expr->set_rewrite_group(g);
+                        break;
+
+                default:
+                        break;
+        }
 }
 
 void ast_node::set_alltokens_flags(const uint8_t flags)
@@ -1728,6 +1774,7 @@ l20:
 
         for (;;)
         {
+#if 0
 		if (*p == '|' && p + 1 < e && isalnum(p[1])) 	// special compound tokens (foo|bar)
 		{
 			for (p+=2; p != e; )
@@ -1741,6 +1788,7 @@ l20:
 			}
 			break;
 		}
+#endif
 
 		while (p != e)
 		{

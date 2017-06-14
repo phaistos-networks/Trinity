@@ -650,7 +650,7 @@ static bool matchanyterms_fordocs_impl(const exec_node &self, runtime_ctx &rctx)
         do
         {
                 const auto termID = terms[i];
-                auto decoder = rctx.decode_ctx.decoders[termID];
+                auto *const __restrict__ decoder = rctx.decode_ctx.decoders[termID];
 
                 if (decoder->seek(did))
                         return true;
@@ -2926,13 +2926,9 @@ static exec_node compile_query(ast_node *root, runtime_ctx &rctx, std::vector<ex
 void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc, masked_documents_registry *const __restrict__ maskedDocumentsRegistry, MatchedIndexDocumentsFilter *__restrict__ const matchesFilter, IndexDocumentsFilter *__restrict__ const documentsFilter, const uint32_t execFlags)
 {
         struct query_term_instance final
+		: public query_term_ctx::instance_struct
         {
                 str8_t token;
-                // see Trinity::phrase
-                uint16_t index;
-                uint8_t rep;
-                uint8_t flags;
-                uint8_t toNextSpan;
         };
 
         if (!in)
@@ -3008,15 +3004,16 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                 for (const auto it : collected)
                 {
                         const uint8_t rep = it->size == 1 ? it->rep : 1;
-                        const auto toNextSpan = it->toNextSpan;
-                        const auto flags = it->flags;
+                        const auto toNextSpan{it->toNextSpan};
+                        const auto flags{it->flags};
+			const auto rewriteGroup{it->rewriteGroup};
 
                         for (uint16_t pos{it->index}, i{0}; i != it->size; ++i, ++pos)
                         {
                                 if (traceCompile)
                                         SLog("Collected instance: ", it->terms[i].token, " index:", pos, " rep:", rep, " toNextSpan:", i == (it->size - 1) ? toNextSpan : 1, "\n");
 
-                                originalQueryTokenInstances.push_back({it->terms[i].token, pos, rep, flags, uint8_t(i == (it->size - 1) ? toNextSpan : 1)}); // need to be careful to get this right for phrases
+                                originalQueryTokenInstances.push_back({ {pos, rep, flags, uint8_t(i == (it->size - 1) ? toNextSpan : 1), rewriteGroup}, it->terms[i].token}); // need to be careful to get this right for phrases
                         }
                 }
         }
@@ -3110,6 +3107,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                         p->instances[i].rep = it->rep;
                                         p->instances[i].flags = it->flags;
                                         p->instances[i].toNextSpan = it->toNextSpan;
+                                        p->instances[i].rewriteGroup = it->rewriteGroup;
 
                                         maxIndex = std::max(maxIndex, it->index);
                                         originalQueryTokensTracker.push_back({it->index, {termID, it->toNextSpan}});

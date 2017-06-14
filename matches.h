@@ -63,7 +63,7 @@ namespace Trinity
                 // Information about the term itself
                 // This is mostly for debugging during score consideration, but having access to
                 // the distinct termID may be used to facilitate fancy tracking schemes in your MatchedIndexDocumentsFilter::consider()
-                struct
+                struct term_struct
                 {
                         exec_term_id_t id;
                         str8_t token;
@@ -77,6 +77,7 @@ namespace Trinity
                         uint8_t rep;
                         uint8_t flags;
                         uint8_t toNextSpan;
+			uint16_t rewriteGroup;
                 } instances[0];
         };
 
