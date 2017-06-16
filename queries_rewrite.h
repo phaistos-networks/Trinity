@@ -211,7 +211,6 @@ namespace Trinity
         {
                 uint32_t logicalIndex;
                 uint32_t K;
-		uint16_t nextRewriteGroup;
 
                 simple_allocator allocator, flowsAllocator{4096};
                 // Could have used just one container insted of two, and a map or multimap for tracking flows by range
@@ -246,7 +245,6 @@ namespace Trinity
                 {
                         allocator.reuse();
                         K = _k;
-			nextRewriteGroup = 0;
                 }
         };
 
@@ -509,14 +507,20 @@ namespace Trinity
                 for (uint32_t it{i}, cnt = run.size(); it != cnt; ++it)
                 {
                         auto e = run_next(budget, q, run, it, maxSpan, l, genCtx);
+			static constexpr bool assignRanges{true};
                         const auto normalized = it - baseIndex;
-			const uint16_t group = e.size() ? ++genCtx.nextRewriteGroup : 0;
 
                         for (const auto &eit : e)
 			{
 				auto node{eit.first};
 
-				node->set_rewrite_group(group);
+				if (assignRanges)
+                                {
+                                        const range_base<uint16_t, uint8_t> rewriteRange{uint16_t(genCtx.logicalIndex + it), uint8_t(eit.second)};
+
+                                        node->set_rewrite_range(rewriteRange);
+                                }
+
                                 list.push_back({{normalized, eit.second}, node}); // range [offset, end) => ast_node
 			}
                 }

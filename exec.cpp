@@ -3006,14 +3006,14 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                         const uint8_t rep = it->size == 1 ? it->rep : 1;
                         const auto toNextSpan{it->toNextSpan};
                         const auto flags{it->flags};
-			const auto rewriteGroup{it->rewriteGroup};
+			const auto rewriteRange{it->rewriteRange};
 
                         for (uint16_t pos{it->index}, i{0}; i != it->size; ++i, ++pos)
                         {
                                 if (traceCompile)
                                         SLog("Collected instance: ", it->terms[i].token, " index:", pos, " rep:", rep, " toNextSpan:", i == (it->size - 1) ? toNextSpan : 1, "\n");
 
-                                originalQueryTokenInstances.push_back({ {pos, rep, flags, uint8_t(i == (it->size - 1) ? toNextSpan : 1), rewriteGroup}, it->terms[i].token}); // need to be careful to get this right for phrases
+                                originalQueryTokenInstances.push_back({ {pos, rep, flags, uint8_t(i == (it->size - 1) ? toNextSpan : 1), rewriteRange}, it->terms[i].token}); // need to be careful to get this right for phrases
                         }
                 }
         }
@@ -3107,7 +3107,8 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                         p->instances[i].rep = it->rep;
                                         p->instances[i].flags = it->flags;
                                         p->instances[i].toNextSpan = it->toNextSpan;
-                                        p->instances[i].rewriteGroup = it->rewriteGroup;
+                                        p->instances[i].rewriteRange = it->rewriteRange;
+
 
                                         maxIndex = std::max(maxIndex, it->index);
                                         originalQueryTokensTracker.push_back({it->index, {termID, it->toNextSpan}});
@@ -3134,7 +3135,8 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                 queryIndicesTerms = (query_index_terms **)rctx.allocator.Alloc(sizeof(query_index_terms *) * (maxIndex + 8));
 
                 memset(queryIndicesTerms, 0, sizeof(queryIndicesTerms[0]) * (maxIndex + 8));
-                std::sort(originalQueryTokensTracker.begin(), originalQueryTokensTracker.end(), [](const auto &a, const auto &b) { return a.second.first < b.second.first || (a.second.first == b.second.first && a.second.second < b.second.second); });
+                //WAS: std::sort(originalQueryTokensTracker.begin(), originalQueryTokensTracker.end(), [](const auto &a, const auto &b) { return a.second.first < b.second.first || (a.second.first == b.second.first && a.second.second < b.second.second); });
+                std::sort(originalQueryTokensTracker.begin(), originalQueryTokensTracker.end(), [](const auto &a, const auto &b) { return a.first < b.first || (a.first == b.first && (a.second.first < b.second.first || (a.second.first == b.second.first && a.second.second < b.second.second))); });
 
                 for (const auto *p = originalQueryTokensTracker.data(), *const e = p + originalQueryTokensTracker.size(); p != e;)
                 {
@@ -3151,7 +3153,15 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                 {
                                         ++p;
                                 } while (p != e && p->first == idx && p->second == pair);
+
                         } while (p != e && p->first == idx);
+
+			if (traceCompile)
+			{
+				SLog("For index ", idx, " ", list.size(), "\n");
+
+				for (const auto &it : list) SLog(it, "\n");
+			}
 
                         const uint16_t cnt = list.size();
                         auto ptr = (query_index_terms *)rctx.allocator.Alloc(sizeof(query_index_terms) + cnt * sizeof(std::pair<exec_term_id_t, uint8_t>));

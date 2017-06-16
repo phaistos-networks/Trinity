@@ -77,7 +77,7 @@ namespace Trinity
                         uint8_t rep;
                         uint8_t flags;
                         uint8_t toNextSpan;
-			uint16_t rewriteGroup;
+			range_base<uint16_t, uint8_t> rewriteRange;
                 } instances[0];
         };
 

@@ -147,7 +147,7 @@ namespace Trinity
                 // any of the tokens added to the query after the rewrite.
                 void set_alltokens_flags(const uint8_t flags);
 
-		void set_rewrite_group(const uint16_t);
+		void set_rewrite_range(const range_base<uint16_t, uint8_t>);
 
                 size_t nodes_count() const noexcept
                 {
@@ -299,15 +299,12 @@ namespace Trinity
                 // and you 'd rather not have to go through hoops to accomplish it
                 range_base<uint16_t, uint16_t> inputRange;
 
-		// This is useful when computing the relevance score.
-		// Query rewrites usually replace a term or sequence of terms with 1+ other sequences(alternatives/synonyms).
-		// For example, we may expand the query term PS4 to (PS4 OR PLAYSTATION4 OR "PLAYSTATION 4")
-		// The problem is, if there is a document with the title: Sony Playstation 4 (PS4) Slim 500GB
-		// then we stand to boost score for this product for both PS4 and "Playstation 4", which is far from optimal.
-		//
-		// We can use this rewriteGroup (ID), which is set by Trinity::rewrite_query() to identify matched query tokens and, for example,
-		// only get the highest score among all matched in the same group
-		uint16_t rewriteGroup;
+		// A range, which represents the logical span in the input query terms list that was expanded/rewritten/captured.
+		// For example, rewrite_query() for query [pc games] where "pc games" is expanded to cid:806: [ (pc games) OR cid:806 ]
+		// cid:806 rewriteRange would be [0, 2), pc's would be [0, 1) and games would be [1, 2). This would make it easier to determine that
+		// e.g cid:806 was matched, which overlaps 'pc' and 'games'
+		range_base<uint16_t, uint8_t> rewriteRange;
+
 
                 term terms[0];
 
@@ -335,7 +332,7 @@ namespace Trinity
                         p->rep = 1;
                         p->inputRange.reset();
                         p->toNextSpan = 1;
-			p->rewriteGroup = 0;
+			p->rewriteRange.reset();
                         p->size = n;
 
                         for (uint32_t i{0}; i != n; ++i)

@@ -125,7 +125,7 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                         std::copy(terms, terms + n, p->terms);
                         p->rep = 1;
 			p->toNextSpan = n;
-			p->rewriteGroup = 0;
+			p->rewriteRange.reset();
                         p->flags = 0;
 			p->inputRange = range;
                         node->p = p;
@@ -150,7 +150,7 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                 p->terms[0] = t;
                 p->rep = 1;
 		p->toNextSpan = 1;
-		p->rewriteGroup = 0;
+		p->rewriteRange.reset();
                 p->flags = 0;
 		p->inputRange = pair.second;
                 node->p = p;
@@ -270,8 +270,8 @@ void PrintImpl(Buffer &b, const Trinity::phrase &p)
                 b.append(" rep:", p.rep);
 	if (p.flags)
 		b.append(" f:", p.flags);
-	if (p.rewriteGroup)
-		b.append(" rg:", p.rewriteGroup);
+	if (p.rewriteRange)
+		b.append(" rr:", p.rewriteRange);
 	if (b.back() == '<')
 		b.shrink_by(1);
 	else
@@ -289,8 +289,8 @@ static void print_token(Buffer &b, const phrase *const p)
                 b.append(" rep:", p->rep);
 	if (p->flags)
 		b.append(" f:", p->flags);
-	if (p->rewriteGroup)
-		b.append(" rg:", p->rewriteGroup);
+	if (p->rewriteRange)
+		b.append(" rr:", p->rewriteRange);
 	if (b.back() == '<')
 		b.shrink_by(1);
 	else
@@ -1313,7 +1313,7 @@ ast_node *ast_node::copy(simple_allocator *const a)
                         np->toNextSpan = n->p->toNextSpan;
                         np->flags = n->p->flags;
                         np->inputRange = n->p->inputRange;
-			np->rewriteGroup = n->p->rewriteGroup;
+			np->rewriteRange = n->p->rewriteRange;
 
                         memcpy(np->terms, n->p->terms, sizeof(np->terms[0]) * np->size);
                         res->p = np;
@@ -1428,26 +1428,26 @@ bool query::normalize()
                 return false;
 }
 
-void ast_node::set_rewrite_group(const uint16_t g)
+void ast_node::set_rewrite_range(const range_base<uint16_t, uint8_t> r)
 {
         switch (type)
         {
                 case Type::Token:
                 case Type::Phrase:
-                        p->rewriteGroup = g;
+                        p->rewriteRange = r;
                         break;
 
                 case Type::BinOp:
-                        binop.lhs->set_rewrite_group(g);
-                        binop.rhs->set_rewrite_group(g);
+                        binop.lhs->set_rewrite_range(r);
+                        binop.rhs->set_rewrite_range(r);
                         break;
 
                 case Type::UnaryOp:
-                        unaryop.expr->set_rewrite_group(g);
+                        unaryop.expr->set_rewrite_range(r);
                         break;
 
                 case Type::ConstTrueExpr:
-                        expr->set_rewrite_group(g);
+                        expr->set_rewrite_range(r);
                         break;
 
                 default:
