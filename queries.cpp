@@ -68,7 +68,7 @@ static std::pair<str32_t, range_base<uint16_t, uint16_t>> parse_term(ast_parser 
 		{
                         return {{}, {}};
 		}
-                else
+                else if (ctx.content)
                 {
                         // whitespace or other content here
                         ctx.content.strip_prefix(1);
@@ -110,7 +110,7 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                                         terms[n++] = t;
                                 }
                         }
-                        else
+                        else if (ctx.content)
                                 ctx.content.strip_prefix(1);
                 }
 
