@@ -391,6 +391,12 @@ namespace Trinity
                                 if (unlikely(nullptr == lhs))
                                         throw Switch::data_error("Failed to parse [", alts[saved].first, "]");
 
+				if (lhs->type == ast_node::Type::Token && span > 1)
+				{
+					// source range span > 1 and alt is a token
+					lhs->p->rewrite_ctx.srcSeqSize = span;
+				}
+
 				if (budget && budget != std::numeric_limits<std::size_t>::max())
                                 {
                                         if (const auto n = lhs->nodes_count(); budget >= n)
@@ -422,6 +428,9 @@ namespace Trinity
                                         if (unlikely(nullptr == n->binop.rhs))
                                                 throw Switch::data_error("Failed to parse [", alts[i + saved].first, "]");
 
+					if (n->binop.rhs->type == ast_node::Type::Token && span > 1)
+						n->binop.rhs->p->rewrite_ctx.srcSeqSize = span;
+
 					if (budget && budget != std::numeric_limits<std::size_t>::max())
                                         {
                                                 if (const auto _n = n->binop.rhs->nodes_count(); budget >= _n)
@@ -450,6 +459,12 @@ namespace Trinity
 
                                 if (unlikely(nullptr == node))
                                         throw Switch::data_error("Failed to parse [", alts[saved].first, "]");
+
+				if (node->type == ast_node::Type::Token && span > 1)
+				{
+					// source range span > 1 and alt is a token
+					node->p->rewrite_ctx.srcSeqSize = span;
+				}
 
                                 if (trace)
                                         SLog("Parsed [", alts[saved], "] ", *node, "\n");

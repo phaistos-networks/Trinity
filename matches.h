@@ -38,11 +38,13 @@ namespace Trinity
 
                 void set_freq(const tokenpos_t newFreq)
                 {
-                        if (newFreq > allCapacity)
+                        if (unlikely(newFreq > allCapacity))
                         {
                                 allCapacity = newFreq + 32;
+
                                 if (all)
                                         std::free(all);
+
                                 all = (term_hit *)std::malloc(sizeof(term_hit) * allCapacity);
                         }
 
@@ -77,7 +79,11 @@ namespace Trinity
                         uint8_t rep;
                         uint8_t flags;
                         uint8_t toNextSpan;
-			range_base<uint16_t, uint8_t> rewriteRange;
+			struct
+			{
+				range_base<uint16_t, uint8_t> range;
+				uint8_t srcSeqSize;
+			} rewrite_ctx;
                 } instances[0];
         };
 
@@ -112,8 +118,7 @@ namespace Trinity
                         Abort,
                 };
 
-                // You can query_term_instances::term.id with dws
-                virtual ConsiderResponse consider(const matched_document &match)
+                [[gnu::always_inline]] virtual ConsiderResponse consider(const matched_document &match)
                 {
                         return ConsiderResponse::Continue;
                 }

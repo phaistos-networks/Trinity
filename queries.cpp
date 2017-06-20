@@ -29,13 +29,13 @@ static constexpr uint8_t OpPrio(const Operator op) noexcept
         }
 }
 
-static std::pair<str32_t, range_base<uint16_t, uint16_t>> parse_term(ast_parser &ctx)
+static std::pair<str32_t, range_base<uint16_t, uint16_t>> parse_term(ast_parser &ctx, const bool in_phrase)
 {
         // Will strip characters that are not part of a valid token
         // and will pay attention to special group termination characters
         for (;;)
         {
-                if (const auto pair = ctx.token_parser(ctx.content, ctx.lastParsedToken); pair.second)
+                if (const auto pair = ctx.token_parser(ctx.content, ctx.lastParsedToken, in_phrase); pair.second)
                 {
                         const auto o = ctx.content.data() - ctx.contentBase;
 
@@ -95,7 +95,7 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                         if (!ctx.content || ctx.content.StripPrefix(_S("\"")))
                                 break;
 
-                        if (const auto pair = parse_term(ctx); const auto token = pair.first)
+                        if (const auto pair = parse_term(ctx, true); const auto token = pair.first)
                         {
                                 if (unlikely(token.size() > Limits::MaxTermLength))
                                         return ctx.alloc_node(ast_node::Type::ConstFalse);
@@ -125,14 +125,15 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                         std::copy(terms, terms + n, p->terms);
                         p->rep = 1;
 			p->toNextSpan = n;
-			p->rewriteRange.reset();
+			p->rewrite_ctx.range.reset();
+			p->rewrite_ctx.srcSeqSize = 0;
                         p->flags = 0;
 			p->inputRange = range;
                         node->p = p;
                         return node;
                 }
         }
-        else if (const auto pair = parse_term(ctx); const auto token = pair.first)
+        else if (const auto pair = parse_term(ctx, false); const auto token = pair.first)
         {
                 if (unlikely(token.size() > Limits::MaxTermLength))
                         return ctx.alloc_node(ast_node::Type::ConstFalse);
@@ -149,8 +150,9 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                 p->size = 1;
                 p->terms[0] = t;
                 p->rep = 1;
-		p->toNextSpan = 1;
-		p->rewriteRange.reset();
+		p->toNextSpan = DefaultToNextSpan;
+		p->rewrite_ctx.range.reset();
+		p->rewrite_ctx.srcSeqSize = 0;
                 p->flags = 0;
 		p->inputRange = pair.second;
                 node->p = p;
@@ -270,8 +272,10 @@ void PrintImpl(Buffer &b, const Trinity::phrase &p)
                 b.append(" rep:", p.rep);
 	if (p.flags)
 		b.append(" f:", p.flags);
-	if (p.rewriteRange)
-		b.append(" rr:", p.rewriteRange);
+	if (p.rewrite_ctx.range)
+		b.append(" rr:", p.rewrite_ctx.range);
+	if (p.rewrite_ctx.srcSeqSize)
+		b.append(" sss:", p.rewrite_ctx.srcSeqSize);
 	if (b.back() == '<')
 		b.shrink_by(1);
 	else
@@ -289,8 +293,10 @@ static void print_token(Buffer &b, const phrase *const p)
                 b.append(" rep:", p->rep);
 	if (p->flags)
 		b.append(" f:", p->flags);
-	if (p->rewriteRange)
-		b.append(" rr:", p->rewriteRange);
+	if (p->rewrite_ctx.range)
+		b.append(" rr:", p->rewrite_ctx.range);
+	if (p->rewrite_ctx.srcSeqSize)
+		b.append(" sss:", p->rewrite_ctx.srcSeqSize);
 	if (b.back() == '<')
 		b.shrink_by(1);
 	else
@@ -1313,7 +1319,8 @@ ast_node *ast_node::copy(simple_allocator *const a)
                         np->toNextSpan = n->p->toNextSpan;
                         np->flags = n->p->flags;
                         np->inputRange = n->p->inputRange;
-			np->rewriteRange = n->p->rewriteRange;
+			np->rewrite_ctx.range = n->p->rewrite_ctx.range;;
+			np->rewrite_ctx.srcSeqSize = n->p->rewrite_ctx.srcSeqSize;
 
                         memcpy(np->terms, n->p->terms, sizeof(np->terms[0]) * np->size);
                         res->p = np;
@@ -1434,7 +1441,7 @@ void ast_node::set_rewrite_range(const range_base<uint16_t, uint8_t> r)
         {
                 case Type::Token:
                 case Type::Phrase:
-                        p->rewriteRange = r;
+                        p->rewrite_ctx.range = r;
                         break;
 
                 case Type::BinOp:
@@ -1563,7 +1570,7 @@ std::vector<ast_node *> &query::nodes(ast_node *root, std::vector<ast_node *> *c
         return *res;
 }
 
-bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *), const uint32_t parseFlags)
+bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *, const bool), const uint32_t parseFlags)
 {
         ast_parser ctx{in, allocator, tp, parseFlags};
 
@@ -1649,7 +1656,7 @@ void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a)
 //
 // Please see Trinity's Wiki on Github for suggestions and links to useful resources
 // https://github.com/phaistos-networks/Trinity/wiki
-std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::str32_t content, Trinity::char_t *out)
+std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::str32_t content, Trinity::char_t *out, const bool in_phrase)
 {
 	static constexpr bool trace{false};
         const auto *p = content.begin(), *const e = content.end(), *const b{p};

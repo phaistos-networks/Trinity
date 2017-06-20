@@ -2965,6 +2965,8 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                 std::vector<ast_node *> stack{q.root}; // use a stack because we don't care about the evaluation order
                 std::vector<phrase *> collected;
 
+
+		// collect phrases from the AST
                 do
                 {
                         auto n = stack.back();
@@ -3001,19 +3003,21 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                         }
                 } while (stack.size());
 
-                for (const auto it : collected)
+                for (const auto it : collected)	 /* collected phrases */
                 {
                         const uint8_t rep = it->size == 1 ? it->rep : 1;
                         const auto toNextSpan{it->toNextSpan};
                         const auto flags{it->flags};
-			const auto rewriteRange{it->rewriteRange};
+			const auto rewriteRange{it->rewrite_ctx.range};
+			const auto srcSeqSize{it->rewrite_ctx.srcSeqSize};
 
+			/* for each phrase token */
                         for (uint16_t pos{it->index}, i{0}; i != it->size; ++i, ++pos)
                         {
                                 if (traceCompile)
                                         SLog("Collected instance: ", it->terms[i].token, " index:", pos, " rep:", rep, " toNextSpan:", i == (it->size - 1) ? toNextSpan : 1, "\n");
 
-                                originalQueryTokenInstances.push_back({ {pos, rep, flags, uint8_t(i == (it->size - 1) ? toNextSpan : 1), rewriteRange}, it->terms[i].token}); // need to be careful to get this right for phrases
+                                originalQueryTokenInstances.push_back({ {pos, rep, flags, uint8_t(i == (it->size - 1) ? toNextSpan : 1), { rewriteRange, srcSeqSize } }, it->terms[i].token}); // need to be careful to get this right for phrases
                         }
                 }
         }
@@ -3069,7 +3073,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
 
                 // Build rctx.originalQueryTermInstances
                 // It is important to only do this after we have optimised the copied original query, just as it is important
-                // to capture the original query instances before we optimise
+                // to capture the original query instances before we optimise.
                 //
                 // We need access to that information for scoring documents -- see matches.h
                 rctx.originalQueryTermCtx = (query_term_ctx **)rctx.allocator.Alloc(sizeof(query_term_ctx *) * maxQueryTermIDPlus1);
@@ -3091,7 +3095,12 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                         collected.push_back(p);
                                 } while (++p != e && p->token == token);
 
+
                                 const auto cnt = collected.size();
+
+				// XXX: maybe we should just support more instances?
+				Dexpect(cnt <= sizeof(query_term_ctx::instancesCnt) << 8);
+
                                 auto p = (query_term_ctx *)rctx.allocator.Alloc(sizeof(query_term_ctx) + cnt * sizeof(query_term_ctx::instance_struct));
 
                                 p->instancesCnt = cnt;
@@ -3107,7 +3116,8 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                         p->instances[i].rep = it->rep;
                                         p->instances[i].flags = it->flags;
                                         p->instances[i].toNextSpan = it->toNextSpan;
-                                        p->instances[i].rewriteRange = it->rewriteRange;
+                                        p->instances[i].rewrite_ctx.range = it->rewrite_ctx.range;
+					p->instances[i].rewrite_ctx.srcSeqSize = it->rewrite_ctx.srcSeqSize;
 
 
                                         maxIndex = std::max(maxIndex, it->index);
@@ -3119,6 +3129,8 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                         else
                         {
                                 // this original query token is not used in the optimised query
+				// rctx.originalQueryTermCtx[termID] will be nullptr
+				// see capture_matched_term() for why this is important.
 
                                 if (traceCompile)
                                         SLog("Ignoring ", token, "\n");
@@ -3135,7 +3147,6 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                 queryIndicesTerms = (query_index_terms **)rctx.allocator.Alloc(sizeof(query_index_terms *) * (maxIndex + 8));
 
                 memset(queryIndicesTerms, 0, sizeof(queryIndicesTerms[0]) * (maxIndex + 8));
-                //WAS: std::sort(originalQueryTokensTracker.begin(), originalQueryTokensTracker.end(), [](const auto &a, const auto &b) { return a.second.first < b.second.first || (a.second.first == b.second.first && a.second.second < b.second.second); });
                 std::sort(originalQueryTokensTracker.begin(), originalQueryTokensTracker.end(), [](const auto &a, const auto &b) { return a.first < b.first || (a.first == b.first && (a.second.first < b.second.first || (a.second.first == b.second.first && a.second.second < b.second.second))); });
 
                 for (const auto *p = originalQueryTokensTracker.data(), *const e = p + originalQueryTokensTracker.size(); p != e;)
@@ -3157,11 +3168,12 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                         } while (p != e && p->first == idx);
 
 			if (traceCompile)
-			{
-				SLog("For index ", idx, " ", list.size(), "\n");
+                        {
+                                SLog("For index ", idx, " ", list.size(), "\n");
 
-				for (const auto &it : list) SLog(it, "\n");
-			}
+                                for (const auto &it : list)
+                                        SLog(it, "\n");
+                        }
 
                         const uint16_t cnt = list.size();
                         auto ptr = (query_index_terms *)rctx.allocator.Alloc(sizeof(query_index_terms) + cnt * sizeof(std::pair<exec_term_id_t, uint8_t>));

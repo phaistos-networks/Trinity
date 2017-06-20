@@ -8,6 +8,7 @@
 namespace Trinity
 {
         static constexpr uint8_t UnaryOperatorPrio{100};
+	static constexpr uint8_t DefaultToNextSpan{0};
 
         enum class Operator : uint8_t
         {
@@ -206,7 +207,7 @@ namespace Trinity
                 simple_allocator &allocator;
                 term terms[Trinity::Limits::MaxPhraseSize];
                 // It is important that your queries token parser semantics are also implemented in your documents content parser
-                std::pair<uint32_t, uint8_t> (*token_parser)(const str32_t, char_t *);
+                std::pair<uint32_t, uint8_t> (*token_parser)(const str32_t, char_t *, const bool);
 		const uint32_t parserFlags;
                 std::vector<str8_t> distinctTokens;
                 // facilitates parsing
@@ -218,7 +219,7 @@ namespace Trinity
                         return ast_node::make(allocator, t);
                 }
 
-                ast_parser(const str32_t input, simple_allocator &a, std::pair<uint32_t, uint8_t> (*p)(const str32_t, char_t *) = default_token_parser_impl, const uint32_t parserFlags_ = 0)
+                ast_parser(const str32_t input, simple_allocator &a, std::pair<uint32_t, uint8_t> (*p)(const str32_t, char_t *, const bool) = default_token_parser_impl, const uint32_t parserFlags_ = 0)
                     : content{input}, contentBase{content.data()}, allocator{a}, token_parser{p}, parserFlags{parserFlags_}
                 {
                 }
@@ -279,13 +280,15 @@ namespace Trinity
                 // 3 		CRAFT 		1
                 // 4 		MISTS 		1
                 // 5 		OF 		1
-                // 6 		PANDARIA 	1
+                // 6 		PANDARIA 	0
                 // If you are going to try to match a sequence for matched term  'WARCRAFT'
                 // the only query instance of it is at index 2 and the next term in the query past
                 // any other 'equivalent' OR groups(in this case there is only one other OR expression matching warcraft, [war craft]) is 2 positions ahead to 4 (i.e to mists)
                 //
                 // The semantics of (index, toNextSpan) are somewhat complicated, but it's only because it is required for accurately and relatively effortlessly being able to
                 // capture sequences. A sequence is a 2+ consequtive tokens in a query.
+		//
+		// IMPORTANT: It can be 0 if there is no adjacent term. (i.e last term in a sequence or in the query)
                 uint8_t toNextSpan;
 
                 // flags. Usually 0, but e.g if you are rewritting a [wow] to [wow OR "world of warcraft"] you
@@ -299,12 +302,22 @@ namespace Trinity
                 // and you 'd rather not have to go through hoops to accomplish it
                 range_base<uint16_t, uint16_t> inputRange;
 
-		// A range, which represents the logical span in the input query terms list that was expanded/rewritten/captured.
-		// For example, rewrite_query() for query [pc games] where "pc games" is expanded to cid:806: [ (pc games) OR cid:806 ]
-		// cid:806 rewriteRange would be [0, 2), pc's would be [0, 1) and games would be [1, 2). This would make it easier to determine that
-		// e.g cid:806 was matched, which overlaps 'pc' and 'games'
-		range_base<uint16_t, uint8_t> rewriteRange;
+		struct
+                {
+                        // A range, which represents the logical span in the input query terms list that was expanded/rewritten/captured.
+                        // For example, rewrite_query() for query [pc games] where "pc games" is expanded to cid:806: [ (pc games) OR cid:806 ]
+                        // cid:806 range would be [0, 2), pc's would be [0, 1) and games would be [1, 2). This would make it easier to determine that
+                        // e.g cid:806 was matched, which overlaps 'pc' and 'games'
+                        range_base<uint16_t, uint8_t> range;
 
+			// This is 0, except when we expand or contract a sequence and its output is a single token
+			// e.g [mac book] =>  [macbook]. A sequence of two tokens into 1
+			// however for e.g
+			// [mac book] => [apple cool laptops], a sequence of two expanded to a sequence of 3, we can't currently treat
+			// the final sequence as a single entity, however we rarely if ever need to care for that kind of expansion, and we will
+			// come up with something by then
+			uint8_t srcSeqSize;
+                } rewrite_ctx;
 
                 term terms[0];
 
@@ -331,8 +344,8 @@ namespace Trinity
                         p->flags = 0;
                         p->rep = 1;
                         p->inputRange.reset();
-                        p->toNextSpan = 1;
-			p->rewriteRange.reset();
+                        p->toNextSpan = DefaultToNextSpan;
+			p->rewrite_ctx.range.reset();
                         p->size = n;
 
                         for (uint32_t i{0}; i != n; ++i)
@@ -352,7 +365,7 @@ namespace Trinity
                 ast_node *root;
                 simple_allocator allocator{512};
                 // parse() will set tokensParser; this may come in handy elsewhere, e.g see rewrite_query() impl.
-                std::pair<uint32_t, uint8_t> (*tokensParser)(const str32_t, char_t *);
+                std::pair<uint32_t, uint8_t> (*tokensParser)(const str32_t, char_t *, const bool);
 
                 // Normalize a query.
                 // This is invoked when you initially parse the query, but if you
@@ -384,7 +397,7 @@ namespace Trinity
 		 */
                 void leader_nodes(std::vector<ast_node *> *const out);
 
-                bool parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *) = default_token_parser_impl, uint32_t parserFlags = 0);
+                bool parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *, const bool) = default_token_parser_impl, uint32_t parserFlags = 0);
 
                 // This is handy. When we copy a query to another query, we want to make sure
                 // that tokens point to the destination query allocator, not the source, because it is possible for
@@ -402,7 +415,7 @@ namespace Trinity
                         return root;
                 }
 
-                query(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *) = default_token_parser_impl, const uint32_t parserFlags = 0)
+                query(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *, const bool) = default_token_parser_impl, const uint32_t parserFlags = 0)
                     : tokensParser{tp}
                 {
                         if (!parse(in, tp, parserFlags))
