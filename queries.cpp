@@ -226,7 +226,7 @@ static auto parse_operator(ast_parser &ctx)
 }
 
 // define for more verbose representation of binops
-#define _VERBOSE_DESCR 1
+//#define _VERBOSE_DESCR 1
 
 static void PrintImpl(Buffer &b, const Operator op)
 {
@@ -267,7 +267,7 @@ void PrintImpl(Buffer &b, const Trinity::phrase &p)
         if (p.size)
                 b.shrink_by(1);
         b.append('"');
-#if 1
+#if defined(_VERBOSE_DESCR)
         b.append('<');
         b.append("idx:", p.index, " span:", p.toNextSpan);
         if (p.rep > 1)
@@ -290,7 +290,7 @@ void PrintImpl(Buffer &b, const Trinity::phrase &p)
 static void print_token(Buffer &b, const phrase *const p)
 {
         b.append(p->terms[0].token);
-#if 1
+#if defined(_VERBOSE_DESCR)
         b.append('<');
         b.append("idx:", p->index, " span:", p->toNextSpan);
         if (p->rep > 1)

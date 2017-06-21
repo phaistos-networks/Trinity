@@ -220,6 +220,15 @@ namespace Trinity
                 std::vector<flow *> allocatedFlows, flows, flows_1, flows_2;
                 std::set<flow *> S[2];
 
+		~gen_ctx()
+		{
+                        while (allocatedFlows.size())
+                        {
+                                allocatedFlows.back()->~flow();
+                                allocatedFlows.pop_back();
+                        }
+		}
+
 
 		void prepare_run_capture()
 		{

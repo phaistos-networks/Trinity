@@ -10,6 +10,8 @@ Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_
         int32_t top{int32_t(skipList.size()) - 1};
         const auto skipListData = skipList.data();
 
+	expect(q.size() <= Limits::MaxTermLength);
+
         // skiplist search for the appropriate block
         // we can't use lower_bound
         for (int32_t btm{0}; btm <= top;)
@@ -42,12 +44,15 @@ l100:
         auto prev = it.term;
 	char_t termStorage[Limits::MaxTermLength];
 
+	Dexpect(prev.size() <= sizeof_array(termStorage));
         memcpy(termStorage, prev.data(), prev.size() * sizeof(char_t));
 
         for (const auto *p = termsData.offset + o, *const e = termsData.offset + termsData.size(); p != e;)
         {
                 const auto commonPrefixLen = *p++;
                 const auto suffixLen = *p++;
+
+		Dexpect(commonPrefixLen + suffixLen <= sizeof_array(termStorage));
 
                 memcpy(termStorage + commonPrefixLen * sizeof(char_t), p, suffixLen * sizeof(char_t));
                 p += suffixLen * sizeof(char_t);
