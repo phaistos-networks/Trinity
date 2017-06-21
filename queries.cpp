@@ -41,11 +41,11 @@ static std::pair<str32_t, range_base<uint16_t, uint16_t>> parse_term(ast_parser 
 
                         ctx.content.strip_prefix(pair.first);
 
-			// for e.g san francisco-based
-			// after we have parsed 'francisco' we don't want to
-			// consider '-' as a NOT operator
-			while (ctx.content.size() && ctx.content.front() == '-')
-				ctx.content.strip_prefix(1);
+                        // for e.g san francisco-based
+                        // after we have parsed 'francisco' we don't want to
+                        // consider '-' as a NOT operator
+                        while (ctx.content.size() && ctx.content.front() == '-')
+                                ctx.content.strip_prefix(1);
 
                         if (unlikely(pair.second > Trinity::Limits::MaxTermLength))
                         {
@@ -65,9 +65,9 @@ static std::pair<str32_t, range_base<uint16_t, uint16_t>> parse_term(ast_parser 
                 }
 
                 if (ctx.content.empty() || (ctx.groupTerm.size() && ctx.groupTerm.back() == ctx.content.front()))
-		{
+                {
                         return {{}, {}};
-		}
+                }
                 else if (ctx.content)
                 {
                         // whitespace or other content here
@@ -84,14 +84,14 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                 auto &terms = ctx.terms;
                 uint8_t n{0};
                 term t;
-		range_base<uint16_t, uint16_t> range;
-		const auto b = ctx.content.data();
+                range_base<uint16_t, uint16_t> range;
+                const auto b = ctx.content.data();
 
-		range.offset = b - ctx.contentBase;
+                range.offset = b - ctx.contentBase;
                 for (;;)
                 {
                         ctx.skip_ws();
-			range.len = ctx.content.data() - b;
+                        range.len = ctx.content.data() - b;
                         if (!ctx.content || ctx.content.StripPrefix(_S("\"")))
                                 break;
 
@@ -124,11 +124,12 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                         p->size = n;
                         std::copy(terms, terms + n, p->terms);
                         p->rep = 1;
-			p->toNextSpan = n;
-			p->rewrite_ctx.range.reset();
-			p->rewrite_ctx.srcSeqSize = 0;
+                        p->toNextSpan = n;
+                        p->rewrite_ctx.range.reset();
+                        p->rewrite_ctx.srcSeqSize = 0;
+                        p->rewrite_ctx.translationCoefficient = 1.0;
                         p->flags = 0;
-			p->inputRange = range;
+                        p->inputRange = range;
                         node->p = p;
                         return node;
                 }
@@ -150,11 +151,12 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                 p->size = 1;
                 p->terms[0] = t;
                 p->rep = 1;
-		p->toNextSpan = DefaultToNextSpan;
-		p->rewrite_ctx.range.reset();
-		p->rewrite_ctx.srcSeqSize = 0;
+                p->toNextSpan = DefaultToNextSpan;
+                p->rewrite_ctx.range.reset();
+                p->rewrite_ctx.srcSeqSize = 0;
+                p->rewrite_ctx.translationCoefficient = 1.0;
                 p->flags = 0;
-		p->inputRange = pair.second;
+                p->inputRange = pair.second;
                 node->p = p;
                 return node;
         }
@@ -179,8 +181,8 @@ static std::pair<Operator, uint8_t> parse_operator_impl(ast_parser &ctx)
 
                 switch (f)
                 {
-			case '|':
-				// google supports this operator. so does amazon.com (amazon doesn't support OR). Jet.com doesn't support OR at all
+                        case '|':
+                                // google supports this operator. so does amazon.com (amazon doesn't support OR). Jet.com doesn't support OR at all
                                 do
                                 {
                                         s.strip_prefix(1);
@@ -188,13 +190,13 @@ static std::pair<Operator, uint8_t> parse_operator_impl(ast_parser &ctx)
                                 return {Operator::OR, s.p - ctx.content.p};
 
                         case '+':
-				if (char_t c; s.size() > 1 && (c = s.p[1]) && !isspace(c) && c != '+')
+                                if (char_t c; s.size() > 1 && (c = s.p[1]) && !isspace(c) && c != '+')
                                 {
-					// TODO: this should have been a bit more sophisticated
-					// e.g it shouldn't return an operator for +< or other non alphanumeric characters
+                                        // TODO: this should have been a bit more sophisticated
+                                        // e.g it shouldn't return an operator for +< or other non alphanumeric characters
                                         return {Operator::STRICT_AND, 1};
                                 }
-				break;
+                                break;
 
                         case '-':
                                 return {Operator::NOT, 1};
@@ -232,7 +234,7 @@ static void PrintImpl(Buffer &b, const Operator op)
         {
                 case Operator::AND:
 #ifdef _VERBOSE_DESCR
-			b.append("<and>"_s8);
+                        b.append("<and>"_s8);
 #endif
                         break;
 
@@ -266,20 +268,22 @@ void PrintImpl(Buffer &b, const Trinity::phrase &p)
                 b.shrink_by(1);
         b.append('"');
 #if 1
-	b.append('<');
-	b.append("idx:", p.index, " span:", p.toNextSpan);
+        b.append('<');
+        b.append("idx:", p.index, " span:", p.toNextSpan);
         if (p.rep > 1)
                 b.append(" rep:", p.rep);
-	if (p.flags)
-		b.append(" f:", p.flags);
-	if (p.rewrite_ctx.range)
-		b.append(" rr:", p.rewrite_ctx.range);
-	if (p.rewrite_ctx.srcSeqSize)
-		b.append(" sss:", p.rewrite_ctx.srcSeqSize);
-	if (b.back() == '<')
-		b.shrink_by(1);
-	else
-		b.append('>');
+        if (p.flags)
+                b.append(" f:", p.flags);
+        if (p.rewrite_ctx.range)
+                b.append(" rr:", p.rewrite_ctx.range);
+        if (p.rewrite_ctx.srcSeqSize)
+                b.append(" sss:", p.rewrite_ctx.srcSeqSize);
+        if (p.rewrite_ctx.translationCoefficient != 1)
+                b.append(" tc:", p.rewrite_ctx.translationCoefficient);
+        if (b.back() == '<')
+                b.shrink_by(1);
+        else
+                b.append('>');
 #endif
 }
 
@@ -287,20 +291,22 @@ static void print_token(Buffer &b, const phrase *const p)
 {
         b.append(p->terms[0].token);
 #if 1
-	b.append('<');
-	b.append("idx:", p->index, " span:", p->toNextSpan);
+        b.append('<');
+        b.append("idx:", p->index, " span:", p->toNextSpan);
         if (p->rep > 1)
                 b.append(" rep:", p->rep);
-	if (p->flags)
-		b.append(" f:", p->flags);
-	if (p->rewrite_ctx.range)
-		b.append(" rr:", p->rewrite_ctx.range);
-	if (p->rewrite_ctx.srcSeqSize)
-		b.append(" sss:", p->rewrite_ctx.srcSeqSize);
-	if (b.back() == '<')
-		b.shrink_by(1);
-	else
-		b.append('>');
+        if (p->flags)
+                b.append(" f:", p->flags);
+        if (p->rewrite_ctx.range)
+                b.append(" rr:", p->rewrite_ctx.range);
+        if (p->rewrite_ctx.srcSeqSize)
+                b.append(" sss:", p->rewrite_ctx.srcSeqSize);
+        if (p->rewrite_ctx.translationCoefficient != 1)
+                b.append(" tc:", p->rewrite_ctx.translationCoefficient);
+        if (b.back() == '<')
+                b.shrink_by(1);
+        else
+                b.append('>');
 #endif
 }
 
@@ -317,7 +323,7 @@ void PrintImpl(Buffer &b, const Trinity::ast_node &n)
                         break;
 
                 case ast_node::Type::Phrase:
-			b.append(*n.p);
+                        b.append(*n.p);
                         break;
 
                 case ast_node::Type::Token:
@@ -326,15 +332,14 @@ void PrintImpl(Buffer &b, const Trinity::ast_node &n)
 
                 case ast_node::Type::BinOp:
                 {
-			require(n.binop.lhs);
-			require(n.binop.rhs);
+                        require(n.binop.lhs);
+                        require(n.binop.rhs);
 
 #ifdef _VERBOSE_DESCR
                         static const bool useparens{true};
 #else
                         const bool useparens = n.binop.op != Operator::AND || n.binop.lhs->type == ast_node::Type::BinOp || n.binop.rhs->type == ast_node::Type::BinOp;
 #endif
-
 
                         if (useparens)
                                 b.append('(');
@@ -971,13 +976,13 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx)
                 return;
         }
 
-	if (n->binop.op == Operator::NOT && lhs->is_unary() && rhs->type == ast_node::Type::BinOp && rhs->binop.rhs->is_unary() && *lhs->p == *rhs->binop.rhs->p)
-	{
-		// foo NOT (ipad AND foo)
-		n->set_const_false();
-		++ctx.updates;
-		return;
-	}
+        if (n->binop.op == Operator::NOT && lhs->is_unary() && rhs->type == ast_node::Type::BinOp && rhs->binop.rhs->is_unary() && *lhs->p == *rhs->binop.rhs->p)
+        {
+                // foo NOT (ipad AND foo)
+                n->set_const_false();
+                ++ctx.updates;
+                return;
+        }
 }
 
 // We implement most of the rules here in expand_node(). See IMPLEMENTATION.md
@@ -1042,7 +1047,7 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx)
 // This method, rewrite_query() and the impl. of the algorithm that considers matched sequences in Consider() have been particularly challenging to get right.
 struct query_assign_ctx final
 {
-	uint32_t nextIndex;
+        uint32_t nextIndex;
         std::vector<std::vector<phrase *> *> stack;
 };
 
@@ -1269,17 +1274,17 @@ ast_node *normalize_root(ast_node *root)
                 // is not optimal, because the query can be updated, or we can just build
                 // the query ourselves programmatically, and whatever the case, we need
                 // to get those phrase indices properly
-		//
+                //
                 // Because we are going to normalize_root() whenever we update the query structure and
                 // when we are committing the changes, we are guaranteed to get this right
-		//
-		// This is very tricky because of OR expressions, and because multiple OR expresions starting from the same 'index' can be of variable length in terms of tokens
-		// we need to also track a skip/jump value.
-		//
-		// See Trinity::phrase decl. comments 
-		query_assign_ctx ctx;
+                //
+                // This is very tricky because of OR expressions, and because multiple OR expresions starting from the same 'index' can be of variable length in terms of tokens
+                // we need to also track a skip/jump value.
+                //
+                // See Trinity::phrase decl. comments
+                query_assign_ctx ctx;
 
-		ctx.nextIndex = 0;
+                ctx.nextIndex = 0;
 #if 0
 		phrase *firstPhrase{nullptr}, *lastPhrase{nullptr};
                 assign_query_indices(root, ctx, firstPhrase, lastPhrase);
@@ -1294,7 +1299,6 @@ ast_node *normalize_root(ast_node *root)
 			exit(0);
 		}
 #endif
-
         }
 
         return root;
@@ -1319,8 +1323,9 @@ ast_node *ast_node::copy(simple_allocator *const a)
                         np->toNextSpan = n->p->toNextSpan;
                         np->flags = n->p->flags;
                         np->inputRange = n->p->inputRange;
-			np->rewrite_ctx.range = n->p->rewrite_ctx.range;;
-			np->rewrite_ctx.srcSeqSize = n->p->rewrite_ctx.srcSeqSize;
+                        np->rewrite_ctx.range = n->p->rewrite_ctx.range;
+                        np->rewrite_ctx.srcSeqSize = n->p->rewrite_ctx.srcSeqSize;
+                        np->rewrite_ctx.translationCoefficient = n->p->rewrite_ctx.translationCoefficient;
 
                         memcpy(np->terms, n->p->terms, sizeof(np->terms[0]) * np->size);
                         res->p = np;
@@ -1433,6 +1438,73 @@ bool query::normalize()
         }
         else
                 return false;
+}
+
+void ast_node::set_rewrite_translation_coeff(const uint16_t span)
+{
+        // figure out how many tokens a sequence of `span` expanded into
+        // i.e size of this node
+        static thread_local std::vector<ast_node *> stackTLS, &stack{stackTLS};
+        std::size_t cnt{0};
+
+        stack.clear();
+        stack.push_back(this);
+
+        //SLog("Setting translation coeff, span = ", span, " ", *this, "\n");
+
+        do
+        {
+                auto n = stack.back();
+
+                stack.pop_back();
+
+                switch (n->type)
+                {
+                        case Type::Token:
+                        case Type::Phrase:
+                                cnt += n->p->size;
+                                break;
+
+                        case Type::BinOp:
+                                if (n->binop.op == Operator::AND || n->binop.op == Operator::STRICT_AND)
+                                {
+                                        stack.push_back(n->binop.lhs);
+                                        stack.push_back(n->binop.rhs);
+                                        break;
+                                }
+                                else
+                                        return;
+
+                        default:
+                                // only tokens/phrases expected and binop AND
+                                return;
+                }
+        } while (stack.size());
+
+        const auto f = std::min<double>(span, cnt) / std::max<double>(span, cnt);
+
+        stack.push_back(this);
+        do
+        {
+                auto n = stack.back();
+
+                stack.pop_back();
+                switch (n->type)
+                {
+                        case Type::Token:
+                        case Type::Phrase:
+                                p->rewrite_ctx.translationCoefficient = f;
+                                break;
+
+                        case Type::BinOp:
+                                stack.push_back(n->binop.lhs);
+                                stack.push_back(n->binop.rhs);
+                                break;
+
+                        default:
+                                break;
+                }
+        } while (stack.size());
 }
 
 void ast_node::set_rewrite_range(const range_base<uint16_t, uint8_t> r)
@@ -1605,7 +1677,7 @@ bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str
 void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a)
 {
         std::vector<ast_node *> stack;
-	std::unordered_map<str8_t, char_t *> map;
+        std::unordered_map<str8_t, char_t *> map;
 
         stack.push_back(n);
         do
@@ -1617,22 +1689,21 @@ void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a)
                 {
                         case ast_node::Type::Token:
                         case ast_node::Type::Phrase:
-				{
-					const auto phrase = n->p;
+                        {
+                                const auto phrase = n->p;
 
-					for (uint32_t i{0}; i != phrase->size; ++i)
-					{
-						auto &t = phrase->terms[i].token;
-						auto res = map.insert({t, nullptr});
+                                for (uint32_t i{0}; i != phrase->size; ++i)
+                                {
+                                        auto &t = phrase->terms[i].token;
+                                        auto res = map.insert({t, nullptr});
 
-						if (res.second)
-							res.first->second = a->CopyOf(t.data(), t.size());
+                                        if (res.second)
+                                                res.first->second = a->CopyOf(t.data(), t.size());
 
-						t.p = res.first->second;
-					}
-
-				}
-                                break;
+                                        t.p = res.first->second;
+                                }
+                        }
+                        break;
 
                         case ast_node::Type::BinOp:
                                 stack.push_back(n->binop.lhs);
@@ -1644,9 +1715,9 @@ void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a)
                                 stack.push_back(n->expr);
                                 break;
 
-			case ast_node::Type::Dummy:
-			case ast_node::Type::ConstFalse:
-				break;
+                        case ast_node::Type::Dummy:
+                        case ast_node::Type::ConstFalse:
+                                break;
                 }
         } while (stack.size());
 }
@@ -1658,52 +1729,52 @@ void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a)
 // https://github.com/phaistos-networks/Trinity/wiki
 std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::str32_t content, Trinity::char_t *out, const bool in_phrase)
 {
-	static constexpr bool trace{false};
+        static constexpr bool trace{false};
         const auto *p = content.begin(), *const e = content.end(), *const b{p};
-	bool allAlphas{true};
+        bool allAlphas{true};
 
-	if (*p == '+' && (p + 1 == e || (p[1] != '+' && p[1] != '-' && !isalnum(p[1]))))
-	{
-		str32_t(_S("PLUS")).CopyTo(out);
-		return {1, "PLUS"_len};
-	}
+        if (*p == '+' && (p + 1 == e || (p[1] != '+' && p[1] != '-' && !isalnum(p[1]))))
+        {
+                str32_t(_S("PLUS")).CopyTo(out);
+                return {1, "PLUS"_len};
+        }
 
-	if (p + 4 < e && isalpha(*p) && p[1] == '.' && isalnum(p[2]) && p[3] == '.' && isalpha(p[4]))
-	{
-		// Acronyms with punctuations
-		// is it e.g I.B.M, or U.S.A. ?
-		const auto threshold = out + 0xff;
-		auto o{out};
+        if (p + 4 < e && isalpha(*p) && p[1] == '.' && isalnum(p[2]) && p[3] == '.' && isalpha(p[4]))
+        {
+                // Acronyms with punctuations
+                // is it e.g I.B.M, or U.S.A. ?
+                const auto threshold = out + 0xff;
+                auto o{out};
 
-		*o++ = p[0];
-		*o++ = p[2];
-		*o++ = p[4];
+                *o++ = p[0];
+                *o++ = p[2];
+                *o++ = p[4];
 
                 for (p += 5;;)
                 {
                         if (p == e)
-				break;
+                                break;
                         else if (*p == '.')
                         {
-				++p;
-				if (p == e)
-					break;
-				else if (isalpha(*p))
-				{
-					if (unlikely(o !=threshold))
-						*o++ = *p;
-					++p;
-					continue;
-				}
-				else if (!isalnum(*p))
-					break;
-				else
-					goto l20;
+                                ++p;
+                                if (p == e)
+                                        break;
+                                else if (isalpha(*p))
+                                {
+                                        if (unlikely(o != threshold))
+                                                *o++ = *p;
+                                        ++p;
+                                        continue;
+                                }
+                                else if (!isalnum(*p))
+                                        break;
+                                else
+                                        goto l20;
                         }
                         else if (isalnum(*p))
                                 goto l20;
-			else
-				break;
+                        else
+                                break;
                 }
 
                 return {p - content.data(), o - out};
@@ -1712,9 +1783,9 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
 l20:
         if (p != e && isalpha(*p))
         {
-		// e.g site:google.com, or video|games
+                // e.g site:google.com, or video|games
                 while (p != e && isalpha(*p))
-			++p;
+                        ++p;
 
                 if (p + 1 < e && *p == ':' && isalnum(p[1]))
                 {
@@ -1724,7 +1795,7 @@ l20:
                 }
         }
 
-	if (p == content.data() && p != e && isdigit(*p))
+        if (p == content.data() && p != e && isdigit(*p))
         {
                 // numeric transformations
                 // This is not very appropriate, all things considered
@@ -1744,28 +1815,27 @@ l20:
                         while (it != e && isdigit(*it))
                                 ++it;
 
-			
                         {
                                 const str32_t fractional(p + 1, it - (p + 1));
                                 const auto n = content.PrefixUpto(p);
 
-				if (trace)
-					SLog("[", n, "] [", fractional, "]\n");
+                                if (trace)
+                                        SLog("[", n, "] [", fractional, "]\n");
 
                                 if (fractional.all_of('0'))
                                 {
-					if (fractional.size() >= 3)
-					{
-						n.CopyTo(out);
-						fractional.CopyTo(out + n.size());
+                                        if (fractional.size() >= 3)
+                                        {
+                                                n.CopyTo(out);
+                                                fractional.CopyTo(out + n.size());
 
-						return {it - content.data(), n.size() + fractional.size()};
-					}
-					else
-					{
-						n.CopyTo(out);
-						return {it - content.data(), n.size()};
-					}
+                                                return {it - content.data(), n.size() + fractional.size()};
+                                        }
+                                        else
+                                        {
+                                                n.CopyTo(out);
+                                                return {it - content.data(), n.size()};
+                                        }
                                 }
                                 else
                                 {
@@ -1797,75 +1867,71 @@ l20:
 		}
 #endif
 
-		while (p != e)
-		{
-			if (isalpha(*p))
-			{
-			}
-			else if (isdigit(*p))
-			{
-				allAlphas = false;
-			}
-			else
-				break;
-			++p;
-		}
-
-		if (*p == '\'' && allAlphas)
-		{
-			// Apostrophes
-			// Can be used for clitic contractions (we're => we are), as genitive markers (John's boat), or as quotative markers
-			// This is a best-effort heuristic; you should just implement and use your own parser if you need a different behavior
-			// which is true for all other heuristics and design decisions specific to this parser implementaiton.
-			const str32_t s(b, p - b);
-
-			if (p + 1 != e && toupper(p[1]) == 'S' && (p + 2 == e || (!isalnum(p[2]) && p[2] != '\'')))
+                while (p != e)
+                {
+                        if (isalpha(*p))
                         {
-				if (s.EqNoCase(_S("IT")))
-				{
-					// TODO: IT'S => IT IS
-				}
+                        }
+                        else if (isdigit(*p))
+                        {
+                                allAlphas = false;
+                        }
+                        else
+                                break;
+                        ++p;
+                }
+
+                if (*p == '\'' && allAlphas)
+                {
+                        // Apostrophes
+                        // Can be used for clitic contractions (we're => we are), as genitive markers (John's boat), or as quotative markers
+                        // This is a best-effort heuristic; you should just implement and use your own parser if you need a different behavior
+                        // which is true for all other heuristics and design decisions specific to this parser implementaiton.
+                        const str32_t s(b, p - b);
+
+                        if (p + 1 != e && toupper(p[1]) == 'S' && (p + 2 == e || (!isalnum(p[2]) && p[2] != '\'')))
+                        {
+                                if (s.EqNoCase(_S("IT")))
+                                {
+                                        // TODO: IT'S => IT IS
+                                }
 
                                 // genetive marker
-				*s.CopyTo(out) = 'S';
+                                *s.CopyTo(out) = 'S';
 
                                 return {s.size() + 2, s.size() + 1};
                         }
 
                         allAlphas = false;
-		}
+                }
 
-		if (allAlphas)
-		{
-			if (p == content.data() + 1 && p + 2 <= e && *p == '&' && isalpha(p[1]))
+                if (allAlphas)
+                {
+                        if (p == content.data() + 1 && p + 2 <= e && *p == '&' && isalpha(p[1]))
                         {
                                 if (p + 2 == e || !isalnum(p[2]))
                                 {
                                         // d&d, x&y
 
-					content.Prefix(3).CopyTo(out);
-					return {3, 3};
+                                        content.Prefix(3).CopyTo(out);
+                                        return {3, 3};
                                 }
-
                         }
                 }
-
-
-
 
                 if (p != b && p != e)
                 {
                         if (*p == '-')
                         {
-				// Hyphenated words: Sometimes this can be used as a separator e.g
-				// [New York-based], or [forty-two], but some other times it is important like 
-				// [x-men] and [pre-processing]. For now, we 'll treat it as a separator, but this is not optimal
+// Hyphenated words: Sometimes this can be used as a separator e.g
+// [New York-based], or [forty-two], but some other times it is important like
+// [x-men] and [pre-processing]. For now, we 'll treat it as a separator, but this is not optimal
 #if 0 // treat a separator
                                 ++p;
                                 continue;
 #endif
                         }
-                        else if ((*p == '+' || *p == '#' )&& isalpha(p[-1]) && (p + 1 == e || !isalnum(p[1])))
+                        else if ((*p == '+' || *p == '#') && isalpha(p[-1]) && (p + 1 == e || !isalnum(p[1])))
                         {
                                 // C++, C#
                                 for (++p; p != e && *p == '+'; ++p)

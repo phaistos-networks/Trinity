@@ -150,6 +150,8 @@ namespace Trinity
 
 		void set_rewrite_range(const range_base<uint16_t, uint8_t>);
 
+		void set_rewrite_translation_coeff(const uint16_t span);
+
                 size_t nodes_count() const noexcept
                 {
                         switch (type)
@@ -310,12 +312,22 @@ namespace Trinity
                         // e.g cid:806 was matched, which overlaps 'pc' and 'games'
                         range_base<uint16_t, uint8_t> range;
 
+			// We encode expansions and contractions here
+			// if you rewrite(expand) [cod] to [call of duty], i.e from 1 token to 3, then
+			// this should be equal to 1/3
+			// Conversely, if we rewrite(contract) [lord of the rings] to [lotr], i.e from 4 tokens to 1, then
+			// this should be equal to 1/4 -- i.e std::min(low, high)/std::max(low, high)
+			float translationCoefficient;
+
+
 			// This is 0, except when we expand or contract a sequence and its output is a single token
 			// e.g [mac book] =>  [macbook]. A sequence of two tokens into 1
 			// however for e.g
 			// [mac book] => [apple cool laptops], a sequence of two expanded to a sequence of 3, we can't currently treat
 			// the final sequence as a single entity, however we rarely if ever need to care for that kind of expansion, and we will
-			// come up with something by then
+			// come up with something by then.
+			//
+			// You should probably just use translationCoefficient.
 			uint8_t srcSeqSize;
                 } rewrite_ctx;
 
@@ -346,6 +358,8 @@ namespace Trinity
                         p->inputRange.reset();
                         p->toNextSpan = DefaultToNextSpan;
 			p->rewrite_ctx.range.reset();
+			p->rewrite_ctx.srcSeqSize = 1;
+			p->rewrite_ctx.translationCoefficient = 1.0;
                         p->size = n;
 
                         for (uint32_t i{0}; i != n; ++i)

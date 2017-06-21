@@ -397,6 +397,8 @@ namespace Trinity
 					lhs->p->rewrite_ctx.srcSeqSize = span;
 				}
 
+				lhs->set_rewrite_translation_coeff(span);
+
 				if (budget && budget != std::numeric_limits<std::size_t>::max())
                                 {
                                         if (const auto n = lhs->nodes_count(); budget >= n)
@@ -430,6 +432,8 @@ namespace Trinity
 
 					if (n->binop.rhs->type == ast_node::Type::Token && span > 1)
 						n->binop.rhs->p->rewrite_ctx.srcSeqSize = span;
+
+					n->binop.rhs->set_rewrite_translation_coeff(span);
 
 					if (budget && budget != std::numeric_limits<std::size_t>::max())
                                         {
@@ -465,6 +469,8 @@ namespace Trinity
 					// source range span > 1 and alt is a token
 					node->p->rewrite_ctx.srcSeqSize = span;
 				}
+
+				node->set_rewrite_translation_coeff(span);
 
                                 if (trace)
                                         SLog("Parsed [", alts[saved], "] ", *node, "\n");

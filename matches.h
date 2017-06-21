@@ -82,6 +82,7 @@ namespace Trinity
 			struct
 			{
 				range_base<uint16_t, uint8_t> range;
+				float translationCoefficient;
 				uint8_t srcSeqSize;
 			} rewrite_ctx;
                 } instances[0];
