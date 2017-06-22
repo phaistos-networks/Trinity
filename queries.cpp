@@ -124,7 +124,7 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx)
                         p->size = n;
                         std::copy(terms, terms + n, p->terms);
                         p->rep = 1;
-                        p->toNextSpan = n;
+                        p->toNextSpan = DefaultToNextSpan;
                         p->rewrite_ctx.range.reset();
                         p->rewrite_ctx.srcSeqSize = 0;
                         p->rewrite_ctx.translationCoefficient = 1.0;
