@@ -1889,7 +1889,7 @@ l20:
                         // which is true for all other heuristics and design decisions specific to this parser implementaiton.
                         const str32_t s(b, p - b);
 
-                        if (p + 1 != e && toupper(p[1]) == 'S' && (p + 2 == e || (!isalnum(p[2]) && p[2] != '\'')))
+                        if (p + 1 < e && toupper(p[1]) == 'S' && (p + 2 > e || (!isalnum(p[2]) && p[2] != '\'')))
                         {
                                 if (s.EqNoCase(_S("IT")))
                                 {
