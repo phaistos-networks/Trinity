@@ -566,19 +566,10 @@ namespace Trinity
                 // 2. Sorting the list _properly_
                 // Figuring out the right order is extremely important; it's what make this scheme design possible
                 std::sort(list.begin(), list.end(), [](const auto &a, const auto &b) {
-
-                        //return a.first.stop() < b.first.stop() || (a.first.stop() == b.first.stop() && a.first.offset < b.first.offset); 	// SORT METHOD #1
-                        //return a.first.stop() < b.first.stop() || (a.first.stop() == b.first.stop() && b.first.offset < a.first.offset); 	// SORT METHOD #2
-
-			// WORKS
-                        //return a.first.offset < b.first.offset || (a.first.offset == b.first.offset && b.first.stop() < a.first.stop()); // SORT METHOD #3
-
-
                         return a.first.offset < b.first.offset || (a.first.offset == b.first.offset && a.first.stop() < b.first.stop()); // SORT METHOD #4
-
                 });
 
-                if (trace || true)
+                if (trace)
                 {
                         for (uint32_t i{0}; i != list.size(); ++i)
                         {
