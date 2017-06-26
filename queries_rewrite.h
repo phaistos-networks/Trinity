@@ -436,6 +436,9 @@ namespace Trinity
                                         n->binop.rhs = ast_parser(alts[i + saved].first, allocator, tokensParser).parse();
                                         lhs = n;
 
+					if (trace)
+						SLog("[", alts[i + saved].first, "] to [", *n->binop.rhs, "]\n");
+
                                         if (unlikely(nullptr == n->binop.rhs))
                                                 throw Switch::data_error("Failed to parse [", alts[i + saved].first, "]");
 
@@ -455,7 +458,7 @@ namespace Trinity
                                         if (const auto flags = alts[i + saved].second)
                                         {
                                                 if (trace)
-                                                        SLog("FLAGS:", flags, "\n");
+                                                        SLog("FLAGS:", flags, " for [", *n->binop.rhs, "]\n");
 
                                                 n->binop.rhs->set_alltokens_flags(flags);
                                         }

@@ -1444,7 +1444,8 @@ void ast_node::set_rewrite_translation_coeff(const uint16_t span)
 {
         // figure out how many tokens a sequence of `span` expanded into
         // i.e size of this node
-        static thread_local std::vector<ast_node *> stackTLS, &stack{stackTLS};
+        static thread_local std::vector<ast_node *> stackTLS;
+	auto &stack{stackTLS};
         std::size_t cnt{0};
 
         stack.clear();
@@ -1493,7 +1494,7 @@ void ast_node::set_rewrite_translation_coeff(const uint16_t span)
                 {
                         case Type::Token:
                         case Type::Phrase:
-                                p->rewrite_ctx.translationCoefficient = f;
+                                n->p->rewrite_ctx.translationCoefficient = f;
                                 break;
 
                         case Type::BinOp:
