@@ -265,9 +265,12 @@ namespace Trinity
                 static constexpr bool trace{false};
                 require(i < run.size());
                 const auto token = run[i]->p->terms[0].token;
-                static thread_local std::vector<std::pair<std::pair<str32_t, uint8_t>, uint8_t>> v;
-                static thread_local std::vector<std::pair<str32_t, uint8_t>> alts;
-                static thread_local simple_allocator altAllocatorInstance;
+                static thread_local std::vector<std::pair<std::pair<str32_t, uint8_t>, uint8_t>> vTLS;
+		auto &v{vTLS};
+                static thread_local std::vector<std::pair<str32_t, uint8_t>> altsTLS;
+		auto &alts{altsTLS};
+                static thread_local simple_allocator altAllocatorInstanceTLS;
+		auto &altAllocatorInstance{altAllocatorInstanceTLS};
                 auto &altAllocator = altAllocatorInstance;
                 const auto normalizedMaxSpan = std::min<uint8_t>(maxSpan, genCtx.K);
                 strwlen8_t tokens[normalizedMaxSpan];
@@ -279,6 +282,7 @@ namespace Trinity
                         SLog(ansifmt::bold, ansifmt::color_green, "AT ", i, " ", token, ansifmt::reset, " (maxSpan = ", maxSpan, "(", normalizedMaxSpan, "), budget = ", budget, ")\n");
 
                 alts.clear();
+		v.clear();
 
                 if (run[i]->p->rep > 1 || run[i]->p->flags || 0 == budget)
                 {
@@ -574,13 +578,13 @@ namespace Trinity
 
                 });
 
-                if (trace)
+                if (trace || true)
                 {
                         for (uint32_t i{0}; i != list.size(); ++i)
                         {
                                 const auto &it = list[i];
 
-                                Print(i, ": ", it.first, ":", *it.second, "\n");
+                                Print("LIST: ", i, ": ", it.first, ":", *it.second, "\n");
                         }
                 }
 
@@ -1094,7 +1098,7 @@ namespace Trinity
                 // will replace with with alternatives or with itself, and it won't preserve the operator
                 // i.e it will be turned to [iphone with].
                 // TODO: preserve operator
-                q.process_runs(false, false, true, [&](const auto &run) {
+                q.process_runs(false, true, true, [&](const auto &run) {
                         ast_node *lhs{nullptr};
 
                         if (trace)
