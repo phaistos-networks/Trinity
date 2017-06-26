@@ -1,6 +1,7 @@
 #include "merge.h"
 #include <text.h>
 #include "docwordspace.h"
+#include <set>
 
 void Trinity::MergeCandidatesCollection::commit()
 {
@@ -323,4 +324,38 @@ l10:
                 } while (toAdvanceCnt);
         }
 l1:;
+}
+
+std::vector<std::pair<uint64_t, Trinity::MergeCandidatesCollection::IndexSourceRetention>> 
+	Trinity::MergeCandidatesCollection::consider_tracked_sources(std::vector<uint64_t> trackedSources)
+{
+        std::set<uint64_t> candidatesGens;
+        std::vector<std::pair<uint64_t, IndexSourceRetention>> res;
+        const auto cnt = trackedSources.size();
+	uint32_t lastNotCandidateIdx{UINT32_MAX};
+
+        std::sort(trackedSources.begin(), trackedSources.end());
+        for (const auto &it : candidates)
+                candidatesGens.insert(it.gen);
+
+        for (uint32_t i{0}; i != cnt; ++i)
+        {
+                const auto gen = trackedSources[i];
+
+                if (!candidatesGens.count(gen))
+                {
+                        lastNotCandidateIdx = i;
+                        res.push_back({gen, IndexSourceRetention::RetainAll});
+                        continue;
+                }
+                else if (lastNotCandidateIdx < i)
+                {
+                        // if there is 1+ other tracked sources, and any of those sources is NOT in candidatesGens, we need to retain the updated documentIDs
+                        res.push_back({gen, IndexSourceRetention::RetainDocumentIDsUpdates});
+                }
+                else
+                        res.push_back({gen, IndexSourceRetention::Delete});
+        }
+
+        return res;
 }

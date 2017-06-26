@@ -18,7 +18,7 @@ namespace Trinity
 
                 // All documents masked in this index source
                 // more recent candidates(i.e candidates where gen < this gen) will use it
-		// see MergeCandidatesCollection::merge() impl.
+                // see MergeCandidatesCollection::merge() impl.
                 updated_documents maskedDocuments;
 
                 merge_candidate &operator=(const merge_candidate &o)
@@ -30,7 +30,6 @@ namespace Trinity
                         return *this;
                 }
         };
-
 
         // See IndexSourcesCollection
         class MergeCandidatesCollection final
@@ -52,29 +51,53 @@ namespace Trinity
 
                 std::unique_ptr<Trinity::masked_documents_registry> scanner_registry_for(const uint16_t idx);
 
-		// This method will merge all registered merge candidates into a new index session and will also output all
-		// distinct terms and their term_index_ctx.
-		// It will properly and optimally handle different input codecs and mismatches between output codec(i.e is->codec_identifier() )
-		// and input codecs.
-		//
+                // This method will merge all registered merge candidates into a new index session and will also output all
+                // distinct terms and their term_index_ctx.
+                // It will properly and optimally handle different input codecs and mismatches between output codec(i.e is->codec_identifier() )
+                // and input codecs.
+                //
                 // You may want to use
                 // - Trinity::pack_terms() to build the terms files and then persist them
                 // - Trinity::persist_segment() to persist the actual index
-		//
-		// IMPORTANT:
-		// You will need to consider all candidates after merge() has returned:
-		// If a source's `gen` is higher than 1+ other index sources that are NOT included in this merge session as a candidate
-		// 	then you may delete the candidate's index and other files/data but you MUST retain its masked documents, because
-		// 	there are more sources, not included in this merge session, with lower gen that we will need to mask documents from them that
-		// 	have potentially been updated/deleted/masked by the source.
-		// Otherwise, you may safely wipe all data related to that merge candidate.
-		//
-		// When merge() returns and you consider all candidates, you should probably consider all other index sources/segments that didn't participate
-		// in the merge session, and if their gen is lower than any other remaining index source/segment that has any index data(i.e not retained for
-		// its masked products only), then you can wipe that source/segments remaining data as well.
-		//
-		// You are expected to outIndexSess->begin() before you merge(), and outIndexSess->end() afterwards, though you may
-		// want to use Trinity::persist_segment(outIndexSess) which will persist and invoke end() for you
+                //
+                // IMPORTANT:
+                // You should use consider_tracked_sources() after you have merge()ed to figure out what to do with all tracked sources.
+                //
+                // You are expected to outIndexSess->begin() before you merge(), and outIndexSess->end() afterwards, though you may
+                // want to use Trinity::persist_segment(outIndexSess) which will persist and invoke end() for you
                 void merge(Codecs::IndexSession *outIndexSess, simple_allocator *, std::vector<std::pair<str8_t, term_index_ctx>> *const outTerms, const uint32_t flushFreq = 0);
+
+		enum class IndexSourceRetention : uint8_t
+		{
+			RetainAll = 0,
+			RetainDocumentIDsUpdates,
+			Delete
+		};
+
+                // Once you have committed(), and merge(d), you should provide
+                // all tracked sources, and this method will return another vector with a std::pair<IndexSourceRetention, uint64_t>
+                // for each of the sources(identified by generation) that you should consider; 
+		// RetainAll:  don't delete anything, leave it alone
+		// RetainDocumentIDsUpdates: delete all index files but retain document IDs updates files
+		// Delete: wipe out the directory, retain nothing
+                std::vector<std::pair<uint64_t, IndexSourceRetention>> consider_tracked_sources(std::vector<uint64_t> trackedSources);
         };
+}
+
+static inline void PrintImpl(Buffer &b, const Trinity::MergeCandidatesCollection::IndexSourceRetention r)
+{
+	switch (r)
+	{
+		case Trinity::MergeCandidatesCollection::IndexSourceRetention::RetainAll:
+			b.append("ALL"_s32);
+			break;
+
+		case Trinity::MergeCandidatesCollection::IndexSourceRetention::RetainDocumentIDsUpdates:
+			b.append("DocIDs"_s32);
+			break;
+
+		case Trinity::MergeCandidatesCollection::IndexSourceRetention::Delete:
+			b.append("DELETE"_s32);
+			break;
+	}
 }

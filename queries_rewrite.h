@@ -1042,8 +1042,13 @@ namespace Trinity
 		and that would be more appropriate, and accurate, to adjust the budget there.
   	*	
 	*/
-        template <typename L>
-        void rewrite_query(Trinity::query &q, std::size_t budget, const uint8_t K, L &&l)
+	static inline void dummy_rcb(const std::vector<ast_node *> &)
+	{
+
+	}
+
+        template <typename L, typename RCB = void(*)(const std::vector<ast_node *> &)>
+        void rewrite_query(Trinity::query &q, std::size_t budget, const uint8_t K, L &&l, RCB &&rcb = dummy_rcb)
         {
                 static constexpr bool trace{false};
 
@@ -1095,6 +1100,10 @@ namespace Trinity
                                 for (const auto n : run)
                                         Print(*n->p, "\n");
                         }
+
+			// This is handy for spell-checks and other such corrections
+			// The callback gets to process the run for whatever reason otherwise
+			rcb(run);
 
                         for (uint32_t i{0}; i < run.size();)
                         {
