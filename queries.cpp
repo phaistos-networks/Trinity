@@ -226,7 +226,7 @@ static auto parse_operator(ast_parser &ctx)
 }
 
 // define for more verbose representation of binops
-//#define _VERBOSE_DESCR 1
+#define _VERBOSE_DESCR 1
 
 static void PrintImpl(Buffer &b, const Operator op)
 {
@@ -1726,12 +1726,17 @@ void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a)
 // This is a simple reference implementation of a queries tokens parser. Basic logic is implemented, but you should
 // really implement your own if you need anything more than this.
 //
+// XXX: out must be at least (Limits::MaxTermLength + 1) in size, you can then check if 
+// return value.second > Limits::MaxTermLength, like parse_term() does.
+// Your alternative implementations must comply with this rule.
+//
 // Please see Trinity's Wiki on Github for suggestions and links to useful resources
 // https://github.com/phaistos-networks/Trinity/wiki
 std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::str32_t content, Trinity::char_t *out, const bool in_phrase)
 {
         static constexpr bool trace{false};
         const auto *p = content.begin(), *const e = content.end(), *const b{p};
+        const auto *const oEnd = out + Limits::MaxTermLength + 1, *outBase{out};
         bool allAlphas{true};
 
         if (*p == '+' && (p + 1 == e || (p[1] != '+' && p[1] != '-' && !isalnum(p[1]))))
@@ -1744,7 +1749,7 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
         {
                 // Acronyms with punctuations
                 // is it e.g I.B.M, or U.S.A. ?
-                const auto threshold = out + 0xff;
+                const auto threshold = out + Trinity::Limits::MaxTermLength + 1;
                 auto o{out};
 
                 *o++ = p[0];
@@ -1763,7 +1768,10 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
                                 else if (isalpha(*p))
                                 {
                                         if (unlikely(o != threshold))
-                                                *o++ = *p;
+                                        {
+                                                if (likely(o != oEnd))
+                                                        *o++ = *p;
+                                        }
                                         ++p;
                                         continue;
                                 }
@@ -1817,34 +1825,59 @@ l20:
                                 ++it;
 
                         {
-                                const str32_t fractional(p + 1, it - (p + 1));
-                                const auto n = content.PrefixUpto(p);
+                                str32_t fractional(p + 1, it - (p + 1));
+                                auto n = content.PrefixUpto(p);
 
                                 if (trace)
                                         SLog("[", n, "] [", fractional, "]\n");
 
                                 if (fractional.all_of('0'))
                                 {
+                                        auto rem = oEnd - out;
+
                                         if (fractional.size() >= 3)
                                         {
-                                                n.CopyTo(out);
-                                                fractional.CopyTo(out + n.size());
+                                                if (unlikely(n.size() > rem))
+                                                        n.len = rem;
 
+                                                out = n.CopyTo(out);
+                                                rem = oEnd - out;
+
+                                                if (unlikely(fractional.size() > rem))
+                                                        fractional.len = rem;
+
+                                                fractional.CopyTo(out);
                                                 return {it - content.data(), n.size() + fractional.size()};
                                         }
                                         else
                                         {
+                                                if (unlikely(n.size() > rem))
+                                                        n.len = rem;
+
                                                 n.CopyTo(out);
                                                 return {it - content.data(), n.size()};
                                         }
                                 }
                                 else
                                 {
-                                        n.CopyTo(out);
-                                        out[n.size()] = '.';
-                                        fractional.CopyTo(out + n.size() + 1);
+                                        auto rem = oEnd - out;
 
-                                        return {it - content.data(), n.size() + 1 + fractional.size()};
+                                        if (unlikely(n.size() > rem))
+                                                n.len = rem;
+
+                                        out = n.CopyTo(out);
+
+                                        if (out < oEnd)
+                                                *out++ = '.';
+
+                                        rem = oEnd - out;
+
+                                        if (unlikely(fractional.size() > rem))
+                                                fractional.len = rem;
+
+                                        out = fractional.CopyTo(out);
+
+                                        return {it - content.data(), out - outBase};
                                 }
                         }
                 }
@@ -1888,19 +1921,32 @@ l20:
                         // Can be used for clitic contractions (we're => we are), as genitive markers (John's boat), or as quotative markers
                         // This is a best-effort heuristic; you should just implement and use your own parser if you need a different behavior
                         // which is true for all other heuristics and design decisions specific to this parser implementaiton.
-                        const str32_t s(b, p - b);
+                        str32_t s(b, p - b);
 
                         if (p + 1 < e && toupper(p[1]) == 'S' && (p + 2 > e || (!isalnum(p[2]) && p[2] != '\'')))
                         {
+				const auto saved{s.size()};
+
                                 if (s.EqNoCase(_S("IT")))
                                 {
                                         // TODO: IT'S => IT IS
                                 }
 
-                                // genetive marker
-                                *s.CopyTo(out) = 'S';
+                                const auto rem = oEnd - out;
 
-                                return {s.size() + 2, s.size() + 1};
+                                if (unlikely(s.size() + 1 > rem))
+				{
+                                        s.len = rem;
+                                	out = s.CopyTo(out);
+				}
+				else
+                                {
+                                        // genetive marker
+                                        out = s.CopyTo(out);
+                                        *out++ = 'S';
+                                }
+
+                                return {saved + 2, out - outBase};
                         }
 
                         allAlphas = false;
@@ -1913,9 +1959,14 @@ l20:
                                 if (p + 2 == e || !isalnum(p[2]))
                                 {
                                         // d&d, x&y
+                                        auto _p = content.Prefix(3);
+                                        const auto rem = oEnd - out;
 
-                                        content.Prefix(3).CopyTo(out);
-                                        return {3, 3};
+                                        if (unlikely(_p.size() > rem))
+                                                _p.len = rem;
+
+                                        _p.CopyTo(out);
+                                        return {3, _p.size()};
                                 }
                         }
                 }
@@ -1946,7 +1997,7 @@ l20:
 
 l10:
         const uint32_t consumed = p - b;
-        const uint8_t stored = std::min<uint32_t>(consumed, 0xff);
+        const uint8_t stored = std::min<uint32_t>(consumed, Trinity::Limits::MaxTermLength + 1);
 
         memcpy(out, b, stored * sizeof(char_t));
         return {consumed, stored};

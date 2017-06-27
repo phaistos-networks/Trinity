@@ -294,7 +294,11 @@ namespace Trinity
                 uint8_t toNextSpan;
 
                 // flags. Usually 0, but e.g if you are rewritting a [wow] to [wow OR "world of warcraft"] you
-                // maybe want "world of warcraft" flags to be 1 (i.e derived). This can be very useful for scoring matches
+                // maybe want "world of warcraft" flags to be 1 (i.e derived). This can be very useful for scoring matches.
+		// So you can rely on flags for query expansion/rewrite tagging/tracking, and on matched query terms hits to compute a 'relevance' score
+		// and maybe another 'context' score(based on personalization, popularity, recency, etc) and then fuse them together to come up with the final score.
+		//
+		// This is not in rewrite_ctx because it's not specifically here for rewrites only.
                 //
                 // See ast_node::set_alltokens_flags()
                 uint8_t flags;

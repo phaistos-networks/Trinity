@@ -1001,6 +1001,7 @@ namespace Trinity
                 return {res, run.size()}; // we process the whole run
         }
 
+
         // Very handy utility function that faciliaties query rewrites
         // It generates optimal structures, and it is optimised for performance.
         // `K` is the span of tokens you want to consider for each run. The lambda
@@ -1135,6 +1136,8 @@ namespace Trinity
                         if (trace)
                                 SLog("Final:", *lhs, "\n");
                 });
+
+
 
                 if (trace)
                         SLog(duration_repr(Timings::Microseconds::Since(before)), " to rewrite the query\n");
