@@ -340,7 +340,7 @@ std::vector<std::pair<range_base<str8_t *, uint8_t>, std::size_t>> Trinity::inte
                                 b2.shrink_by(1);
                         }
 
-                        Print("FOR ", b.as_s32(), " [", b2, "] popcnt ", SwitchBitOps::PopCnt(m), " =>", cnt, "\n");
+                        Print("FOR ", b.AsS32(), " [", b2, "] popcnt ", SwitchBitOps::PopCnt(m), " =>", cnt, "\n");
                 }
                 else
                 {
