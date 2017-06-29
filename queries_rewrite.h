@@ -1075,7 +1075,7 @@ namespace Trinity
                 if (trace)
                         SLog("Then budget ", budget, "\n");
 
-                Dexpect(K > 1 && K < 16);
+                Dexpect(K && K < 16);
 
                 if (trace)
                         SLog("REWRITING:", q, "\n");

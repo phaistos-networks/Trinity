@@ -1,5 +1,6 @@
 #include "queries.h"
 #include <unordered_map>
+#include <set>
 
 using namespace Trinity;
 
@@ -226,7 +227,7 @@ static auto parse_operator(ast_parser &ctx)
 }
 
 // define for more verbose representation of binops
-#define _VERBOSE_DESCR 1
+//#define _VERBOSE_DESCR 1
 
 static void PrintImpl(Buffer &b, const Operator op)
 {
@@ -1440,11 +1441,62 @@ bool query::normalize()
                 return false;
 }
 
+static thread_local std::vector<ast_node *> stackTLS;
+
+bool query::can_intersect() const
+{
+        auto &stack{stackTLS};
+        std::set<str8_t> tokens;
+
+        stack.clear();
+        if (root)
+                stack.push_back(root);
+
+        while (stack.size())
+        {
+                auto n = stack.back();
+
+                stack.pop_back();
+                switch (n->type)
+                {
+                        case ast_node::Type::Token:
+                                if (tokens.insert(n->p->terms[0].token).second && tokens.size() > 64)
+                                        return false;
+                                break;
+
+                        case ast_node::Type::BinOp:
+                                if (n->binop.op != Operator::AND)
+                                        return false;
+                                else
+                                {
+                                        stack.push_back(n->binop.lhs);
+                                        stack.push_back(n->binop.rhs);
+                                }
+                                break;
+
+                        case ast_node::Type::UnaryOp:
+                                if (n->unaryop.op != Operator::AND)
+                                        return false;
+                                else
+                                        stack.push_back(n->unaryop.expr);
+                                break;
+
+                        case ast_node::Type::ConstTrueExpr:
+                                stack.push_back(n->expr);
+                                break;
+
+                        default:
+                                return false;
+                }
+        }
+
+        return tokens.size();
+}
+
 void ast_node::set_rewrite_translation_coeff(const uint16_t span)
 {
         // figure out how many tokens a sequence of `span` expanded into
         // i.e size of this node
-        static thread_local std::vector<ast_node *> stackTLS;
 	auto &stack{stackTLS};
         std::size_t cnt{0};
 
@@ -1726,9 +1778,6 @@ void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a)
 // This is a simple reference implementation of a queries tokens parser. Basic logic is implemented, but you should
 // really implement your own if you need anything more than this.
 //
-// XXX: out must be at least (Limits::MaxTermLength + 1) in size, you can then check if 
-// return value.second > Limits::MaxTermLength, like parse_term() does.
-// Your alternative implementations must comply with this rule.
 //
 // Please see Trinity's Wiki on Github for suggestions and links to useful resources
 // https://github.com/phaistos-networks/Trinity/wiki

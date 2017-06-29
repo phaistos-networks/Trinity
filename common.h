@@ -54,6 +54,10 @@ namespace Trinity
 	// It is possible to consume characters, but not actually store any in out. (i.e result.first to be != 0 and result.second to be == 0)
 	//
 	// This default implementation simply consumes a token based in very simple heuristics and return it as-is, with no translation.
+	//
+	// XXX: out must be at least (Limits::MaxTermLength + 1) in size, you can then check if 
+	// return value.second > Limits::MaxTermLength, like parse_term() does.
+	// Your alternative implementations must comply with this rule.
 	std::pair<uint32_t, uint8_t> default_token_parser_impl(const str32_t content, char_t *out, const bool in_phrase);
 }
 

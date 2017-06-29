@@ -445,11 +445,11 @@ namespace Trinity
                 {
                 }
 
-                explicit query(const query &o)
+                explicit query(const query &o, const bool shallow = false)
                 {
                         tokensParser = o.tokensParser;
-                        root = o.root ? o.root->copy(&allocator) : nullptr;
-                        if (root)
+                        root = o.root ? (shallow ? o.root->shallow_copy(&allocator) : o.root->copy(&allocator)) : nullptr;
+                        if (root && false == shallow)
                                 bind_tokens_to_allocator(root, &allocator);
                 }
 
@@ -517,6 +517,10 @@ namespace Trinity
                         // That's all there is to it
                         // Now just make sure you normalize_root()
                 }
+
+		// Returns true if can intersect this query
+		// See intersections.{h,cpp} for comments
+		bool can_intersect() const;
 
                 // Make sure you check the repetition count
                 // See also ast_node::set_alltokens_flags()
