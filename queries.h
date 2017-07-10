@@ -616,6 +616,11 @@ namespace Trinity
                         }
                 }
 
+		// If more than that many different tokens are in this query, it will
+		// remove however many required so that the total number of tokens is <= maxQueryTokens
+		// and will return the first node removed(ast_node::Type::Token or ast_node::Type::Phrase), otherwise it will return nullptr
+		ast_node *trim(const std::size_t maxQueryTokens);
+
 
 		void reset()
 		{

@@ -19,6 +19,7 @@ void Trinity::intersect_impl(const uint64_t stopwordsMask,
 
         uint64_t origMask{0}; // we don't want to match the original query
         uint16_t rem{0};
+	bool anyUnknown{false};
 
         for (uint8_t i{0}; i != tokens.size(); ++i)
         {
@@ -35,13 +36,22 @@ void Trinity::intersect_impl(const uint64_t stopwordsMask,
                                 if (trace)
                                         SLog("For [", token, "] ", tctx.documents, "\n");
                         }
-                        else if (trace)
-                                SLog("Unknown for [", token, "]\n");
+                        else
+                        {
+                                if (trace)
+                                        SLog("Unknown for [", token, "]\n");
+                                anyUnknown = true;
+                        }
                 }
         }
 
         if (!rem)
                 return;
+	
+	if (anyUnknown)
+		origMask = 0;
+		
+
 
         struct ctx
         {
@@ -151,6 +161,12 @@ void Trinity::intersect_impl(const uint64_t stopwordsMask,
                 l100:;
                 }
 
+		[[maybe_unused]] static constexpr bool trace{false};
+		//const bool trace = lowest == 2153560102;
+		//const bool trace = cnt == 4;
+
+		//if (trace) SLog("matched ", cnt, " for ", lowest, " (", mask != origMask, ")\n");
+
                 if (mask != origMask)
                 {
                         if (0 == (stopwordsMask & ((uint64_t(1) << first) | (uint64_t(1) << last))))
@@ -177,12 +193,13 @@ void Trinity::intersect_impl(const uint64_t stopwordsMask,
 
 l10:
         c.finalize();
-        SLog(duration_repr(Timings::Microseconds::Since(before)), " to intersect, c.matches.size = ", c.matches.size(), "\n");
+	if (trace)
+	        SLog(duration_repr(Timings::Microseconds::Since(before)), " to intersect, c.matches.size = ", c.matches.size(), "\n");
 
         for (const auto &it : c.matches)
         {
                 if (trace)
-                        SLog("output:", it.v, ", cnt = ", it.cnt, ", popcnt = ", SwitchBitOps::PopCnt(it.v), "\n");
+                        SLog("output:", it.v, ", cnt = ", it.cnt, ", popcnt = ", SwitchBitOps::PopCnt(uint64_t(it.v)), "\n");
                 out->push_back({it.v, it.cnt});
         }
 }
@@ -210,7 +227,12 @@ std::vector<std::pair<uint64_t, uint32_t>> Trinity::intersect(const uint64_t sto
                 auto cnt = p->second;
 
                 for (++p; p != e && p->first == mask; ++p)
+		{
+			cnt += p->second;
                         continue;
+		}
+
+		//SLog("FOR ", mask, " (popcnt = ", SwitchBitOps::PopCnt(mask), ") ", cnt, "\n");
 
                 *o++ = {mask, cnt};
         }

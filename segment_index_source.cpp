@@ -43,8 +43,16 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
 
         snprintf(path, sizeof(path), "%s/index", basePath);
         fd = open(path, O_RDONLY | O_LARGEFILE);
-	if (unlikely(fd == -1))
-		throw Switch::data_error("Failed to acess ", path);
+	if (fd == -1)
+	{
+		if (errno != ENOENT)
+			throw Switch::data_error("Failed to access ", path);
+		else
+		{
+
+		}
+	}
+
 
         auto fileSize = lseek64(fd, 0, SEEK_END);
 #ifdef TRINITY_MEMRESIDENT_INDEX

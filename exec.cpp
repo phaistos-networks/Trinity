@@ -2434,12 +2434,33 @@ static void PrintImpl(Buffer &b, const exec_node &n)
 // See ast_node::Type::ConstTrueExpr def.
 static void capture_leader(const exec_node n, std::vector<exec_node> *const out, const size_t threshold)
 {
+        if (out->size() == threshold)
+                return;
+
+        if (traceCompile)
+                SLog(ansifmt::color_brown, "Consider for leader(", threshold, ") ", n, ansifmt::reset, "\n");
+
         if (n.fp == matchterm_impl || n.fp == matchphrase_impl)
+        {
+                if (traceCompile)
+                        SLog(ansifmt::color_brown, "CAPTURING", ansifmt::reset, "\n");
+
                 out->push_back(n);
+        }
         else if (n.fp == matchallterms_impl || n.fp == matchallphrases_impl)
+        {
+                if (traceCompile)
+                        SLog(ansifmt::color_brown, "CAPTURING", ansifmt::reset, "\n");
+
                 out->push_back(n);
+        }
         else if (n.fp == matchanyterms_impl || n.fp == matchanyphrases_impl || n.fp == matchanyterms_fordocs_impl || n.fp == matchanyphrases_fordocs_impl)
+        {
+                if (traceCompile)
+                        SLog(ansifmt::color_brown, "CAPTURING", ansifmt::reset, "\n");
+
                 out->push_back(n);
+        }
         else if (n.fp == unaryand_impl)
         {
                 auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
@@ -2455,34 +2476,22 @@ static void capture_leader(const exec_node n, std::vector<exec_node> *const out,
         }
         else if (n.fp == logicaland_impl)
         {
-                if (out->size() < threshold)
-                {
-                        auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
+                auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
 
-                        if (ctx->lhs.fp != consttrueexpr_impl)
-                        {
-                                // we need to special case those
-                                capture_leader(ctx->lhs, out, threshold);
-                        }
-                        else
-                                capture_leader(ctx->rhs, out, threshold);
-                }
+                capture_leader(ctx->lhs, out, threshold);
+                capture_leader(ctx->rhs, out, threshold);
         }
         else if (n.fp == logicalnot_impl)
         {
-                if (out->size() < threshold)
-                {
-                        auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
+                auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
 
-                        capture_leader(ctx->lhs, out, threshold);
-                }
+                capture_leader(ctx->lhs, out, threshold);
         }
         else if (n.fp == consttrueexpr_impl)
         {
                 auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
 
-                if (out->size() < threshold)
-                        capture_leader(ctx->expr, out, threshold);
+                capture_leader(ctx->expr, out, threshold);
         }
 }
 
@@ -2652,6 +2661,9 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
         // we will op. directly on the exec nodes though here
         std::vector<exec_node> leaderNodes;
 
+	if (traceCompile)
+		SLog("Capturing Leaders\n");
+
         before = Timings::Microseconds::Tick();
         capture_leader(root, &leaderNodes, 1);
 
@@ -2662,6 +2674,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 for (const auto it : leaderNodes)
                         SLog("LEADER:", it, "\n");
         }
+	//SLog("Exiting\n"); exit(0);
 
         for (const auto &n : leaderNodes)
         {
@@ -2867,7 +2880,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
         if (traceCompile)
         {
                 for (const auto id : *leaderTermIDs)
-                        Print("LEADER TERM ID:", id, "\n");
+                        SLog("LEADER TERM ID:", id, "\n");
         }
 
         // NOW, prepare decoders

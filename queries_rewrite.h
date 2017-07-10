@@ -310,24 +310,6 @@ namespace Trinity
                 altAllocator.reuse();
 
 
-#if 0
-                for (std::size_t upto = std::min<std::size_t>(run.size(), i + normalizedMaxSpan), k{i}, n{0}; k != upto && run[k]->p->rep == 1; ++k) // mind reps
-                {
-                        tokens[n] = run[k]->p->terms[0].token;
-                        alts.clear();
-                        l(runCtx, tokens, ++n, altAllocator, &alts);
-
-                        if (trace)
-                        {
-                                SLog("Starting from ", run[i]->p->terms[0].token, " ", n, "\n");
-                                for (const auto &it : alts)
-                                        SLog("alt [", it.first, "] ", it.second, "\n");
-                        }
-
-                        for (const auto &it : alts)
-                                v.push_back({{it.first, it.second}, n});
-                }
-#else
 		// Looks like we should do this in reverse
 		// i.e consider longer sequences before shorter sequences
 		// This facilitates considering longer sequences before shorter sequences in our callback
@@ -339,14 +321,17 @@ namespace Trinity
 
 		while (n)
                 {
+			alts.clear();
                         l(runCtx, tokens, n, altAllocator, &alts);
+
+			if (trace)
+				SLog("FOR n = ", n, " => ", alts.size(), "\n");
 
                         for (const auto &it : alts)
                                 v.push_back({{it.first, it.second}, n});
 
                         --n;
                 }
-#endif
 
 
 		// Now with the new algo, we don't really need to group
@@ -575,7 +560,7 @@ namespace Trinity
                         {
                                 const auto &it = list[i];
 
-                                Print("LIST: ", i, ": ", it.first, ":", *it.second, "\n");
+                                SLog(ansifmt::bold, ansifmt::color_brown, "LIST: ", i, ": ", it.first, ":", ansifmt::reset, *it.second, "\n");
                         }
                 }
 
@@ -585,6 +570,14 @@ namespace Trinity
                 const auto find_flows_by_range = [&](const auto range, auto *const v1, auto *const v2) {
                         v1->clear();
                         v2->clear();
+
+			if (trace)
+			{
+				SLog("Finding flows for range ", range, " among ", flows.size(), "\n");
+				for (const auto f : flows)
+					SLog("FLOW:", f->range, "\n");
+			}
+
 
                         for (const auto f : flows)
                         {
@@ -663,7 +656,7 @@ namespace Trinity
 
                         if (trace)
                         {
-                                SLog("\n\n", ansifmt::bold, ansifmt::color_green, "Processing ", p.first, ansifmt::reset, " ", *p.second, " =>  maxStop = ", maxStop, " (", atOffset.size(), ", ", atStop.size(), ") (", flows.size(), " flows)\n");
+                                SLog("\n\n", ansifmt::bold, ansifmt::color_green, "Processing ", p.first, ansifmt::reset, " ", *p.second, " =>  maxStop = ", maxStop, " (atOffset.size = ", atOffset.size(), ", atStop.size = ", atStop.size(), ") (", flows.size(), " flows)\n");
                                 SLog("root:", *root->materialize(genCtx.allocator), ": ", *root, "\n");
 
 #if 0
@@ -901,6 +894,9 @@ namespace Trinity
 					// this breaks for e.g [play station 4 video games] and [key board micro soft]
                                         [[maybe_unused]] auto nf = flow_for_node(p, genCtx, flows, maxStop);
 
+					if (trace)
+						SLog("atOffset.size = ", atOffset.size(), "\n");
+
                                         if (trace)
                                         {
                                                 for (auto f : atOffset)
@@ -968,8 +964,6 @@ namespace Trinity
                                                 g->push_back_flow(nf);
                                                 ca->op = nf->op = Operator::OR;
 
-                                                SLog("Now g = ", *g->materialize(genCtx.allocator), "\n");
-
                                                 if (trace)
                                                 {
                                                         for (auto f : atOffset)
@@ -995,7 +989,8 @@ namespace Trinity
                 auto res = root->materialize(genCtx.allocator);
 
 #if 0
-                SLog(ansifmt::bold, ansifmt::color_green, "FINAL:", ansifmt::reset, *res, "  ", *root, "\n");
+		SLog("ROOT:", *root, "\n");
+                SLog(ansifmt::bold, ansifmt::color_green, "FINAL:", ansifmt::reset, *res, "\n"); exit(0);
 #endif
 
                 return {res, run.size()}; // we process the whole run

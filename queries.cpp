@@ -1430,6 +1430,34 @@ ast_node *Trinity::normalize_ast(ast_node *n)
         return normalize_root(n);
 }
 
+ast_node *query::trim(const std::size_t maxQueryTokens)
+{
+        std::size_t n{0};
+        ast_node *first{nullptr};
+
+        process_runs(true, true, true, [&](const auto &run)
+	{
+                for (auto node : run)
+                {
+                        n += node->p->size;
+
+                        if (n > maxQueryTokens)
+                        {
+                                if (!first)
+                                        first = node->shallow_copy(&allocator);
+                                node->set_dummy();
+                        }
+                }
+	});
+
+	if (first)
+	{
+                normalize();
+                return first;
+	}
+	return nullptr;
+}
+
 bool query::normalize()
 {
         if (root)
@@ -1490,7 +1518,7 @@ bool query::can_intersect() const
                 }
         }
 
-        return tokens.size();
+        return tokens.size() > 1;
 }
 
 void ast_node::set_rewrite_translation_coeff(const uint16_t span)
