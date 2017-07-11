@@ -54,5 +54,5 @@ namespace Trinity
 	// You must set K = 1 when invoking rewrite_query(), and only accept single word token expansions.
 	// e.g for [macbook], it's correct to expand to [macbooks] but not correct to expand to [mac book](two words expansion)
 	// Those restrictions are required for interesections where query rewrites are applied .
-	std::vector<std::pair<range_base<str8_t *, uint8_t>, std::size_t>> intersection_alternatives(const query &originalQuery, query &rewrittenQuery, IndexSourcesCollection &collection, simple_allocator *const a);
+	std::vector<std::pair<range_base<str8_t *, uint8_t>, std::pair<uint8_t, std::size_t>>> intersection_alternatives(const query &originalQuery, query &rewrittenQuery, IndexSourcesCollection &collection, simple_allocator *const a);
 }

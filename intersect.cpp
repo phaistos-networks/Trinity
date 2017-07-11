@@ -259,10 +259,10 @@ uint8_t Trinity::intersection_indices(uint64_t mask, uint8_t *const out)
         return collected;
 }
 
-std::vector<std::pair<range_base<str8_t *, uint8_t>, std::size_t>> Trinity::intersection_alternatives(const query &originalQuery, query &rewrittenQuery, IndexSourcesCollection &collection, simple_allocator *const a)
+std::vector<std::pair<range_base<str8_t *, uint8_t>, std::pair<uint8_t, std::size_t>>> Trinity::intersection_alternatives(const query &originalQuery, query &rewrittenQuery, IndexSourcesCollection &collection, simple_allocator *const a)
 {
         static constexpr bool trace{false};
-        std::vector<std::pair<range_base<str8_t *, uint8_t>, std::size_t>> resp;
+        std::vector<std::pair<range_base<str8_t *, uint8_t>, std::pair<uint8_t, std::size_t>>> resp;
 
         if (!originalQuery.can_intersect())
                 return resp;
@@ -322,6 +322,7 @@ std::vector<std::pair<range_base<str8_t *, uint8_t>, std::size_t>> Trinity::inte
 
         auto res = Trinity::intersect(0, V, &collection);
 
+	// by order of tokens in the query ASC,  total matched tokens DESC, total products DESC
         std::sort(res.begin(), res.end(), [](const auto &a, const auto &b) {
                 const auto p1 = SwitchBitOps::PopCnt(a.first), p2 = SwitchBitOps::PopCnt(b.first);
 
@@ -371,7 +372,7 @@ std::vector<std::pair<range_base<str8_t *, uint8_t>, std::size_t>> Trinity::inte
                         for (uint8_t i{0}; i != n; ++i)
                                 tokens.push_back(map[indices[i]]);
 
-                        resp.push_back({{a->CopyOf(tokens.data(), tokens.size()), uint8_t(tokens.size())}, cnt});
+                        resp.push_back({{a->CopyOf(tokens.data(), tokens.size()), uint8_t(tokens.size())}, {(uint8_t)SwitchBitOps::LeastSignificantBitSet(m), cnt}});
                 }
         }
 
