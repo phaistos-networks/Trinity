@@ -386,7 +386,7 @@ static ast_node *parse_unary(ast_parser &ctx)
 {
         ctx.skip_ws();
 
-#if 1
+#if 0
         // enable this for debugging
         if (ctx.content.StripPrefix(_S("<")))
         {
@@ -1615,7 +1615,7 @@ void ast_node::set_rewrite_range(const range_base<uint16_t, uint8_t> r)
         }
 }
 
-void ast_node::set_alltokens_flags(const uint8_t flags)
+void ast_node::set_alltokens_flags(const uint16_t flags)
 {
         switch (type)
         {
@@ -1875,7 +1875,7 @@ l20:
 
                 if (p + 1 < e && *p == ':' && isalnum(p[1]))
                 {
-                        for (p += 2; p != e && (isalnum(*p) || *p == '.'); ++p)
+                        for (p += 2; p != e && (isalnum(*p) || *p == '.' || *p == '-'); ++p)
                                 continue;
                         goto l10;
                 }

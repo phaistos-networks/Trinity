@@ -146,7 +146,7 @@ namespace Trinity
                 // This is helpful when you for example rewrite an original query to incorporate synonyms etc
                 // and you want to know in your MatchedIndexDocumentsFilter::consume() impl if the term hit is for a token from
                 // any of the tokens added to the query after the rewrite.
-                void set_alltokens_flags(const uint8_t flags);
+                void set_alltokens_flags(const uint16_t flags);
 
 		void set_rewrite_range(const range_base<uint16_t, uint8_t>);
 
@@ -301,7 +301,7 @@ namespace Trinity
 		// This is not in rewrite_ctx because it's not specifically here for rewrites only.
                 //
                 // See ast_node::set_alltokens_flags()
-                uint8_t flags;
+                uint16_t flags;
 
                 // This is the range in the input query string
                 // This is handy for e.g spell checking runs where you want to highlight corrected tokens/phrases in the input query

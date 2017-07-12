@@ -3031,7 +3031,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                 if (traceCompile)
                                         SLog("Collected instance: ", it->terms[i].token, " index:", pos, " rep:", rep, " toNextSpan:", i == (it->size - 1) ? toNextSpan : 1, "\n");
 
-                                originalQueryTokenInstances.push_back({ {pos, rep, flags, uint8_t(i == (it->size - 1) ? toNextSpan : 1), { rewriteRange, translationCoefficient, srcSeqSize } }, it->terms[i].token}); // need to be careful to get this right for phrases
+                                originalQueryTokenInstances.push_back({ {pos, flags, rep, uint8_t(i == (it->size - 1) ? toNextSpan : 1), { rewriteRange, translationCoefficient, srcSeqSize } }, it->terms[i].token}); // need to be careful to get this right for phrases
                         }
                 }
         }
