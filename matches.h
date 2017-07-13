@@ -76,7 +76,7 @@ namespace Trinity
                 {
                         // see Trinity::phrase decl. comments
                         uint16_t index;
-                        uint16_t flags;
+                        query_term_flags_t flags;
                         uint8_t rep;
                         uint8_t toNextSpan;
 			struct

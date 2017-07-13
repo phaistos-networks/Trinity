@@ -18,6 +18,7 @@ namespace Trinity
         using str8_t = strwlen8_t;
         using str32_t = strwlen32_t;
 	using char_t = str8_t::value_type;
+	using query_term_flags_t = uint16_t;
 
 	// You should be able to set docid_t to uint64_t, recompile and get 64bit document identifiers - though it hasn't been tested and there may be edge cases
 	// where this won't work but will likely be trivial to fix/implement whatever's required(Please file a GH issue)

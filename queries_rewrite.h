@@ -265,9 +265,9 @@ namespace Trinity
                 static constexpr bool trace{false};
                 require(i < run.size());
                 const auto token = run[i]->p->terms[0].token;
-                static thread_local std::vector<std::pair<std::pair<str32_t, uint8_t>, uint8_t>> vTLS;
+                static thread_local std::vector<std::pair<std::pair<str32_t, query_term_flags_t>, uint8_t>> vTLS;
 		auto &v{vTLS};
-                static thread_local std::vector<std::pair<str32_t, uint8_t>> altsTLS;
+                static thread_local std::vector<std::pair<str32_t, query_term_flags_t>> altsTLS;
 		auto &alts{altsTLS};
                 static thread_local simple_allocator altAllocatorInstanceTLS;
 		auto &altAllocatorInstance{altAllocatorInstanceTLS};

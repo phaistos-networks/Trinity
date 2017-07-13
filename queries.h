@@ -298,10 +298,12 @@ namespace Trinity
 		// So you can rely on flags for query expansion/rewrite tagging/tracking, and on matched query terms hits to compute a 'relevance' score
 		// and maybe another 'context' score(based on personalization, popularity, recency, etc) and then fuse them together to come up with the final score.
 		//
+		// You can use it for encoding flags, and state or anything else
+		//
 		// This is not in rewrite_ctx because it's not specifically here for rewrites only.
                 //
                 // See ast_node::set_alltokens_flags()
-                uint16_t flags;
+                query_term_flags_t flags;
 
                 // This is the range in the input query string
                 // This is handy for e.g spell checking runs where you want to highlight corrected tokens/phrases in the input query
