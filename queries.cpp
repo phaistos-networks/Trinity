@@ -1869,14 +1869,19 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
 l20:
         if (p != e && isalpha(*p))
         {
-                // e.g site:google.com, or video|games
+                // e.g site:google.com, or video|games, or site:.gr, or site:x-box.com
                 while (p != e && isalpha(*p))
                         ++p;
 
-                if (p + 1 < e && *p == ':' && isalnum(p[1]))
+                if (p + 1 < e && *p == ':' && (isalnum(p[1]) || p[1] == '.'))
                 {
-                        for (p += 2; p != e && (isalnum(*p) || *p == '.' || *p == '-'); ++p)
+                        for (p += 1; p != e &&
+                                     (isalnum(*p) || (p + 1 < e && isalnum(p[1]) && (*p == '.' || (*p == '-' && isalnum(p[-1])))));
+                             ++p)
+                        {
                                 continue;
+                        }
+
                         goto l10;
                 }
         }
