@@ -1468,7 +1468,7 @@ static bool same(const exec_node &a, const exec_node &b) noexcept
         }
         else if (a.fp == matchterm_impl && b.fp == a.fp)
                 return a.u16 == b.u16;
-        else if (a.fp == matchphrase_impl)
+        else if (a.fp == matchphrase_impl && b.fp == matchphrase_impl)
         {
                 const auto *const __restrict__ pa = (runtime_ctx::phrase *)a.ptr;
                 const auto *const __restrict__ pb = (runtime_ctx::phrase *)b.ptr;
@@ -2024,9 +2024,12 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                                 set_dirty();
                                 return n;
                         }
+#if 0
                         else if (ctx->lhs.fp == matchterm_impl && ctx->rhs.fp == matchanyterms_impl)
                         {
                                 // (1 AND ANY OF[1,4]) => [1 AND ANY OF [4]]
+				// TODO: UPDATE: this is wrong. e.g [ipad (cid:806 ipad)] => [cid:806 ipad]
+				// 	this is wrong. IT should have been translated to [cid:806 OR ipad]
                                 auto run = (runtime_ctx::termsrun *)ctx->rhs.ptr;
 
                                 if (run->erase(ctx->lhs.u16))
@@ -2035,6 +2038,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                                         return n;
                                 }
                         }
+#endif
 
                         if (ctx->lhs.fp == constfalse_impl || ctx->rhs.fp == constfalse_impl)
                         {
@@ -2534,8 +2538,17 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
         {
                 // collapse and expand nodes
                 // this was pulled out of optimize_node() in order to safeguard us from some edge conditions
+		if (traceCompile)
+			SLog("Before Collapse:", root, "\n");
                 collapse_node(root, rctx, a, terms, phrases, stack);
+
+		if (traceCompile)
+			SLog("Before Expand:", root, "\n");
+
                 expand_node(root, rctx, a, terms, phrases, stack);
+
+		if (traceCompile)
+			SLog("Before Optimizations:", root, "\n");
 
 
                 updates = false;
@@ -2552,6 +2565,8 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
 
         if (traceMetrics)
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " to expand. Before third pass:", root, "\n");
+	else if (traceCompile)
+		SLog("Before third pass:", root, "\n");
 
 
         // Third pass
