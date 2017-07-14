@@ -2024,21 +2024,24 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                                 set_dirty();
                                 return n;
                         }
-#if 0
                         else if (ctx->lhs.fp == matchterm_impl && ctx->rhs.fp == matchanyterms_impl)
                         {
-                                // (1 AND ANY OF[1,4]) => [1 AND ANY OF [4]]
-				// TODO: UPDATE: this is wrong. e.g [ipad (cid:806 ipad)] => [cid:806 ipad]
-				// 	this is wrong. IT should have been translated to [cid:806 OR ipad]
+                                // (1 AND ANY OF[1,4,10]) => [1 AND <ANY OF [4, 10]>]
                                 auto run = (runtime_ctx::termsrun *)ctx->rhs.ptr;
 
                                 if (run->erase(ctx->lhs.u16))
                                 {
+					// [cid:806 AND anyof(cid:806, ipad, xbox)] => [cid:806 AND <anyof(ipad, xbox)>]
+					// XXX:verify me
+					const auto r = ctx->rhs;
+
+					ctx->rhs.fp = consttrueexpr_impl;
+					ctx->rhs.ptr = rctx.register_unaryop(r);
+
                                         set_dirty();
                                         return n;
                                 }
                         }
-#endif
 
                         if (ctx->lhs.fp == constfalse_impl || ctx->rhs.fp == constfalse_impl)
                         {
