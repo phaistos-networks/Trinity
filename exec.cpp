@@ -1852,6 +1852,9 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
 {
 	const auto saved{n};
 
+	if (traceCompile)
+		SLog("Before OPT:", n, "\n");
+
 #define set_dirty()                     \
         do                              \
         {                               \
@@ -2024,6 +2027,10 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                                 set_dirty();
                                 return n;
                         }
+#if 0 
+			// XXX: this is wrong
+			// search for LABEL:alt1 in this file for comments etc
+			// TODO: https://github.com/phaistos-networks/Trinity/issues/6
                         else if (ctx->lhs.fp == matchterm_impl && ctx->rhs.fp == matchanyterms_impl)
                         {
                                 // (1 AND ANY OF[1,4,10]) => [1 AND <ANY OF [4, 10]>]
@@ -2042,6 +2049,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                                         return n;
                                 }
                         }
+#endif
 
                         if (ctx->lhs.fp == constfalse_impl || ctx->rhs.fp == constfalse_impl)
                         {
@@ -2080,6 +2088,17 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
 
                         // ALL OF[3,2,1] AND <ANY OF[5,4,1]>
                         // ALL OF [3, 2, 1] AND ANY_OF<5,4>
+			// XXX: this is WRONG, disabling it for now
+			// e.g (ALL OF[1,2] AND ANY OF[1,4,5]) shouldn't be transformed to 
+			// 	(ALL OF[1,2] AND ANY OF[4,5])
+			//
+			// It would make more sense to translate to
+			// 	ALL OF[1,2] AND <ANY OF [5,4]>
+			// but I guess it doens't really matter so much all things considered
+			// TODO: figure out a better alternative
+			// LABEL:alt1
+			// TODO: https://github.com/phaistos-networks/Trinity/issues/6
+#if 0
                         if (ctx->lhs.fp == matchallterms_impl && ctx->rhs.fp == matchanyterms_impl)
                         {
                                 auto runa = (runtime_ctx::termsrun *)ctx->lhs.ptr;
@@ -2094,6 +2113,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                                         return n;
                                 }
                         }
+#endif
 
                         if (same(ctx->lhs, ctx->rhs))
                         {
@@ -2431,6 +2451,55 @@ static void PrintImpl(Buffer &b, const exec_node &n)
         }
 }
 
+
+static constexpr std::size_t node_tokens_count(const exec_node n) noexcept
+{
+        if (n.fp == matchterm_impl)
+        {
+                return 1;
+        }
+        else if (n.fp == matchphrase_impl)
+        {
+                const auto p = (runtime_ctx::phrase *)n.ptr;
+
+                return p->size;
+        }
+        else if (n.fp == matchanyterms_impl || n.fp == matchanyterms_fordocs_impl)
+        {
+                const auto *const __restrict__ run = static_cast<const runtime_ctx::termsrun *>(n.ptr);
+
+                return run->size;
+        }
+        else if (n.fp == matchallterms_impl)
+        {
+                const auto run = static_cast<const runtime_ctx::termsrun *>(n.ptr);
+
+                return run->size;
+        }
+        else if (n.fp == matchanyphrases_impl || n.fp == matchanyterms_fordocs_impl)
+        {
+                const auto *const __restrict__ run = (runtime_ctx::phrasesrun *)n.ptr;
+
+                return run->size;
+        }
+        else if (n.fp == matchallphrases_impl)
+        {
+                const auto *const __restrict__ run = (runtime_ctx::phrasesrun *)n.ptr;
+
+                return run->size;
+        }
+
+        return 0;
+}
+
+static uint8_t least_expensive(const exec_node a, const exec_node b) 
+{
+        if (const auto cntA = node_tokens_count(a); cntA == 1 || node_tokens_count(b) >= cntA)
+                return 0;
+        else
+                return 1;
+}
+
 // We make sure to never move an ast_node::Type::ConstTrueExpr to a binop's lhs from its rhs
 // in reorder_execnode(), and we also special-case for consttrueexpr_impl
 // because getting the leader nodes from queries that include ast_node::Type::ConstTrueExpr is now trivial
@@ -2483,10 +2552,20 @@ static void capture_leader(const exec_node n, std::vector<exec_node> *const out,
         }
         else if (n.fp == logicaland_impl)
         {
-                auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
+                auto *const __restrict__ ctx = (runtime_ctx::binop_ctx *)n.ptr;
 
-                capture_leader(ctx->lhs, out, threshold);
-                capture_leader(ctx->rhs, out, threshold);
+		// e.g between 1 AND ANY OF[10,20,50,100] , we want
+		// to consider the lhs(1) first
+                if (least_expensive(ctx->lhs, ctx->rhs) == 1)
+                {
+                        capture_leader(ctx->rhs, out, threshold);
+                        capture_leader(ctx->lhs, out, threshold);
+                }
+                else
+                {
+                        capture_leader(ctx->lhs, out, threshold);
+                        capture_leader(ctx->rhs, out, threshold);
+                }
         }
         else if (n.fp == logicalnot_impl)
         {
@@ -2708,6 +2787,9 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 {
                         const auto *__restrict__ run = static_cast<const runtime_ctx::termsrun *>(n.ptr);
 
+			if (traceCompile)
+				SLog("Leader node with run.size = ", run->size, "\n");
+
                         leaderTermIDs->insert(leaderTermIDs->end(), run->terms, run->terms + run->size);
                 }
                 else if (n.fp == matchallterms_impl)
@@ -2762,6 +2844,9 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 else
                         std::abort();
         }
+
+	if (traceCompile)
+		SLog("leaderNodes.size() = ", leaderNodes.size(), "\n");
 
 	// https://github.com/phaistos-networks/Trinity/issues/2
 	// Now that we have compiled the query into an execution tree, and we have collected the leader tokens

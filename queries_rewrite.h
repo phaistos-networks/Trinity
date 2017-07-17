@@ -370,7 +370,7 @@ namespace Trinity
                                 {
                                         // ignore duplicates or already seen
                                         if (trace)
-                                                SLog("Accepting Alt [", s, "]\n");
+                                                SLog("Accepting Alt [", s, "] ", p->first.second, "\n");
 
                                         alts.push_back({s, p->first.second});
                                 }
