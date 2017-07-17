@@ -145,7 +145,7 @@ namespace Trinity
 
 		auto any_indexed() const noexcept
 		{
-			return backingFileFD != -1 || hitsBuf.size();
+			return backingFileFD != -1 || hitsBuf.size() || b.size() || updatedDocumentIDs.size();
 		}
 
 		~SegmentIndexSession()
