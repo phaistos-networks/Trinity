@@ -200,7 +200,10 @@ static std::pair<Operator, uint8_t> parse_operator_impl(ast_parser &ctx)
                                 break;
 
                         case '-':
-                                return {Operator::NOT, 1};
+                                if (s.size() > 1 && (s.data()[1] == '\"' || isalnum(s.data()[1])))
+                                        return {Operator::NOT, 1};
+                                else
+                                        return {Operator::AND, 1};
                 }
 
                 if (ctx.groupTerm.size() && ctx.groupTerm.back() == f)

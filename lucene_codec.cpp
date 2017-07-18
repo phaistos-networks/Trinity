@@ -1125,6 +1125,7 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
 {
         // TODO: if we store (block freq, last docID in block) we can perhaps skip
         // the whole block ?
+	// https://github.com/phaistos-networks/Trinity/issues/7
         if (trace)
                 SLog(ansifmt::bold, ansifmt::color_blue, "SKIPPING TO ", target, ansifmt::reset, "\n");
 

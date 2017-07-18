@@ -14,6 +14,12 @@ void Trinity::pack_updates(std::vector<docid_t> &updatedDocumentIDs, IOBuffer *c
 
                 std::sort(updatedDocumentIDs.begin(), updatedDocumentIDs.end());
 
+#if 0 	// We are now throwing an exception if we attempt to erase or update the same document more than once in Trinity::SegmentIndexSession
+		// We could have filtered dupes int he main loop, but keep it simple
+		// We will throw an exception if we attempt to update a document twice, but we can safely erase a document however many times
+                updatedDocumentIDs.resize(std::unique(updatedDocumentIDs.begin(), updatedDocumentIDs.end()) - updatedDocumentIDs.begin());
+#endif
+
                 for (const auto *p = updatedDocumentIDs.data(), *const e = p + updatedDocumentIDs.size(); p != e;)
                 {
                         // We can create a bitmap

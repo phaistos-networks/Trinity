@@ -4,6 +4,7 @@
 #include <switch_dictionary.h>
 #include <switch_mallocators.h>
 #include <switch_bitops.h>
+#include <set>
 
 namespace Trinity
 {
@@ -25,6 +26,7 @@ namespace Trinity
 		int backingFileFD{-1};
                 std::vector<std::pair<uint32_t, std::pair<uint32_t, range_base<uint32_t, uint8_t>>>> hits;
                 std::vector<docid_t> updatedDocumentIDs;
+		std::set<docid_t> commitedDocuments;
                 simple_allocator dictionaryAllocator;
                 Switch::unordered_map<str8_t, uint32_t> dictionary;
                 Switch::unordered_map<uint32_t, str8_t> invDict;

@@ -31,6 +31,10 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
         uint32_t terms{0};
         const auto all_hits = reinterpret_cast<const uint8_t *>(hitsBuf.data());
 
+	// we can't update the same document more than once in the same session
+	if (unlikely(!commitedDocuments.insert(proxy.did).second))
+		throw Switch::data_error("Already committed document ", proxy.did);
+
         std::sort(hits.begin(), hits.end(), [](const auto &a, const auto &b) {
                 return a.first < b.first || (a.first == b.first && a.second.first < b.second.first);
         });
@@ -149,6 +153,9 @@ uint32_t SegmentIndexSession::term_id(const str8_t term)
 
 void SegmentIndexSession::erase(const docid_t documentID)
 {
+	if (unlikely(!commitedDocuments.insert(documentID).second))
+		throw Switch::data_error("Already committed document ", documentID);
+
         updatedDocumentIDs.push_back(documentID);
 }
 
