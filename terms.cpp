@@ -167,13 +167,23 @@ Trinity::SegmentTerms::SegmentTerms(const char *segmentBasePath)
 
         fd = open(Buffer{}.append(segmentBasePath, "/terms.idx").c_str(), O_RDONLY | O_LARGEFILE);
         if (fd == -1)
-                throw Switch::system_error("Failed to access terms.idx");
+	{
+		if (errno == ENOENT)
+		{
+			// That's OK
+			return;
+		}
+		else
+	                throw Switch::system_error("Failed to access terms.idx: ", strerror(errno));
+	}
         else if (const auto fileSize = lseek64(fd, 0, SEEK_END))
         {
                 auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
 
                 close(fd);
-                expect(fileData != MAP_FAILED);
+		if (unlikely(fileData == MAP_FAILED))
+			throw Switch::data_error("Failed to access terms.idx: ", strerror(errno));
+
                 madvise(fileData, fileSize, MADV_SEQUENTIAL);
 
                 unpack_terms_skiplist({static_cast<const uint8_t *>(fileData), uint32_t(fileSize)}, &skiplist, allocator);
@@ -183,15 +193,23 @@ Trinity::SegmentTerms::SegmentTerms(const char *segmentBasePath)
 
         fd = open(Buffer{}.append(segmentBasePath, "/terms.data").c_str(), O_RDONLY | O_LARGEFILE);
         if (fd == -1)
+	{
+		// we have terms.idx, we must have terms.data
                 throw Switch::system_error("Failed to access terms.data");
+	}
 
-        const auto fileSize = lseek64(fd, 0, SEEK_END);
-        auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
+        if (const auto fileSize = lseek64(fd, 0, SEEK_END))
+        {
+                auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
 
-        close(fd);
-        expect(fileData != MAP_FAILED);
+                close(fd);
+                if (unlikely(fileData == MAP_FAILED))
+                        throw Switch::data_error("Failed to access ", Buffer{}.append(segmentBasePath, "/terms.data").AsS32(), ": ", strerror(errno));
 
-        termsData.Set(reinterpret_cast<const uint8_t *>(fileData), fileSize);
+                termsData.Set(reinterpret_cast<const uint8_t *>(fileData), fileSize);
+        }
+	else
+		close(fd);
 }
 
 void Trinity::terms_data_view::iterator::decode_cur()

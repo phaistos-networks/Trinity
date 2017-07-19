@@ -31,8 +31,9 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
                 auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
 
                 close(fd);
-                Dexpect(fileData != MAP_FAILED);
-
+		if (unlikely(fileData == MAP_FAILED))
+			throw Switch::data_error("Failed to access ", path, ":" , strerror(errno));
+			
                 maskedDocuments.fileData.Set((uint8_t *)fileData, fileSize);
                 new (&maskedDocuments.set) updated_documents(unpack_updates(maskedDocuments.fileData));
         }
@@ -55,6 +56,13 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
 
 
         auto fileSize = lseek64(fd, 0, SEEK_END);
+
+	if (0 == fileSize)
+	{
+		// just updated documents
+	}
+	else
+	{
 #ifdef TRINITY_MEMRESIDENT_INDEX
 	auto p = (uint8_t *)malloc(fileSize + 1);
 
@@ -76,6 +84,7 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
 		
         index.Set(static_cast<const uint8_t *>(fileData), uint32_t(fileSize));
 #endif
+	}
 
 
         snprintf(path, sizeof(path), "%s/codec", basePath);
