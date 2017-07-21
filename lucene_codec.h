@@ -57,6 +57,7 @@ namespace Trinity
 				{
 					flushFreq = f;
 				}
+
                                 void begin() override final;
 
                                 void end() override final;

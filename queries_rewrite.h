@@ -1060,7 +1060,7 @@ namespace Trinity
                 genCtx.clear(K);
 
                 if (trace)
-                        SLog("Initially budget: ", budget, "\n");
+                        SLog("Initial budget: ", budget, "\n");
 
 		if (budget && budget != std::numeric_limits<std::size_t>::max())
                 {

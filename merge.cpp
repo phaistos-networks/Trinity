@@ -117,6 +117,8 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 
                 const str8_t outTerm(allocator->CopyOf(selected.first.data(), selected.first.size()), selected.first.size());
                 [[maybe_unused]] const bool fastPath = sameCODEC && codec == isCODEC;
+		static constexpr bool trace{false};
+		//const bool trace = selected.first.Eq(_S("MIST"));
 
                 if (trace)
                         SLog("TERM [", selected.first, "], toAdvanceCnt = ", toAdvanceCnt, ", sameCODEC = ", sameCODEC, ", first = ", toAdvance[0], ", fastPath = ", fastPath, "\n");
@@ -135,6 +137,8 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 
                                         terms->push_back({outTerm, {selected.second.documents, chunk}});
                                 }
+				else if (trace)
+					SLog("No documents\n");
                         }
                         else
                         {
@@ -147,8 +151,8 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                         // TODO: maybe we should just disallow this where the various codecs will check
                                         //	if there are no documents indexed for a term and if so, rewind the index? (or just have e.g SegmentIndexSession do it for us? -- though that'd mean
                                         //	it will need to know more about the internals of the various codecs)
-					//
-					// This can happen when you e.g use SegmentIndexSession::document_proxy::term_id() to get the id of a term you never use.
+                                        //
+                                        // This can happen when you e.g use SegmentIndexSession::document_proxy::term_id() to get the id of a term you never use.
                                         //
                                         // We will just skip this here altogether(doing the same for other branches)
                                         if (trace)
@@ -196,6 +200,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 
                                         enc->end_term(&tctx);
                                         terms->push_back({outTerm, tctx});
+
+					if (trace)
+						SLog("Indexed Term\n");
                                 }
                         }
                 }
@@ -203,8 +210,8 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                 {
                         if (fastPath)
                         {
-
                                 mergeParticipants.clear();
+
                                 for (uint16_t i{0}; i != toAdvanceCnt; ++i)
                                 {
                                         const auto idx = toAdvance[i];
@@ -218,6 +225,8 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                      all[idx].candidate.terms->cur().second,
                                                      scanner_registry_for(all[idx].idx).release()});
                                         }
+					else if (trace)
+						SLog("No documents for candidate ", i, "\n");
                                 }
 
                                 if (mergeParticipants.size())
@@ -251,6 +260,8 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                 dec->begin();
                                                 decodersV.push_back({dec, reg});
                                         }
+					else if (trace)
+						SLog("No documents for candidate ", i, "\n");
                                 }
 
                                 if (uint16_t rem = decodersV.size())

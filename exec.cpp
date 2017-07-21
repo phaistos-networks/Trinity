@@ -882,6 +882,7 @@ static bool matchallphrases_impl(const exec_node &self, runtime_ctx &rctx)
 static bool matchphrase_impl(const exec_node &self, runtime_ctx &rctx)
 {
         static constexpr bool trace{false};
+	//const bool trace = rctx.curDocID == 2151228176 || rctx.curDocID == 2152925656 || rctx.curDocID ==  2154895013;
         const auto p = (runtime_ctx::phrase *)self.ptr;
         const auto firstTermID = p->termIDs[0];
         auto decoder = rctx.decode_ctx.decoders[firstTermID];
@@ -935,17 +936,23 @@ static bool matchphrase_impl(const exec_node &self, runtime_ctx &rctx)
                         for (uint8_t k{1};; ++k)
                         {
                                 if (trace)
-                                        SLog("Check for ", pos + k, " for ", p->termIDs[k], "\n");
+                                        SLog("Check AT ", pos + k, " for ", p->termIDs[k], " (", k == n, ")\n");
 
                                 if (k == n)
                                 {
                                         // matched seq
+					if (trace)
+						SLog("Matched Seq\n");
+
                                         for (uint16_t i{0}; i != n; ++i)
                                                 rctx.capture_matched_term(p->termIDs[i]);
                                         return true;
                                 }
 
                                 const auto termID = p->termIDs[k];
+
+				if (trace)
+					SLog("Checking for term ", termID, " at ", pos + k, " ",  dws.test(termID, pos + k), "\n");
 
                                 if (!dws.test(termID, pos + k))
                                         break;
@@ -2488,6 +2495,11 @@ static constexpr std::size_t node_tokens_count(const exec_node n) noexcept
 
                 return run->size;
         }
+	else if (n.fp == consttrueexpr_impl)
+	{
+		// this is IMPORTANT
+		return Limits::MaxQueryTokens + 1024 + node_tokens_count(static_cast<runtime_ctx::unaryop_ctx *>(n.ptr)->expr);
+	}
 
         return 0;
 }
@@ -2553,6 +2565,9 @@ static void capture_leader(const exec_node n, std::vector<exec_node> *const out,
         else if (n.fp == logicaland_impl)
         {
                 auto *const __restrict__ ctx = (runtime_ctx::binop_ctx *)n.ptr;
+
+		if (traceCompile)
+			SLog("considering left[", ctx->lhs, "] and rhs[", ctx->rhs, "]\n");
 
 		// e.g between 1 AND ANY OF[10,20,50,100] , we want
 		// to consider the lhs(1) first

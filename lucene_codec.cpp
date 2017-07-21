@@ -925,8 +925,15 @@ void Trinity::Codecs::Lucene::Decoder::refill_hits()
 
 void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
 {
+	static constexpr bool trace{false}; 
+	
         if (trace)
-                SLog("SKIPPING ", n, " hits, hitsIndex = ", hitsIndex, ", bufferedHits = ", bufferedHits, "\n");
+        {
+                if (!n)
+                        return;
+
+                SLog("SKIPPING ", n, " hits, hitsIndex = ", hitsIndex, ", bufferedHits = ", bufferedHits, " (for ", curDocument.id, ")\n");
+	}
 
         if (n)
         {
@@ -1146,7 +1153,7 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                         }
                         else
                         {
-#if 1
+#if 0
                                 if (trace)
                                         SLog("skipListIdx = ", skipListIdx, " ", skiplist.size(), " ", target, "\n");
 
@@ -1234,11 +1241,13 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
 
 void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t termID, DocWordsSpace *__restrict__ dws, term_hit *__restrict__ out)
 {
+	static constexpr bool trace{false};
+	//const bool trace = curDocument.id == 2151228176 || curDocument.id == 2152925656 || curDocument.id == 2154895013;
         auto freq = docFreqs[docsIndex];
         auto outPtr = out;
 
         if (trace)
-                SLog(ansifmt::bold, ansifmt::color_blue, "materializing, skippedHits = ", skippedHits, ansifmt::reset, "\n");
+                SLog(ansifmt::bold, ansifmt::color_blue, "materializing, skippedHits = ", skippedHits, ", hitsLeft = ", hitsLeft, ansifmt::reset, "\n");
 
         skip_hits(skippedHits);
 
