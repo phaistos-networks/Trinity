@@ -209,7 +209,7 @@ range32_t Trinity::Codecs::Lucene::IndexSession::append_index_chunk(const Trinit
 
 void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participants, const uint16_t participantsCnt, Trinity::Codecs::Encoder *enc_)
 {
-        // This is somewhat complicated, but if we do this, then all that's left is the
+        // This is somewhat complicated
         static constexpr bool trace{false};
         struct candidate
         {
@@ -517,7 +517,6 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                 }
 
                 constexpr auto current() noexcept
-
                 {
                         return lastDocID + docDeltas[cur_block.i];
                 }
