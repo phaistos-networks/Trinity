@@ -362,8 +362,9 @@ namespace Trinity
                         {
                                 uint32_t k{0};
                                 const auto s = p->first.first;
+				const auto F = p->first.second;
 
-                                while (k != alts.size() && alts[k].first != s)
+                                while (k != alts.size() && !(alts[k].second == F && alts[k].first == s))
                                         ++k;
 
                                 if (k == alts.size())
@@ -374,6 +375,8 @@ namespace Trinity
 
                                         alts.push_back({s, p->first.second});
                                 }
+				else if (trace)
+					SLog("Ignoring Alt [", s, "] ", p->first.second, ": seen already\n");
 
                         } while (++p != e && p->second == span);
 
