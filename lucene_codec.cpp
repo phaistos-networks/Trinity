@@ -207,10 +207,12 @@ range32_t Trinity::Codecs::Lucene::IndexSession::append_index_chunk(const Trinit
         return {uint32_t(o), srcTCTX.indexChunk.size()};
 }
 
-void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participants, const uint16_t participantsCnt, Trinity::Codecs::Encoder *enc_)
+
+void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __restrict__ participants, const uint16_t participantsCnt, Trinity::Codecs::Encoder *const __restrict__ enc_)
 {
         // This is somewhat complicated
         static constexpr bool trace{false};
+
         struct candidate
         {
                 docid_t lastDocID;
@@ -302,6 +304,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                 void refill_documents(FastPForLib::FastPFor<4> &forUtil)
                 {
+
                         if (trace)
                                 SLog("Refilling documents ", documentsLeft, "\n");
 
@@ -350,22 +353,27 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                 void skip_ommitted_hits(FastPForLib::FastPFor<4> &forUtil)
                 {
+
                         if (trace)
                                 SLog("Skipping omitted hits ", skippedHits, ", bufferedHits = ", bufferedHits, "\n");
 
                         if (!skippedHits)
+			{
+				// There was a silly fast-path optimization here
+				//
+				// if (!skipppedHits) return;
+				// else if (bufferedHits == skippedHits){ skippedHits = 0; bufferedHits = 0; hitsIndex = 0; payloadsIt = payloadsEnd; return;}
+				// else { ... }
+				//
+				// which was causing all kinds of random problems(missing positions/payloads etc)
+				// I should be able to figure out exactly what's wrong here, but just dropping this fixed everything and it's also simpler to reason about the state anyway. Better off without it
                                 return;
-                        else if (bufferedHits == skippedHits)
-                        {
-                                // fast-path
-                                skippedHits = 0;
-                                bufferedHits = 0;
-                                hitsIndex = 0;
-                                payloadsIt = payloadsEnd;
-                        }
+			}
                         else
                         {
-                                // XXX: This is not optimal, but refactoring can wait
+#if 0
+				// This is somewhat faster, but let's go withthe somewhat slower impl. because
+				// it matches Lucene::Decoder::skip_hits() and it's simpler to understand
                                 if (trace)
                                         SLog("Slow path (bufferedHits = ", bufferedHits, ", hitsIndex = ", hitsIndex, ", rem = ", bufferedHits - hitsIndex, ") \n");
 
@@ -373,20 +381,19 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
 
                                 if (const auto rem = bufferedHits - hitsIndex; skippedHits >= rem)
                                 {
-                                        payloadsIt = payloadsEnd;
+					// to end of the block
                                         skippedHits -= rem;
                                         bufferedHits = 0;
                                         hitsIndex = 0;
 
+					// whichever other we can skip
                                         const auto n = skippedHits / BLOCK_SIZE;
 
                                         for (uint32_t i{0}; i != n; ++i)
-                                        {
-                                                payloadsIt = payloadsEnd;
                                                 refill_hits(forUtil);
-                                        }
 
                                         skippedHits -= n * BLOCK_SIZE;
+                                        payloadsIt = payloadsEnd;
                                 }
 
                                 if (skippedHits)
@@ -404,6 +411,25 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                                         skippedHits = 0;
                                         payloadsIt += sum;
                                 }
+#else
+
+				do
+				{
+					if (hitsIndex == bufferedHits)
+						refill_hits(forUtil);
+
+					const auto step = std::min<uint32_t>(skippedHits, bufferedHits - hitsIndex);
+
+					for (uint32_t i{0}; i != step; ++i)
+					{
+						const auto pl = hitsPayloadLengths[hitsIndex++];
+
+						payloadsIt += pl;
+					}
+
+					skippedHits -= step;
+				} while (skippedHits);
+#endif
                         }
                 }
 
@@ -479,7 +505,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                                         if (freq)
                                         {
                                                 if (trace)
-                                                        SLog("Will refill hits\n");
+                                                        SLog("Will refill hits (Freq now = ", freq, ")\n");
 
                                                 refill_hits(forUtil);
                                         }
@@ -488,7 +514,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                                 }
                         }
 
-                        docFreqs[cur_block.i] = 0; // simplifies processing logic
+                        docFreqs[cur_block.i] = 0; // simplifies processing logic (See next().)
                 }
 
                 bool next(FastPForLib::FastPFor<4> &forUtil)
@@ -504,7 +530,10 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                                 if (!documentsLeft)
                                         return false;
 
+				// this is important, because refill_documents()
+				// will update cur_block
                                 skip_ommitted_hits(forUtil);
+
                                 refill_documents(forUtil);
                         }
                         else
@@ -575,7 +604,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *participant
                 c->refill_documents(forUtil);
         }
 
-        for (uint32_t prev{0};;)
+        for (docid_t prev{0};;)
         {
                 uint16_t toAdvanceCnt{1};
                 auto did = candidates[0].current();
@@ -706,6 +735,12 @@ void Trinity::Codecs::Lucene::Encoder::begin_document(const uint32_t documentID)
 
 void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_base<const uint8_t *, const uint8_t> payload)
 {
+	static constexpr bool trace{false};
+	//const bool trace = lastDocID== 2151228176 || lastDocID== 2152925656 || lastDocID==  2154895013;
+
+	if (trace)
+		SLog("New hit (", pos, ", ", payload, ")\n");
+
         if (!pos && !payload)
         {
                 // This is perfectly fine
@@ -1152,7 +1187,7 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                         }
                         else
                         {
-#if 0
+#if 1
                                 if (trace)
                                         SLog("skipListIdx = ", skipListIdx, " ", skiplist.size(), " ", target, "\n");
 
@@ -1241,7 +1276,7 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
 void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t termID, DocWordsSpace *__restrict__ dws, term_hit *__restrict__ out)
 {
 	static constexpr bool trace{false};
-	//const bool trace = curDocument.id == 2151228176 || curDocument.id == 2152925656 || curDocument.id == 2154895013;
+	//const bool trace = curDocument.id == 2151228176 || curDocument.id == 2152925656 || curDocument.id == 2154895013 || curDocument.id == 2151228176;
         auto freq = docFreqs[docsIndex];
         auto outPtr = out;
 

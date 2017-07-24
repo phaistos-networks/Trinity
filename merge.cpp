@@ -29,6 +29,7 @@ std::unique_ptr<Trinity::masked_documents_registry> Trinity::MergeCandidatesColl
         return masked_documents_registry::make(all.data(), n);
 }
 
+
 // Make sure you have commited first
 // Unlike with e.g SegmentIndexSession where the order of postlists in the index is based on our translation(term=>integer id) and the ascending order of that id
 // here the order will match the order the terms are found in `tersm`, because we perform a merge-sort and so we process terms in lexicograpphic order
@@ -57,8 +58,11 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                 if (i)
                         require(candidates[i].gen < candidates[i - 1].gen);
 
-                if (false == candidates[i].terms->done())
+                if (candidates[i].terms && false == candidates[i].terms->done() && candidates[i].ap)
+		{
+			// ap may be nullptr if we only wanted to e.g mask documents
                         all_.push_back({i, candidates[i]});
+		}
         }
 
         if (all_.empty())
@@ -119,9 +123,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                 }
 
                 const str8_t outTerm(allocator->CopyOf(selected.first.data(), selected.first.size()), selected.first.size());
-                [[maybe_unused]] const bool fastPath = sameCODEC && codec == isCODEC;
+              	[[maybe_unused]] const bool fastPath = sameCODEC && codec == isCODEC;
                 static constexpr bool trace{false};
-                //const bool trace = selected.first.Eq(_S("MIST"));
+                //const bool trace = selected.first.Eq(_S("ANNEX"));
 
                 if (trace)
                         SLog("TERM [", selected.first, "], toAdvanceCnt = ", toAdvanceCnt, ", sameCODEC = ", sameCODEC, ", first = ", toAdvance[0], ", fastPath = ", fastPath, "\n");
@@ -171,6 +175,10 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                 const auto freq = dec->curDocument.freq;
 
                                                 require(docID != MaxDocIDValue); // sanity check
+
+						if (trace)
+							SLog("docID = ", docID, ", masked = ", maskedDocsReg->test(docID), "\n");
+
                                                 if (!maskedDocsReg->test(docID))
                                                 {
                                                         if (freq > termHitsCapacity)
@@ -201,7 +209,13 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                         enc->end_term(&tctx);
 
                                         if (tctx.documents)
+					{
+						// This means that we may end up e.g storing some meta-data specific to this term, and/or a skiplist
+						// in the index/other index session data files in between enc->begin_term() .. enc->end_term(), which could
+						// have been set even if no documents were indexed for this term.
+						// That's fine though -- will ignore them in a future merge op.
                                                 terms->push_back({outTerm, tctx});
+					}
 
                                         if (trace)
                                                 SLog("Indexed Term\n");
@@ -295,6 +309,10 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                 }
 
                                                 // always choose the first because they are always sorted by gen DESC
+
+						if (trace)
+							SLog("Lowest = ", lowestDID, ", masked = ", decoders[toAdvance[0]].second->test(lowestDID), "\n");
+
                                                 if (!decoders[toAdvance[0]].second->test(lowestDID))
                                                 {
                                                         auto dec = decoders[toAdvance[0]].first;
