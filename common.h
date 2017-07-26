@@ -26,7 +26,9 @@ namespace Trinity
 	// The bundled codecs(google, lucene) will not properly work if docid_it is 64bits or longer, so you 'd have to modify them or create a new codec
 	// that supports longer document IDs in the index (should be simple enough).
 	//
-	// Future updates will support 64bit document IDentifiers though (currently, that involves updating the codecs and dociupdates.h constructs and impls.)
+	// Future updates will support 64bit document IDentifiers though. Currently, this is just the codecs implementations, and it should be a simple matter
+	// of using templated functions for the various varint encoding/decoding calls on there. This will make it possible to support e.g 2**64 documentIDs (so that you
+	// can build Google in your basement, like most cool kids want to do:)
 	using docid_t = uint32_t;
 
 	// magic value; signifies end of document
