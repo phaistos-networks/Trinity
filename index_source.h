@@ -107,7 +107,7 @@ namespace Trinity
 		// For example, if you are only indexing titles, you should probably override this method
 		// in your IndexSource variant to return a low max indexed position (e.g 100) because you likely don't
 		// have any title term indexed at a higher position.
-		virtual uint32_t max_indexed_position() const
+		virtual tokenpos_t max_indexed_position() const
 		{
 			return 8192;
 		}

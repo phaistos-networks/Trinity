@@ -1887,6 +1887,23 @@ l20:
 
                         goto l10;
                 }
+		else if (p + 2 < e && p - content.data() == 1 && *p == '\'' && isalpha(p[1]))
+                {
+                        // L'Oreal Revitalift
+                        // Go figure
+                        *out++ = content.front();
+                        const auto ckpt{++p};
+
+                        while (p != e && isalnum(*p))
+                                ++p;
+
+                        const auto span = std::min<uint32_t>(Limits::MaxTermLength /* will not +1 because out[0] contains content.front() */, p - ckpt);	
+
+                        memcpy(out, ckpt, span);
+                        out += span;
+
+                        return {p - content.data(), span + 1};
+                }
         }
 
         if (p == content.data() && p != e && isdigit(*p))

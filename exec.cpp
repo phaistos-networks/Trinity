@@ -3324,7 +3324,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
         if (traceCompile)
                 SLog("RUNNING\n");
 
-        uint32_t matchedDocuments{0};
+        docid_t matchedDocuments{0}; 	// docid_t so that we can support whatever number of distinct documents are allowed by sizeof(docid_t)
         const auto start = Timings::Microseconds::Tick();
         auto &dws = rctx.docWordsSpace;
 
