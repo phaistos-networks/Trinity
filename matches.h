@@ -9,18 +9,38 @@ namespace Trinity
         // We assign an index (base 0) to each token in the query, which is monotonically increasing, except
         // when we are assigning to tokens in OR expressions, where we need to do more work and it gets more complicated (see assign_query_indices() for how that works).
         //
-        // Long story short, we track all distinct (termIDs, to_next) combinations for each query index, where
-        // termID is the term ID (execution space) and to_next is how many indices ahead to advance to get
-        // to the net term (1 unless specific OR queries are processed).
+        // Long story short, we track all distinct (termIDs, toNextSpan) combinations for each query index, where
+        // termID is the term ID (execution space) and toNextSpan is how many indices ahead to advance to get
+        // to the net term (1 unless specific OR queries are processed. 
+	// Can also be 0 if there is no other token to the right)
         // Please see Trinity::phrase comments
         //
         // This is built by exec_query() and passed to MatchedIndexDocumentsFilter::prepare()
         // It is useful for proximity checks in conjuction with DocWordsSpace
+	//
+	// UPDATE: we should consider extend this from unique (termID, toNextSpan) to unique (termID, toNextSpan, flags) 
+	// so that, for example, we can consider flags when we are attempting to form a sequence, where we may want to
+	// ignore a query_index_term if the flags indicate the token was produced by a rewrite process, i.e term aliasing
+	//
+	// UPDATE: doing this now
+	struct query_index_term final
+	{
+		exec_term_id_t termID;
+		query_term_flags_t flags;
+		uint8_t toNextSpan;
+
+                inline bool operator==(const query_index_term &o) const noexcept
+                {
+                        return termID == o.termID && flags == o.flags && toNextSpan == o.toNextSpan;
+                }
+        };
+
         struct query_index_terms final
         {
                 uint16_t cnt;
-                // all distinct (termID, toNextSpan) pairs
-                std::pair<exec_term_id_t, uint8_t> uniques[0];
+		// all distinct query_index_termS
+		// uniques are sorted by (termID ASC, toNextSpan ASC, flags ASC)
+                query_index_term uniques[0];
         };
 
         // Materialized hits for a term and the current document
