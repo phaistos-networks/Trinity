@@ -3297,38 +3297,75 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                         return false;
                 });
 
-                for (const auto *p = originalQueryTokensTracker.data(), *const e = p + originalQueryTokensTracker.size(); p != e;)
-                {
-                        const auto idx = p->first;
-
-                        // unique query_index_term for idx
-                        list.clear();
-                        do
+                if (execFlags & uint32_t(ExecFlags::DisregardTokenFlagsForQueryIndicesTerms))
+		{
+                        for (const auto *p = originalQueryTokensTracker.data(), *const e = p + originalQueryTokensTracker.size(); p != e;)
                         {
-                                const auto info = p->second;
+                                const auto idx = p->first;
 
-                                list.push_back(info);
+                                list.clear();
                                 do
                                 {
-                                        ++p;
-                                } while (p != e && p->first == idx && p->second == info);
+                                        const auto info = p->second;
 
-                        } while (p != e && p->first == idx);
+                                        list.push_back({.termID = info.termID, .flags = 0, .toNextSpan = info.toNextSpan});
+                                        do
+                                        {
+                                                ++p;
+                                        } while (p != e && p->first == idx && p->second.termID == info.termID && p->second.toNextSpan == info.toNextSpan);
+                                } while (p != e && p->first == idx);
 
-                        if (traceCompile)
-                        {
-                                SLog("For index ", idx, " ", list.size(), "\n");
+                                if (traceCompile)
+                                {
+                                        SLog("For index ", idx, " ", list.size(), "\n");
 
-                                for (const auto &it : list)
-                                        SLog("(", it.termID, ", ", it.toNextSpan, ")\n");
+                                        for (const auto &it : list)
+                                                SLog("(", it.termID, ", ", it.toNextSpan, ")\n");
+                                }
+
+                                const uint16_t cnt = list.size();
+                                auto ptr = (query_index_terms *)rctx.allocator.Alloc(sizeof(query_index_terms) + cnt * sizeof(query_index_term));
+
+                                ptr->cnt = cnt;
+                                memcpy(ptr->uniques, list.data(), cnt * sizeof(query_index_term));
+                                queryIndicesTerms[idx] = ptr;
                         }
+		}
+		else
+                {
+                        for (const auto *p = originalQueryTokensTracker.data(), *const e = p + originalQueryTokensTracker.size(); p != e;)
+                        {
+                                const auto idx = p->first;
 
-                        const uint16_t cnt = list.size();
-                        auto ptr = (query_index_terms *)rctx.allocator.Alloc(sizeof(query_index_terms) + cnt * sizeof(query_index_term));
+                                // unique query_index_term for idx
+                                list.clear();
+                                do
+                                {
+                                        const auto info = p->second;
 
-                        ptr->cnt = cnt;
-                        memcpy(ptr->uniques, list.data(), cnt * sizeof(query_index_term));
-                        queryIndicesTerms[idx] = ptr;
+                                        list.push_back(info);
+                                        do
+                                        {
+                                                ++p;
+                                        } while (p != e && p->first == idx && p->second == info);
+
+                                } while (p != e && p->first == idx);
+
+                                if (traceCompile)
+                                {
+                                        SLog("For index ", idx, " ", list.size(), "\n");
+
+                                        for (const auto &it : list)
+                                                SLog("(", it.termID, ", ", it.toNextSpan, ")\n");
+                                }
+
+                                const uint16_t cnt = list.size();
+                                auto ptr = (query_index_terms *)rctx.allocator.Alloc(sizeof(query_index_terms) + cnt * sizeof(query_index_term));
+
+                                ptr->cnt = cnt;
+                                memcpy(ptr->uniques, list.data(), cnt * sizeof(query_index_term));
+                                queryIndicesTerms[idx] = ptr;
+                        }
                 }
         }
         //SLog("exiting\n"); exit(0);

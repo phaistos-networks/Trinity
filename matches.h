@@ -23,6 +23,7 @@ namespace Trinity
 	// ignore a query_index_term if the flags indicate the token was produced by a rewrite process, i.e term aliasing
 	//
 	// UPDATE: doing this now
+	// UPDATE: check ExecFlags::DisregardTokenFlagsForQueryIndicesTerms
 	struct query_index_term final
 	{
 		exec_term_id_t termID;
