@@ -29,6 +29,15 @@ namespace Trinity
 	// Future updates will support 64bit document IDentifiers though. Currently, this is just the codecs implementations, and it should be a simple matter
 	// of using templated functions for the various varint encoding/decoding calls on there. This will make it possible to support e.g 2**64 documentIDs (so that you
 	// can build Google in your basement, like most cool kids want to do:)
+	//
+	// An alternative design would stick to 32bit identifiers for documents, except those would be specific to a segment, and you would map
+	// (i.e translate) from local(to segment) to global scope. For example, you could maintain a simple file that holds a list of globalID:u64
+	// and you could mmap it and dereference at ((localId-1) * sizeof(uint32_t)). That would reqire a few changes in the execution engine
+	// because you 'd need to work with both local and global ids, and docidsupdates would also need to support 64bit ops, but would work fine. That is, it would
+	// mean you 'd operate with source-local document IDs when accessing the source, but use global document IDs for docidsupdates and for passing that to callbacks etc.
+	// A virtual method in IndexSource would be used to translate from session-local to global document IDs, where the default impl. would return the local ID.
+	// Assuming that each segment is a few million documents on average, for 4M documents, we 'd need just 30MBs for that translation file, which is really low anyway.
+	// We 'd need to make sure merge() takes those into account though.
 	using docid_t = uint32_t;
 
 	// magic value; signifies end of document

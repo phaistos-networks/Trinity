@@ -9,6 +9,12 @@
 
 static constexpr bool trace{false};
 
+#define __LUCENE_COUNTERS 0
+
+#ifdef __LUCENE_COUNTERS
+std::size_t luceneCnt1{0}, luceneCnt2{0}, luceneCnt3{0}, luceneCnt4{0}, luceneCnt5{0};
+#endif
+
 static bool all_equal(const uint32_t *const values, const size_t n) noexcept
 {
         const auto v = values[0];
@@ -304,7 +310,6 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
 
                 void refill_documents(FastPForLib::FastPFor<4> &forUtil)
                 {
-
                         if (trace)
                                 SLog("Refilling documents ", documentsLeft, "\n");
 
@@ -353,7 +358,6 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
 
                 void skip_ommitted_hits(FastPForLib::FastPFor<4> &forUtil)
                 {
-
                         if (trace)
                                 SLog("Skipping omitted hits ", skippedHits, ", bufferedHits = ", bufferedHits, "\n");
 
@@ -1034,6 +1038,10 @@ void Trinity::Codecs::Lucene::Decoder::refill_documents()
         if (trace)
                 SLog("Refilling documents docsLeft = ", docsLeft, "\n");
 
+#ifdef __LUCENE_COUNTERS
+	++luceneCnt1;
+#endif
+
         if (docsLeft >= BLOCK_SIZE)
         {
                 if (trace)
@@ -1073,6 +1081,7 @@ void Trinity::Codecs::Lucene::Decoder::refill_documents()
                 bufferedDocs = docsLeft;
                 docsLeft = 0;
         }
+
         docsIndex = 0;
         update_curdoc();
 }
@@ -1135,6 +1144,10 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target)
         static constexpr bool trace{false};
         uint32_t idx{UINT32_MAX};
 
+#ifdef __LUCENE_COUNTERS
+	++luceneCnt5;
+#endif
+
         for (int32_t top{int32_t(skiplist.size()) - 1}, btm{int32_t(skipListIdx)}; btm <= top;)
         {
                 const auto mid = (btm + top) / 2;
@@ -1164,16 +1177,33 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target)
 
 bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
 {
-        // TODO: if we store (block freq, last docID in block) we can perhaps skip
-        // the whole block ?
-	// https://github.com/phaistos-networks/Trinity/issues/7
         if (trace)
-                SLog(ansifmt::bold, ansifmt::color_blue, "SKIPPING TO ", target, ansifmt::reset, "\n");
+                SLog(ansifmt::bold, ansifmt::color_blue, ptr_repr(this), " SKIPPING TO ", target, ansifmt::reset, " (SS = ", SKIPLIST_STEP, "), skipListIdx = ", skipListIdx, " / ", skiplist.size(), "\n");
+
+
+#ifdef LUCENE_SKIPLIST_SEEK_EARLY
+        if (target > curSkipListLastDocID)
+        {
+// We need to skip ahead right now
+#ifdef __LUCENE_COUNTERS
+                ++luceneCnt3;
+#endif
+
+                if (trace)
+                        SLog("Skip ahead ", target, " ", skiplist[skipListIdx + 1].lastDocID, " ", skipListIdx, " ", skiplist_search(target), "/", skiplist.size(), "\n");
+
+                goto skip1;
+        }
+#endif
 
         for (;;)
         {
-                if (trace)
-                        SLog("docsIndex = ", docsIndex, " ", bufferedDocs, ", curDocument.id = ", curDocument.id, "\n");
+		if (trace)
+                        SLog("docsIndex = ", docsIndex, " ", bufferedDocs, ", curDocument.id = ", curDocument.id, ", skipListIdx = ", skipListIdx, "/", skiplist.size(), "\n");
+
+#ifdef __LUCENE_COUNTERS
+		++luceneCnt4;
+#endif
 
                 if (unlikely(docsIndex == bufferedDocs))
                 {
@@ -1194,13 +1224,22 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                                 if (skipListIdx != skiplist.size())
                                 {
                                         // see if we can determine where to seek to here
+skip1:
                                         if (const auto index = skiplist_search(target); index != UINT32_MAX)
                                         {
+                                                // we can advance here; we will only attempt to skiplist search
+                                                // next time we are done with a block
+						skipListIdx = index + 1;
+#ifdef LUCENE_SKIPLIST_SEEK_EARLY
+						if (SKIPLIST_STEP == 1)
+							curSkipListLastDocID = skipListIdx == skiplist.size() ? MaxDocIDValue : skiplist[skipListIdx].lastDocID;
+#endif
+
+
                                                 const auto &it = skiplist[index];
 
                                                 if (trace)
                                                         SLog("index now = ", index, "\n");
-//SLog("YES to lastDocID = ", it.lastDocID, ", documentsLeft = ", totalDocuments - it.totalDocumentsSoFar, ", ", totalHits - it.totalHitsSoFar, ", ", it.curHitsBlockHits, "\n");
 
 #if 1
                                                 // XXX: what if we point into the _current_ hits block?
@@ -1227,9 +1266,6 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                                                 skippedHits = it.curHitsBlockHits;
                                                 skip_hits(skippedHits);
 
-                                                // we can advance here; we will only attempt to skiplist search
-                                                // next time we are done with a block
-                                                skipListIdx = index + 1;
                                                 goto l10;
 #endif
                                         }
@@ -1238,6 +1274,7 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
 
                                 if (trace)
                                         SLog("Will decode next block\n");
+
                                 decode_next_block();
                         }
                 }

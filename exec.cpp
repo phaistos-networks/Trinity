@@ -571,6 +571,7 @@ static bool matchanyterms_impl(const exec_node &self, runtime_ctx &rctx)
         const auto *const __restrict__ run = static_cast<const runtime_ctx::termsrun *>(self.ptr);
         const auto size = run->size;
         const auto *const __restrict__ terms = run->terms;
+	auto *const __restrict__ allDecoders = rctx.decode_ctx.decoders;
 
 #if defined(TRINITY_ENABLE_PREFETCH)
         // this helps
@@ -585,7 +586,7 @@ static bool matchanyterms_impl(const exec_node &self, runtime_ctx &rctx)
         {
                 const auto termID = terms[i];
 
-                if (rctx.decode_ctx.decoders[termID]->seek(did))
+                if (allDecoders[termID]->seek(did))
                 {
                         rctx.capture_matched_term(termID);
                         res = true;
@@ -639,6 +640,7 @@ static bool matchanyterms_fordocs_impl(const exec_node &self, runtime_ctx &rctx)
         const auto *const __restrict__ run = static_cast<const runtime_ctx::termsrun *>(self.ptr);
         const auto size = run->size;
         const auto *const __restrict__ terms = run->terms;
+	auto *const __restrict__ allDecoders = rctx.decode_ctx.decoders;
 
 #if defined(TRINITY_ENABLE_PREFETCH)
         const auto n = size / (64 / sizeof(exec_term_id_t));
@@ -650,7 +652,7 @@ static bool matchanyterms_fordocs_impl(const exec_node &self, runtime_ctx &rctx)
         do
         {
                 const auto termID = terms[i];
-                auto *const __restrict__ decoder = rctx.decode_ctx.decoders[termID];
+                auto *const __restrict__ decoder = allDecoders[termID];
 
                 if (decoder->seek(did))
                         return true;

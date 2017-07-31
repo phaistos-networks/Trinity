@@ -274,7 +274,6 @@ namespace Trinity
 			// (Remeber to update curDocument)
                         virtual bool seek(const docid_t target) = 0;
 
-
 			// Materializes hits for the _current_ document in the postings list
 			// You must also dwspace->set(termID, pos) for positions != 0
 			//
