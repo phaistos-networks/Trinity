@@ -182,12 +182,12 @@ namespace Trinity
                                 uint32_t skippedHits;
                                 std::vector<skiplist_entry> skiplist;
                                 uint32_t skipListIdx;
-#ifdef LUCENE_SKIPLIST_SEEK_EARLY
+//#ifdef LUCENE_SKIPLIST_SEEK_EARLY
                                 // otherwise, we 'd need to check for
                                 // if (SKIPLIST_STEP == 1 && skipListIdx < skiplist.size() && skipListIdx)
                                 // whereas now we can initialize to MaxDocIDValue and update appropriately after every skiplist_search()
                                 docid_t curSkipListLastDocID{MaxDocIDValue};
-#endif
+//#endif
                                 const uint8_t *postingListBase, *hitsBase;
                                 uint32_t totalDocuments, totalHits;
 

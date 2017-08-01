@@ -1153,7 +1153,7 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target)
                 const auto mid = (btm + top) / 2;
                 const auto v = skiplist[mid].lastDocID;
 
-                if (trace)
+                if constexpr (trace)
                         SLog("mid = ", mid, " ", v, " ", target, " ", TrivialCmp(target, v), "\n");
 
                 if (target < v)
@@ -1177,7 +1177,9 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target)
 
 bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
 {
-        if (trace)
+	auto localBufferedDocs{bufferedDocs};
+
+        if constexpr (trace)
                 SLog(ansifmt::bold, ansifmt::color_blue, ptr_repr(this), " SKIPPING TO ", target, ansifmt::reset, " (SS = ", SKIPLIST_STEP, "), skipListIdx = ", skipListIdx, " / ", skiplist.size(), "\n");
 
 
@@ -1189,7 +1191,7 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                 ++luceneCnt3;
 #endif
 
-                if (trace)
+                if constexpr (trace)
                         SLog("Skip ahead ", target, " ", skiplist[skipListIdx + 1].lastDocID, " ", skipListIdx, " ", skiplist_search(target), "/", skiplist.size(), "\n");
 
                 goto skip1;
@@ -1198,18 +1200,18 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
 
         for (;;)
         {
-		if (trace)
-                        SLog("docsIndex = ", docsIndex, " ", bufferedDocs, ", curDocument.id = ", curDocument.id, ", skipListIdx = ", skipListIdx, "/", skiplist.size(), "\n");
+		if constexpr (trace)
+                        SLog("docsIndex = ", docsIndex, " ", localBufferedDocs, ", curDocument.id = ", curDocument.id, ", skipListIdx = ", skipListIdx, "/", skiplist.size(), "\n");
 
 #ifdef __LUCENE_COUNTERS
 		++luceneCnt4;
 #endif
 
-                if (unlikely(docsIndex == bufferedDocs))
+                if (unlikely(docsIndex == localBufferedDocs))
                 {
                         if (unlikely(p == chunkEnd))
                         {
-                                if (trace)
+                                if constexpr (trace)
                                         SLog("At the end already\n");
 
                                 finalize();
@@ -1218,7 +1220,7 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                         else
                         {
 #if 1
-                                if (trace)
+                                if constexpr (trace)
                                         SLog("skipListIdx = ", skipListIdx, " ", skiplist.size(), " ", target, "\n");
 
                                 if (skipListIdx != skiplist.size())
@@ -1238,7 +1240,7 @@ skip1:
 
                                                 const auto &it = skiplist[index];
 
-                                                if (trace)
+                                                if constexpr (trace)
                                                         SLog("index now = ", index, "\n");
 
 #if 1
@@ -1260,11 +1262,13 @@ skip1:
                                                 refill_hits();
                                                 update_curdoc();
 
-                                                if (trace)
+                                                if constexpr (trace)
                                                         SLog("SKIPPING ", it.curHitsBlockHits, "\n");
 
                                                 skippedHits = it.curHitsBlockHits;
                                                 skip_hits(skippedHits);
+
+						localBufferedDocs = bufferedDocs;
 
                                                 goto l10;
 #endif
@@ -1272,10 +1276,11 @@ skip1:
                                 }
 #endif
 
-                                if (trace)
+                                if constexpr (trace)
                                         SLog("Will decode next block\n");
 
                                 decode_next_block();
+				localBufferedDocs = bufferedDocs;
                         }
                 }
                 else
@@ -1283,14 +1288,14 @@ skip1:
                 l10:
                         if (curDocument.id == target)
                         {
-                                if (trace)
+                                if constexpr (trace)
                                         SLog("Found it\n");
 
                                 return true;
                         }
                         else if (curDocument.id > target)
                         {
-                                if (trace)
+                                if constexpr (trace)
                                         SLog("Not Here, now past target\n");
 
                                 return false;
@@ -1317,12 +1322,12 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
         auto freq = docFreqs[docsIndex];
         auto outPtr = out;
 
-        if (trace)
+        if constexpr (trace)
                 SLog(ansifmt::bold, ansifmt::color_blue, "materializing, skippedHits = ", skippedHits, ", hitsLeft = ", hitsLeft, ansifmt::reset, "\n");
 
         skip_hits(skippedHits);
 
-        if (trace)
+        if constexpr (trace)
                 SLog("hitsIndex = ", hitsIndex, ", freq = ", freq, ", bufferedHits = ", bufferedHits, "\n");
 
         // fast-path; can satisfy directly from the current hits block
@@ -1330,7 +1335,7 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
         {
                 tokenpos_t pos{0};
 
-                if (trace)
+                if constexpr (trace)
                         SLog("fast-path\n");
 
                 while (hitsIndex != upto)
@@ -1341,7 +1346,7 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
                         outPtr->pos = pos;
                         outPtr->payloadLen = pl;
 
-                        if (trace)
+                        if constexpr (trace)
                                 SLog(" POS = ", pos, ", length = ", pl, "\n");
 
                         if (pos)
@@ -1363,7 +1368,7 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
         {
                 tokenpos_t pos{0};
 
-                if (trace)
+                if constexpr (trace)
                         SLog("slow path, freq = ", freq, ", hitsIndex =", hitsIndex, ", bufferedHits = ", bufferedHits, "\n");
 
                 for (;;)
@@ -1371,7 +1376,7 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
                         const auto n = std::min<uint32_t>(bufferedHits - hitsIndex, freq);
                         const auto upto = hitsIndex + n;
 
-                        if (trace)
+                        if constexpr (trace)
                                 SLog("UPTO = ", upto, ", bufferedHits = ", bufferedHits, ", hitsIndex = ", hitsIndex, ", freq = ", freq, ", n = ", n, "\n");
 
                         while (hitsIndex != upto)
@@ -1385,7 +1390,7 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
                                 if (pos)
                                         dws->set(termID, pos);
 
-                                if (trace)
+                                if constexpr (trace)
                                         SLog("FROM ", hitsIndex, ": pos = ", pos, " payload size =  ", pl, "\n");
 
                                 if (pl)
@@ -1401,7 +1406,7 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
                         }
                         freq -= n;
 
-                        if (trace)
+                        if constexpr (trace)
                                 SLog("freq now = ", freq, "\n");
 
                         if (freq)
@@ -1468,7 +1473,7 @@ void Trinity::Codecs::Lucene::Decoder::init(const term_index_ctx &tctx, Trinity:
         skipListIdx = 0;
         hitsBase = hdp = ap->hitsDataPtr + hitsDataOffset;
 
-        if (trace)
+        if constexpr (trace)
                 SLog("skiplist.size = ", skiplist.size(), ", docsLeft = ", docsLeft, ", hitsLeft = ", hitsLeft, "\n");
 }
 

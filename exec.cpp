@@ -3419,7 +3419,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                 {
                                         const auto docID = decoder->curDocument.id;
 
-                                        if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
+                                        if (!documentsFilter->filter(docID) && !maskedDocumentsRegistry->test(docID))
                                         {
                                                 // see runtime_ctx::capture_matched_term()
                                                 // we won't use runtime_ctx::reset() because it will
@@ -3455,78 +3455,144 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                 }
                 else
                 {
-                        for (;;)
+			if (documentsFilter)
+			{
+                                for (;;)
+                                {
+                                        // Select document from the leader tokens/decoders
+                                        auto docID = leaderDecoders[0]->curDocument.id; // see Codecs::Decoder::curDocument comments
+                                        uint16_t toAdvanceCnt{1};
+
+                                        toAdvance[0] = 0;
+                                        for (uint32_t i{1}; i != leaderDecodersCnt; ++i)
+                                        {
+                                                const auto *const __restrict__ decoder = leaderDecoders[i];
+                                                const auto did = decoder->curDocument.id; // see Codecs::Decoder::curDocument comments
+
+                                                if (did < docID)
+                                                {
+                                                        docID = did;
+                                                        toAdvance[0] = i;
+                                                        toAdvanceCnt = 1;
+                                                }
+                                                else if (did == docID)
+                                                        toAdvance[toAdvanceCnt++] = i;
+                                        }
+
+                                        if (!documentsFilter->filter(docID) && !maskedDocumentsRegistry->test(docID))
+                                        {
+                                                // now execute rootExecNode
+                                                // and it it returns true, compute the document's score
+                                                rctx.reset(docID);
+
+                                                if (eval(rootExecNode, rctx))
+                                                {
+                                                        const auto n = rctx.matchedDocument.matchedTermsCnt;
+                                                        auto *const __restrict__ allMatchedTerms = rctx.matchedDocument.matchedTerms;
+
+                                                        rctx.matchedDocument.id = docID;
+
+                                                        for (uint16_t i{0}; i != n; ++i)
+                                                        {
+                                                                const auto termID = allMatchedTerms[i].queryCtx->term.id;
+
+                                                                rctx.materialize_term_hits(termID);
+                                                        }
+
+                                                        if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
+                                                        {
+                                                                // Eearly abort
+                                                                // Maybe the filter has collected as many documents as it needs
+                                                                // See https://blog.twitter.com/2010/twitters-new-search-architecture "efficient early query termination"
+                                                                // See CONCEPTS.md
+                                                                goto l1;
+                                                        }
+
+                                                        ++matchedDocuments;
+                                                }
+                                        }
+
+                                        // Advance leader tokens/decoders
+                                        do
+                                        {
+                                                const auto idx = toAdvance[--toAdvanceCnt];
+                                                auto *const __restrict__ decoder = leaderDecoders[idx];
+
+                                                if (!decoder->next())
+                                                {
+                                                        // done with this leaf token
+                                                        if (!--leaderDecodersCnt)
+                                                                goto l1;
+
+                                                        memmove(leaderDecoders + idx, leaderDecoders + idx + 1, (leaderDecodersCnt - idx) * sizeof(Trinity::Codecs::Decoder *));
+                                                }
+
+                                        } while (toAdvanceCnt);
+                                }
+			}
+			else
                         {
-                                // Select document from the leader tokens/decoders
-                                auto docID = leaderDecoders[0]->curDocument.id; // see Codecs::Decoder::curDocument comments
-                                uint16_t toAdvanceCnt{1};
-
-                                toAdvance[0] = 0;
-
-                                for (uint32_t i{1}; i != leaderDecodersCnt; ++i)
+                                for (;;)
                                 {
-                                        const auto *const __restrict__ decoder = leaderDecoders[i];
-                                        const auto did = decoder->curDocument.id; // see Codecs::Decoder::curDocument comments
+                                        auto docID = leaderDecoders[0]->curDocument.id;
+                                        uint16_t toAdvanceCnt{1};
 
-                                        if (did < docID)
+                                        toAdvance[0] = 0;
+                                        for (uint32_t i{1}; i != leaderDecodersCnt; ++i)
                                         {
-                                                docID = did;
-                                                toAdvance[0] = i;
-                                                toAdvanceCnt = 1;
-                                        }
-                                        else if (did == docID)
-                                                toAdvance[toAdvanceCnt++] = i;
-                                }
+                                                const auto *const __restrict__ decoder = leaderDecoders[i];
+                                                const auto did = decoder->curDocument.id; // see Codecs::Decoder::curDocument comments
 
-                                if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
-                                {
-                                        // now execute rootExecNode
-                                        // and it it returns true, compute the document's score
-                                        rctx.reset(docID);
-
-                                        if (eval(rootExecNode, rctx))
-                                        {
-                                                const auto n = rctx.matchedDocument.matchedTermsCnt;
-                                                auto *const __restrict__ allMatchedTerms = rctx.matchedDocument.matchedTerms;
-
-                                                rctx.matchedDocument.id = docID;
-
-                                                for (uint16_t i{0}; i != n; ++i)
+                                                if (did < docID)
                                                 {
-                                                        const auto termID = allMatchedTerms[i].queryCtx->term.id;
+                                                        docID = did;
+                                                        toAdvance[0] = i;
+                                                        toAdvanceCnt = 1;
+                                                }
+                                                else if (did == docID)
+                                                        toAdvance[toAdvanceCnt++] = i;
+                                        }
 
-                                                        rctx.materialize_term_hits(termID);
+                                        if (!maskedDocumentsRegistry->test(docID))
+                                        {
+                                                rctx.reset(docID);
+
+                                                if (eval(rootExecNode, rctx))
+                                                {
+                                                        const auto n = rctx.matchedDocument.matchedTermsCnt;
+                                                        auto *const __restrict__ allMatchedTerms = rctx.matchedDocument.matchedTerms;
+
+                                                        rctx.matchedDocument.id = docID;
+
+                                                        for (uint16_t i{0}; i != n; ++i)
+                                                        {
+                                                                const auto termID = allMatchedTerms[i].queryCtx->term.id;
+
+                                                                rctx.materialize_term_hits(termID);
+                                                        }
+
+                                                        if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
+                                                                goto l1;
+
+                                                        ++matchedDocuments;
+                                                }
+                                        }
+
+                                        do
+                                        {
+                                                const auto idx = toAdvance[--toAdvanceCnt];
+                                                auto *const __restrict__ decoder = leaderDecoders[idx];
+
+                                                if (!decoder->next())
+                                                {
+                                                        if (!--leaderDecodersCnt)
+                                                                goto l1;
+
+                                                        memmove(leaderDecoders + idx, leaderDecoders + idx + 1, (leaderDecodersCnt - idx) * sizeof(Trinity::Codecs::Decoder *));
                                                 }
 
-                                                if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
-                                                {
-                                                        // Eearly abort
-                                                        // Maybe the filter has collected as many documents as it needs
-                                                        // See https://blog.twitter.com/2010/twitters-new-search-architecture "efficient early query termination"
-                                                        // See CONCEPTS.md
-                                                        goto l1;
-                                                }
-
-                                                ++matchedDocuments;
-                                        }
+                                        } while (toAdvanceCnt);
                                 }
-
-                                // Advance leader tokens/decoders
-                                do
-                                {
-                                        const auto idx = toAdvance[--toAdvanceCnt];
-                                        auto *const decoder = leaderDecoders[idx];
-
-                                        if (!decoder->next())
-                                        {
-                                                // done with this leaf token
-                                                if (!--leaderDecodersCnt)
-                                                        goto l1;
-
-                                                memmove(leaderDecoders + idx, leaderDecoders + idx + 1, (leaderDecodersCnt - idx) * sizeof(Trinity::Codecs::Decoder *));
-                                        }
-
-                                } while (toAdvanceCnt);
                         }
                 }
         }
@@ -3550,7 +3616,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                 {
                                         const auto docID = decoder->curDocument.id;
 
-                                        if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
+                                        if (!documentsFilter->filter(docID) && !maskedDocumentsRegistry->test(docID))
                                         {
                                                 rctx.matchedDocument.id = docID;
                                                 if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
@@ -3579,56 +3645,115 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                 }
                 else
                 {
-                        for (;;)
+			if (documentsFilter)
+			{
+                                for (;;)
+                                {
+                                        auto docID = leaderDecoders[0]->curDocument.id;
+                                        uint16_t toAdvanceCnt{1};
+
+                                        // Having hand-unrolled the loop, we are sticking with this, it wasn't worth it
+                                        toAdvance[0] = 0;
+                                        for (uint32_t i{1}; i != leaderDecodersCnt; ++i)
+                                        {
+                                                const auto *const __restrict__ decoder = leaderDecoders[i];
+                                                const auto did = decoder->curDocument.id; // see Codecs::Decoder::curDocument comments
+
+                                                if (did < docID)
+                                                {
+                                                        docID = did;
+                                                        toAdvance[0] = i;
+                                                        toAdvanceCnt = 1;
+                                                }
+                                                else if (did == docID)
+                                                        toAdvance[toAdvanceCnt++] = i;
+                                        }
+
+                                        if (!documentsFilter->filter(docID) && !maskedDocumentsRegistry->test(docID))
+                                        {
+                                                rctx.reset(docID);
+
+                                                if (eval(rootExecNode, rctx))
+                                                {
+                                                        rctx.matchedDocument.id = docID;
+
+                                                        if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
+                                                                goto l1;
+
+                                                        ++matchedDocuments;
+                                                }
+                                        }
+
+                                        do
+                                        {
+                                                const auto idx = toAdvance[--toAdvanceCnt];
+                                                auto *const __restrict__ decoder = leaderDecoders[idx];
+
+                                                if (!decoder->next())
+                                                {
+                                                        if (!--leaderDecodersCnt)
+                                                                goto l1;
+
+                                                        memmove(leaderDecoders + idx, leaderDecoders + idx + 1, (leaderDecodersCnt - idx) * sizeof(Trinity::Codecs::Decoder *));
+                                                }
+
+                                        } while (toAdvanceCnt);
+                                }
+
+			}
+			else
                         {
-                                auto docID = leaderDecoders[0]->curDocument.id;
-                                uint16_t toAdvanceCnt{1};
-
-                                toAdvance[0] = 0;
-                                for (uint32_t i{1}; i != leaderDecodersCnt; ++i)
+                                for (;;)
                                 {
-                                        const auto *const __restrict__ decoder = leaderDecoders[i];
-                                        const auto did = decoder->curDocument.id; // see Codecs::Decoder::curDocument comments
+                                        auto docID = leaderDecoders[0]->curDocument.id;
+                                        uint16_t toAdvanceCnt{1};
 
-                                        if (did < docID)
+                                        toAdvance[0] = 0;
+                                        for (uint32_t i{1}; i != leaderDecodersCnt; ++i)
                                         {
-                                                docID = did;
-                                                toAdvance[0] = i;
-                                                toAdvanceCnt = 1;
+                                                const auto *const __restrict__ decoder = leaderDecoders[i];
+                                                const auto did = decoder->curDocument.id; // see Codecs::Decoder::curDocument comments
+
+                                                if (did < docID)
+                                                {
+                                                        docID = did;
+                                                        toAdvance[0] = i;
+                                                        toAdvanceCnt = 1;
+                                                }
+                                                else if (did == docID)
+                                                        toAdvance[toAdvanceCnt++] = i;
                                         }
-                                        else if (did == docID)
-                                                toAdvance[toAdvanceCnt++] = i;
+
+                                        if (!maskedDocumentsRegistry->test(docID))
+                                        {
+                                                rctx.reset(docID);
+
+                                                if (eval(rootExecNode, rctx))
+                                                {
+                                                        rctx.matchedDocument.id = docID;
+
+                                                        if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
+                                                                goto l1;
+
+                                                        ++matchedDocuments;
+                                                }
+                                        }
+
+                                        do
+                                        {
+                                                const auto idx = toAdvance[--toAdvanceCnt];
+                                                auto *const __restrict__ decoder = leaderDecoders[idx];
+
+                                                if (!decoder->next())
+                                                {
+                                                        if (!--leaderDecodersCnt)
+                                                                goto l1;
+
+                                                        memmove(leaderDecoders + idx, leaderDecoders + idx + 1, (leaderDecodersCnt - idx) * sizeof(Trinity::Codecs::Decoder *));
+                                                }
+
+                                        } while (toAdvanceCnt);
                                 }
-
-                                if ((!documentsFilter || !documentsFilter->filter(docID)) && !maskedDocumentsRegistry->test(docID))
-                                {
-                                        rctx.reset(docID);
-
-                                        if (eval(rootExecNode, rctx))
-                                        {
-                                                rctx.matchedDocument.id = docID;
-
-                                                if (unlikely(matchesFilter->consider(rctx.matchedDocument) == MatchedIndexDocumentsFilter::ConsiderResponse::Abort))
-                                                        goto l1;
-
-                                                ++matchedDocuments;
-                                        }
-                                }
-
-                                do
-                                {
-                                        const auto idx = toAdvance[--toAdvanceCnt];
-                                        auto *const decoder = leaderDecoders[idx];
-
-                                        if (!decoder->next())
-                                        {
-                                                if (!--leaderDecodersCnt)
-                                                        goto l1;
-
-                                                memmove(leaderDecoders + idx, leaderDecoders + idx + 1, (leaderDecodersCnt - idx) * sizeof(Trinity::Codecs::Decoder *));
-                                        }
-
-                                } while (toAdvanceCnt);
                         }
                 }
         }
