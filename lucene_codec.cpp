@@ -9,13 +9,13 @@
 
 static constexpr bool trace{false};
 
-#define __LUCENE_COUNTERS 0
+//#define __LUCENE_COUNTERS 1
 
 #ifdef __LUCENE_COUNTERS
 std::size_t luceneCnt1{0}, luceneCnt2{0}, luceneCnt3{0}, luceneCnt4{0}, luceneCnt5{0};
 #endif
 
-static bool all_equal(const uint32_t *const values, const size_t n) noexcept
+static bool all_equal(const uint32_t *const __restrict__ values, const size_t n) noexcept
 {
         const auto v = values[0];
 
@@ -57,7 +57,7 @@ static void pfor_encode(FastPForLib::FastPFor<4> &forUtil, const uint32_t *value
 #endif
 }
 
-static const uint8_t *pfor_decode(FastPForLib::FastPFor<4> &forUtil, const uint8_t *p, uint32_t *values)
+static const uint8_t *pfor_decode(FastPForLib::FastPFor<4> &forUtil, const uint8_t *__restrict p, uint32_t *const __restrict values)
 {
         if (const auto blockSize = *p++; blockSize == 0)
         {
@@ -961,11 +961,11 @@ void Trinity::Codecs::Lucene::Decoder::refill_hits()
                 SLog("bufferedHits now = ", bufferedHits, ", hitsIndex  = ", hitsIndex, "\n");
 }
 
-void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
+[[gnu::hot]] void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
 {
 	static constexpr bool trace{false}; 
 	
-        if (trace)
+        if constexpr (trace)
         {
                 if (!n)
                         return;
@@ -977,25 +977,25 @@ void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
         {
                 auto rem{n};
 
-                if (trace)
+                if constexpr (trace)
                         SLog(ansifmt::bold, "NOW skippedHits = ", skippedHits, ", bufferedHits = ", bufferedHits, ", n = ", n, "\n");
 
                 do
                 {
                         if (hitsIndex == bufferedHits)
                         {
-                                if (trace)
+                                if constexpr (trace)
                                         SLog("Need to refill\n");
 
                                 refill_hits();
 
-                                if (trace)
+                                if constexpr (trace)
                                         SLog("DID refill hitsIndex = ", hitsIndex, "\n");
                         }
 
                         const auto step = std::min<uint32_t>(rem, bufferedHits - hitsIndex);
 
-                        if (trace)
+                        if constexpr (trace)
                                 SLog("skippedHits = ", skippedHits, ", hitsIndex = ", hitsIndex, ", step = ", step, ", bufferedHits  = ", bufferedHits, "\n");
 
 #if defined(TRINITY_ENABLE_PREFETCH)
@@ -1026,7 +1026,7 @@ void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
                         skippedHits -= step;
                         rem -= step;
 
-                        if (trace)
+                        if constexpr (trace)
                                 SLog("hitsIndex now = ", hitsIndex, ", bufferedHits = ", bufferedHits, ", rem ", rem, "\n");
 
                 } while (rem);
@@ -1035,7 +1035,7 @@ void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
 
 void Trinity::Codecs::Lucene::Decoder::refill_documents()
 {
-        if (trace)
+        if constexpr (trace)
                 SLog("Refilling documents docsLeft = ", docsLeft, "\n");
 
 #ifdef __LUCENE_COUNTERS
@@ -1044,7 +1044,7 @@ void Trinity::Codecs::Lucene::Decoder::refill_documents()
 
         if (docsLeft >= BLOCK_SIZE)
         {
-                if (trace)
+                if constexpr (trace)
                         SLog(ansifmt::bold, ansifmt::color_brown, "REFILL ", docsLeft, ansifmt::reset, "\n");
 
                 p = pfor_decode(forUtil, p, docDeltas);
@@ -1075,8 +1075,9 @@ void Trinity::Codecs::Lucene::Decoder::refill_documents()
                         docFreqs[i] = v;
 #endif
 
-                        if (trace)
+                        if constexpr (trace)
                                 SLog("deltas ", docDeltas[i], " ", docFreqs[i], "\n");
+
                 }
                 bufferedDocs = docsLeft;
                 docsLeft = 0;
@@ -1108,10 +1109,9 @@ uint32_t Trinity::Codecs::Lucene::Decoder::begin()
         return curDocument.id;
 }
 
-bool Trinity::Codecs::Lucene::Decoder::next_impl()
+[[gnu::hot]] bool Trinity::Codecs::Lucene::Decoder::next_impl()
 {
-        // see skip_hits() impl.
-        if (trace)
+        if constexpr (trace)
                 SLog(ansifmt::color_brown, "NEXT: docsIndex = ", docsIndex, " / ", bufferedDocs, " (skippedHits increment by ", docFreqs[docsIndex], ") ", skippedHits, ansifmt::reset, "\n");
 
         skippedHits += docFreqs[docsIndex];
@@ -1119,14 +1119,14 @@ bool Trinity::Codecs::Lucene::Decoder::next_impl()
 
         if (unlikely(++docsIndex == bufferedDocs))
         {
-                if (trace)
+                if constexpr (trace)
                         SLog("End of buffered documents, ", chunkEnd - p, "\n");
 
                 if (p != chunkEnd)
                         decode_next_block();
                 else
                 {
-                        if (trace)
+                        if constexpr (trace)
                                 SLog(ansifmt::bold, ansifmt::color_cyan, "FINALIZING", ansifmt::reset, "\n");
 
                         finalize();
@@ -1175,7 +1175,7 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target)
         return idx;
 }
 
-bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
+[[gnu::hot]] bool Trinity::Codecs::Lucene::Decoder::seek(const docid_t target)
 {
 	auto localBufferedDocs{bufferedDocs};
 
@@ -1197,6 +1197,10 @@ bool Trinity::Codecs::Lucene::Decoder::seek(const uint32_t target)
                 goto skip1;
         }
 #endif
+
+
+
+
 
         for (;;)
         {
@@ -1244,7 +1248,6 @@ skip1:
                                                         SLog("index now = ", index, "\n");
 
 #if 1
-                                                // XXX: what if we point into the _current_ hits block?
                                                 const auto blockPtr = postingListBase + it.indexOffset;
                                                 const auto hitsBlockPtr = hitsBase + it.lastHitsBlockOffset;
 

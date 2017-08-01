@@ -11,7 +11,10 @@ namespace // static/local this module
 
         struct runtime_ctx;
 
-        struct exec_node final // 64bytes alignement seems to yield good results, but crashes if optimizer is enabled (i.e struct alignas(64) exec_node {})
+	// 64bytes alignment seems to yield good results, but crashes if optimizer is enabled (i.e struct alignas(64) exec_node {})
+	// (this is because we use simple_allocator::New<> which doesn't respect the specified alignment. Not sure
+	// if we should implement support for alignment allocations in simple_allocator)
+        struct exec_node final 
         {
                 bool (*fp)(const exec_node &, runtime_ctx &);
 
@@ -258,11 +261,11 @@ namespace // static/local this module
                         return th;
                 }
 
-                void capture_matched_term(const exec_term_id_t termID)
+                [[gnu::hot]] void capture_matched_term(const exec_term_id_t termID)
                 {
                         static constexpr bool trace{false};
 
-                        if (trace)
+                        if constexpr (trace)
                                 SLog("Capturing matched term ", termID, "\n");
 
                         if (const auto qti = originalQueryTermCtx[termID])
@@ -275,20 +278,20 @@ namespace // static/local this module
                                         auto p = matchedDocument.matchedTerms + matchedDocument.matchedTermsCnt++;
                                         auto th = decode_ctx.termHits[termID];
 
-                                        if (trace)
+                                        if constexpr (trace)
                                                 SLog("Not captured yet, capturing now [", qti->term.token, "]\n");
 
                                         curDocQueryTokensCaptured[termID] = curDocSeq;
                                         p->queryCtx = qti;
                                         p->hits = th;
                                 }
-                                else if (trace)
+                                else if constexpr (trace)
                                         SLog("Already captured\n");
                         }
                         else
                         {
                                 // This token was found only in a NOT branch
-                                if (trace)
+                                if constexpr (trace)
                                         SLog("Term found in a NOT branch\n");
                         }
                 }
@@ -546,7 +549,7 @@ static bool matchallterms_cacheable_impl(const exec_node &self, runtime_ctx &rct
         do
         {
                 const auto termID = run->terms[i];
-                auto *const decoder = rctx.decode_ctx.decoders[termID];
+                auto *const __restrict__ decoder = rctx.decode_ctx.decoders[termID];
 
                 if (decoder->seek(did))
                         rctx.capture_matched_term(termID);
@@ -555,13 +558,14 @@ static bool matchallterms_cacheable_impl(const exec_node &self, runtime_ctx &rct
                         ctx->res = false;
                         return false;
                 }
+
         } while (++i != size);
 
         ctx->res = true;
         return true;
 }
 
-static bool matchanyterms_impl(const exec_node &self, runtime_ctx &rctx)
+[[gnu::hot]] static bool matchanyterms_impl(const exec_node &self, runtime_ctx &rctx)
 {
         const auto did = rctx.curDocID;
         uint16_t i{0};
@@ -582,6 +586,7 @@ static bool matchanyterms_impl(const exec_node &self, runtime_ctx &rctx)
         for (uint32_t i{0}; i != n; ++i, ptr += (64 / sizeof(exec_term_id_t)))
                 _mm_prefetch(ptr, _MM_HINT_NTA);
 #endif
+
         do
         {
                 const auto termID = terms[i];
@@ -633,7 +638,7 @@ static bool matchanyterms_impl(const exec_node &self, runtime_ctx &rctx)
         return res;
 }
 
-static bool matchanyterms_fordocs_impl(const exec_node &self, runtime_ctx &rctx)
+[[gnu::hot]] static bool matchanyterms_fordocs_impl(const exec_node &self, runtime_ctx &rctx)
 {
         uint16_t i{0};
         const auto did = rctx.curDocID;
@@ -642,13 +647,14 @@ static bool matchanyterms_fordocs_impl(const exec_node &self, runtime_ctx &rctx)
         const auto *const __restrict__ terms = run->terms;
 	auto *const __restrict__ allDecoders = rctx.decode_ctx.decoders;
 
-#if defined(TRINITY_ENABLE_PREFETCH)
+#if defined(TRINITY_ENABLE_PREFETCH) 
         const auto n = size / (64 / sizeof(exec_term_id_t));
         auto ptr = terms;
 
         for (uint32_t i{0}; i != n; ++i, ptr += (64 / sizeof(exec_term_id_t)))
                 _mm_prefetch(ptr, _MM_HINT_NTA);
 #endif
+
         do
         {
                 const auto termID = terms[i];
@@ -678,14 +684,14 @@ static inline bool matchterm_impl(const exec_node &self, runtime_ctx &rctx)
 
 static inline bool unaryand_impl(const exec_node &self, runtime_ctx &rctx)
 {
-        const auto op = (runtime_ctx::unaryop_ctx *)self.ptr;
+        const auto op = (const runtime_ctx::unaryop_ctx *)self.ptr;
 
         return eval(op->expr, rctx);
 }
 
 static inline bool unarynot_impl(const exec_node &self, runtime_ctx &rctx)
 {
-        const auto op = (runtime_ctx::unaryop_ctx *)self.ptr;
+        const auto op = (const runtime_ctx::unaryop_ctx *)self.ptr;
 
         return !eval(op->expr, rctx);
 }

@@ -3,6 +3,7 @@
 #include <ext/FastPFor/headers/fastpfor.h>
 
 static_assert(sizeof(Trinity::docid_t) <= sizeof(uint32_t), "This codec implementation does not support 64bit document IDs. You can duplicate this file and update it to support larget document identifiers, or use another codec");
+
 namespace Trinity
 {
         namespace Codecs
@@ -200,7 +201,7 @@ namespace Trinity
 
                                 void refill_documents();
 
-                                inline void update_curdoc() noexcept
+                                [[gnu::always_inline]] void update_curdoc() noexcept
                                 {
                                         curDocument.id = lastDocID + docDeltas[docsIndex];
                                         curDocument.freq = docFreqs[docsIndex];
