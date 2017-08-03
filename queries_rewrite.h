@@ -7,6 +7,11 @@
 
 namespace Trinity
 {
+	enum class RewriteFlags : uint8_t
+	{
+		NoShallowCopy = 1
+	};
+
         struct flow;
         struct flow_ent
         {
@@ -515,7 +520,7 @@ namespace Trinity
 	// TODO: all kinds of IMPLEMENT_ME(), also
 	// not sure the use of replace_self() makes sense. Need to reproduce the problem though
         template <typename L>
-        static std::pair<ast_node *, uint8_t> run_capture(std::size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan, gen_ctx &genCtx)
+        static std::pair<ast_node *, uint8_t> run_capture(const uint32_t rewriteFlags, std::size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan, gen_ctx &genCtx)
         {
                 static constexpr bool trace{false};
                 [[maybe_unused]] auto &allocator = q.allocator;
@@ -773,7 +778,16 @@ namespace Trinity
 
                                                         for (auto f : atStop)
                                                         {
-                                                                auto clone = p.second->shallow_copy(&genCtx.allocator);
+								// XXX: we are making shallow copies here, which mean that the token's phrase may be shared among
+								// 2+ nodes, which can cause problems, if you are e.g stemming all tokens after you have rewritten the query because
+								// you will first stem the token and then because the phrase is shared with another node, you will end up attemtping to stem
+								// the now already stemmed token.
+								// For now, just deal with it in your application because shallow copies are so much cheaper -- and dealing with it in your app. is trivial
+								// TODO: expose a flag that controls the semantics(shallow or full copies)
+								// UPDATE: now controlled via flags
+                                                                auto *const clone = (rewriteFlags & unsigned(RewriteFlags::NoShallowCopy))
+                                                                                 ? p.second->copy(&genCtx.allocator)
+                                                                                 : p.second->shallow_copy(&genCtx.allocator);
 
                                                                 f->push_back_node({p.first, clone}, genCtx, flows, maxStop, Operator::AND);
                                                         }
@@ -1044,8 +1058,9 @@ namespace Trinity
 
 	}
 
+
         template <typename L, typename RCB = void(*)(const std::vector<ast_node *> &)>
-        void rewrite_query(Trinity::query &q, std::size_t budget, const uint8_t K, L &&l, RCB &&rcb = dummy_rcb)
+        void rewrite_query(const uint32_t rewriteFlags, Trinity::query &q, std::size_t budget, const uint8_t K, L &&l, RCB &&rcb = dummy_rcb)
         {
                 static constexpr bool trace{false};
 
@@ -1104,7 +1119,7 @@ namespace Trinity
 
                         for (uint32_t i{0}; i < run.size();)
                         {
-                                const auto pair = run_capture(budget, q, run, i, l, K, genCtx);
+                                const auto pair = run_capture(rewriteFlags, budget, q, run, i, l, K, genCtx);
                                 auto expr = pair.first;
 
                                 if (trace)

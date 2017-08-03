@@ -1177,7 +1177,7 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target)
 
 [[gnu::hot]] bool Trinity::Codecs::Lucene::Decoder::seek(const docid_t target)
 {
-	auto localBufferedDocs{bufferedDocs};
+	auto localBufferedDocs{bufferedDocs}; 	// the compiler may be able to better deal with aliasing here
 
         if constexpr (trace)
                 SLog(ansifmt::bold, ansifmt::color_blue, ptr_repr(this), " SKIPPING TO ", target, ansifmt::reset, " (SS = ", SKIPLIST_STEP, "), skipListIdx = ", skipListIdx, " / ", skiplist.size(), "\n");

@@ -237,7 +237,7 @@ namespace // static/local this module
                 {
                 }
 
-                void materialize_term_hits_impl(const exec_term_id_t termID)
+                [[gnu::hot]] void materialize_term_hits_impl(const exec_term_id_t termID)
                 {
                         auto *const __restrict__ th = decode_ctx.termHits[termID];
                         auto *const __restrict__ dec = decode_ctx.decoders[termID];
@@ -250,7 +250,7 @@ namespace // static/local this module
 
                 auto materialize_term_hits(const exec_term_id_t termID)
                 {
-                        auto th = decode_ctx.termHits[termID];
+                        auto *const __restrict__ th = decode_ctx.termHits[termID];
 
                         if (likely(th->docSeq != curDocSeq))
                         {
@@ -640,10 +640,10 @@ static bool matchallterms_cacheable_impl(const exec_node &self, runtime_ctx &rct
 
 [[gnu::hot]] static bool matchanyterms_fordocs_impl(const exec_node &self, runtime_ctx &rctx)
 {
-        uint16_t i{0};
         const auto did = rctx.curDocID;
         const auto *const __restrict__ run = static_cast<const runtime_ctx::termsrun *>(self.ptr);
         const auto size = run->size;
+	std::remove_const<decltype(size)>::type i{0};
         const auto *const __restrict__ terms = run->terms;
 	auto *const __restrict__ allDecoders = rctx.decode_ctx.decoders;
 
@@ -707,7 +707,7 @@ static bool matchanyphrases_impl(const exec_node &self, runtime_ctx &rctx)
         {
                 auto p = run->phrases[k];
                 const auto firstTermID = p->termIDs[0];
-                auto decoder = rctx.decode_ctx.decoders[firstTermID];
+                auto *const __restrict__ decoder = rctx.decode_ctx.decoders[firstTermID];
 
                 if (!decoder->seek(did))
                         goto nextPhrase;
@@ -718,7 +718,7 @@ static bool matchanyphrases_impl(const exec_node &self, runtime_ctx &rctx)
                         for (uint32_t i{1}; i != n; ++i)
                         {
                                 const auto termID = p->termIDs[i];
-                                auto decoder = rctx.decode_ctx.decoders[termID];
+                                auto *const __restrict__ decoder = rctx.decode_ctx.decoders[termID];
 
                                 if (!decoder->seek(did))
                                         goto nextPhrase;
@@ -727,7 +727,7 @@ static bool matchanyphrases_impl(const exec_node &self, runtime_ctx &rctx)
                         }
 
                         {
-                                auto th = rctx.materialize_term_hits(firstTermID);
+                                auto *const __restrict__ th = rctx.materialize_term_hits(firstTermID);
                                 const auto firstTermFreq = th->freq;
                                 const auto firstTermHits = th->all;
                                 auto &dws = rctx.docWordsSpace;
@@ -973,7 +973,7 @@ static bool matchphrase_impl(const exec_node &self, runtime_ctx &rctx)
 
 static inline bool consttrueexpr_impl(const exec_node &self, runtime_ctx &rctx)
 {
-        const auto op = (runtime_ctx::unaryop_ctx *)self.ptr;
+        const auto op = (const runtime_ctx::unaryop_ctx *)self.ptr;
 
         // evaluate but always return true
         eval(op->expr, rctx);
@@ -982,21 +982,21 @@ static inline bool consttrueexpr_impl(const exec_node &self, runtime_ctx &rctx)
 
 static inline bool logicaland_impl(const exec_node &self, runtime_ctx &rctx)
 {
-        const auto opctx = (runtime_ctx::binop_ctx *)self.ptr;
+        const auto opctx = (const runtime_ctx::binop_ctx *)self.ptr;
 
         return eval(opctx->lhs, rctx) && eval(opctx->rhs, rctx);
 }
 
 static inline bool logicalnot_impl(const exec_node &self, runtime_ctx &rctx)
 {
-        const auto opctx = (runtime_ctx::binop_ctx *)self.ptr;
+        const auto opctx = (const runtime_ctx::binop_ctx *)self.ptr;
 
         return eval(opctx->lhs, rctx) && !eval(opctx->rhs, rctx);
 }
 
 static inline bool logicalor_impl(const exec_node &self, runtime_ctx &rctx)
 {
-        const auto *const __restrict__ opctx = (runtime_ctx::binop_ctx *)self.ptr;
+        const auto *const __restrict__ opctx = (const runtime_ctx::binop_ctx *)self.ptr;
 
         // WAS: return eval(opctx->lhs, rctx) || eval(opctx->rhs, rctx);
         // We need to evaluate both LHS and RHS and return true if either of them is true
@@ -1012,7 +1012,7 @@ static inline bool logicalor_impl(const exec_node &self, runtime_ctx &rctx)
 
 static inline bool logicalor_fordocs_impl(const exec_node &self, runtime_ctx &rctx)
 {
-        const auto *const __restrict__ opctx = (runtime_ctx::binop_ctx *)self.ptr;
+        const auto *const __restrict__ opctx = (const runtime_ctx::binop_ctx *)self.ptr;
 
         return eval(opctx->lhs, rctx) || eval(opctx->rhs, rctx);
 }
@@ -3718,7 +3718,7 @@ void Trinity::exec_query(const query &in, IndexSource *const __restrict__ idxsrc
                                         for (uint32_t i{1}; i != leaderDecodersCnt; ++i)
                                         {
                                                 const auto *const __restrict__ decoder = leaderDecoders[i];
-                                                const auto did = decoder->curDocument.id; // see Codecs::Decoder::curDocument comments
+                                                const auto did = decoder->curDocument.id;
 
                                                 if (did < docID)
                                                 {
