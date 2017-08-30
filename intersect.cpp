@@ -10,8 +10,9 @@ void Trinity::intersect_impl(const uint64_t stopwordsMask,
         static constexpr bool trace{false};
         struct tracked
         {
-                Codecs::Decoder *dec;
+		Codecs::PostingsListIterator *it;
                 uint8_t tokenIdx;
+                Codecs::Decoder *dec;
         } remaining[512];
 
         Dexpect(tokens.size() <= sizeof(uint64_t) << 3);
@@ -27,10 +28,11 @@ void Trinity::intersect_impl(const uint64_t stopwordsMask,
                 {
                         if (const auto tctx = src->term_ctx(token); tctx.documents)
                         {
-                                auto dec = src->new_postings_decoder(token, tctx);
+                                auto dec = src->new_postings_decoder(0 /* dummy */, token, tctx);
+				auto it = dec->new_iterator();
 
-                                dec->begin();
-                                remaining[rem++] = {dec, i};
+				it->next();
+                                remaining[rem++] = {it, i, dec};
                                 origMask |= uint64_t(1u) << i;
 
                                 if (trace)
@@ -125,23 +127,23 @@ void Trinity::intersect_impl(const uint64_t stopwordsMask,
         ctx c;
         const auto before = Timings::Microseconds::Tick();
 
+	// TODO: use Switch::priority_queue<>
         for (;;)
         {
                 uint16_t cnt{1};
-                docid_t lowest;
+                isrc_docid_t lowest;
                 const auto &it = remaining[0];
                 uint64_t mask = uint64_t(1u) << it.tokenIdx;
                 uint8_t first{0}, last{0};
 
                 selected[0] = 0;
-                lowest = it.dec->curDocument.id;
+                lowest = it.it->curDocument.id;
                 for (uint32_t i{1}; i != rem; ++i)
                 {
                         const auto &it = remaining[i];
 
-                        // SLog("For [", tokens[it.tokenIdx], "] ", it.dec->curDocument.id, "\n");
 
-                        if (const auto docID = it.dec->curDocument.id; docID == lowest)
+                        if (const auto docID = it.it->curDocument.id; docID == lowest)
                         {
                                 const auto m = uint64_t(1u) << it.tokenIdx;
 
@@ -180,9 +182,11 @@ void Trinity::intersect_impl(const uint64_t stopwordsMask,
                 {
                         const auto idx = selected[--cnt];
 
-                        if (!remaining[idx].dec->next())
+                        if (!remaining[idx].it->next())
                         {
                                 delete remaining[idx].dec;
+                                delete remaining[idx].it;
+
                                 if (--rem == 0)
                                         goto l10;
                                 else

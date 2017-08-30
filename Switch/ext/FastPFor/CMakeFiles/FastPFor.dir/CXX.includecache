@@ -6,31 +6,31 @@
 
 #IncludeRegexTransform: 
 
-/home/system/Development/Switch/ext/FastPFor/src/bitpacking.cpp
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpacking.cpp
 bitpacking.h
-/home/system/Development/Switch/ext/FastPFor/src/bitpacking.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpacking.h
 
-/home/system/Development/Switch/ext/FastPFor/src/bitpackingaligned.cpp
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpackingaligned.cpp
 bitpackingaligned.h
-/home/system/Development/Switch/ext/FastPFor/src/bitpackingaligned.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpackingaligned.h
 
-/home/system/Development/Switch/ext/FastPFor/src/bitpackingunaligned.cpp
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpackingunaligned.cpp
 exception
 -
 bitpackingunaligned.h
-/home/system/Development/Switch/ext/FastPFor/src/bitpackingunaligned.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpackingunaligned.h
 
-/home/system/Development/Switch/ext/FastPFor/src/horizontalbitpacking.cpp
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/horizontalbitpacking.cpp
 horizontalbitpacking.h
-/home/system/Development/Switch/ext/FastPFor/src/horizontalbitpacking.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/horizontalbitpacking.h
 
-/home/system/Development/Switch/ext/FastPFor/src/simdbitpacking.cpp
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/simdbitpacking.cpp
 simdbitpacking.h
-/home/system/Development/Switch/ext/FastPFor/src/simdbitpacking.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/simdbitpacking.h
 
-/home/system/Development/Switch/ext/FastPFor/src/simdunalignedbitpacking.cpp
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/simdunalignedbitpacking.cpp
 usimdbitpacking.h
-/home/system/Development/Switch/ext/FastPFor/src/usimdbitpacking.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/usimdbitpacking.h
 
 headers/bitpacking.h
 common.h

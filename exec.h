@@ -4,6 +4,7 @@
 #include "matches.h"
 #include "queries.h"
 #include <future>
+#include "runtime_ctx.h" // bring it in because we have inlined DecoderProxy methods
 
 namespace Trinity
 {

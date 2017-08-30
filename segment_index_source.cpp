@@ -112,10 +112,12 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
 
         const strwlen8_t codec(codecStorage, fileSize);
 
-        if (codec.Eq(_S("GOOGLE")))
-                accessProxy.reset(new Trinity::Codecs::Google::AccessProxy(basePath, index.start()));
-        else if (codec.Eq(_S("LUCENE")))
+        if (codec.Eq(_S("LUCENE")))
                 accessProxy.reset(new Trinity::Codecs::Lucene::AccessProxy(basePath, index.start()));
+#ifdef TRINITY_CODECS_GOOGLE_AVAILABLE
+        else if (codec.Eq(_S("GOOGLE")))
+                accessProxy.reset(new Trinity::Codecs::Google::AccessProxy(basePath, index.start()));
+#endif
         else
                 throw Switch::data_error("Unknown codec");
 }

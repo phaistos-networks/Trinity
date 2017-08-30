@@ -1,6 +1,7 @@
 #include "queries.h"
 #include <unordered_map>
 #include <set>
+#include <mutex>
 
 using namespace Trinity;
 
@@ -1806,6 +1807,52 @@ void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a)
         } while (stack.size());
 }
 
+
+// Be pre-computing this, we get an important speedup, because
+// isalpha(), isdigit() and isalnum() are just accesses to charClassMap
+namespace Trinity
+{
+        enum class CharClass : uint8_t
+        {
+                Other = 0,
+		Alpha,
+                Digit,
+        };
+
+        static CharClass charClassMap[256];
+
+        static void init_charclass_map()
+        {
+                for (uint32_t i{0}; i != 256; ++i)
+                {
+                        if (isalpha(i))
+                                charClassMap[i] = CharClass::Alpha;
+                        else if (isdigit(i))
+                                charClassMap[i] = CharClass::Digit;
+                        else
+                                charClassMap[i] = CharClass::Other;
+                }
+
+        }
+
+	static inline bool _isalpha(const uint8_t i) noexcept
+	{
+		return charClassMap[i] == CharClass::Alpha;
+	}
+
+	static inline bool _isdigit(const uint8_t i) noexcept
+	{
+		return charClassMap[i] == CharClass::Digit;
+	}
+
+	static inline bool _isalnum(const uint8_t i) noexcept
+	{
+		const auto v = charClassMap[i];
+
+		return v == CharClass::Digit || v == CharClass::Alpha;
+	}
+};
+
 // This is a simple reference implementation of a queries tokens parser. Basic logic is implemented, but you should
 // really implement your own if you need anything more than this.
 //
@@ -1818,14 +1865,17 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
         const auto *p = content.begin(), *const e = content.end(), *const b{p};
         const auto *const oEnd = out + Limits::MaxTermLength + 1, *outBase{out};
         bool allAlphas{true};
+	static std::once_flag onceFlag;
 
-        if (*p == '+' && (p + 1 == e || (p[1] != '+' && p[1] != '-' && !isalnum(p[1]))))
+	std::call_once(onceFlag, init_charclass_map);
+
+        if (*p == '+' && (p + 1 == e || (p[1] != '+' && p[1] != '-' && !_isalnum(p[1]))))
         {
                 str32_t(_S("PLUS")).CopyTo(out);
                 return {1, "PLUS"_len};
         }
 
-        if (p + 4 < e && isalpha(*p) && p[1] == '.' && isalnum(p[2]) && p[3] == '.' && isalpha(p[4]))
+        if (p + 4 < e && _isalpha(*p) && p[1] == '.' && _isalnum(p[2]) && p[3] == '.' && _isalpha(p[4]))
         {
                 // Acronyms with punctuations
                 // is it e.g I.B.M, or U.S.A. ?
@@ -1845,7 +1895,7 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
                                 ++p;
                                 if (p == e)
                                         break;
-                                else if (isalpha(*p))
+                                else if (_isalpha(*p))
                                 {
                                         if (unlikely(o != threshold))
                                         {
@@ -1855,12 +1905,12 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
                                         ++p;
                                         continue;
                                 }
-                                else if (!isalnum(*p))
+                                else if (!_isalnum(*p))
                                         break;
                                 else
                                         goto l20;
                         }
-                        else if (isalnum(*p))
+                        else if (_isalnum(*p))
                                 goto l20;
                         else
                                 break;
@@ -1870,16 +1920,16 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
         }
 
 l20:
-        if (p != e && isalpha(*p))
+        if (p != e && _isalpha(*p))
         {
                 // e.g site:google.com, or video|games, or site:.gr, or site:x-box.com
-                while (p != e && isalpha(*p))
+                while (p != e && _isalpha(*p))
                         ++p;
 
-                if (p + 1 < e && *p == ':' && (isalnum(p[1]) || p[1] == '.'))
+                if (p + 1 < e && *p == ':' && (_isalnum(p[1]) || p[1] == '.'))
                 {
                         for (p += 1; p != e &&
-                                     (isalnum(*p) || (p + 1 < e && isalnum(p[1]) && (*p == '.' || (*p == '-' && isalnum(p[-1])))));
+                                     (_isalnum(*p) || (p + 1 < e && _isalnum(p[1]) && (*p == '.' || (*p == '-' && _isalnum(p[-1])))));
                              ++p)
                         {
                                 continue;
@@ -1887,17 +1937,17 @@ l20:
 
                         goto l10;
                 }
-		else if (p + 2 < e && p - content.data() == 1 && *p == '\'' && isalpha(p[1]))
+                else if (p + 2 < e && p - content.data() == 1 && *p == '\'' && _isalpha(p[1]))
                 {
                         // L'Oreal Revitalift
                         // Go figure
                         *out++ = content.front();
                         const auto ckpt{++p};
 
-                        while (p != e && isalnum(*p))
+                        while (p != e && _isalnum(*p))
                                 ++p;
 
-                        const auto span = std::min<uint32_t>(Limits::MaxTermLength /* will not +1 because out[0] contains content.front() */, p - ckpt);	
+                        const auto span = std::min<uint32_t>(Limits::MaxTermLength /* will not +1 because out[0] contains content.front() */, p - ckpt);
 
                         memcpy(out, ckpt, span);
                         out += span;
@@ -1906,7 +1956,7 @@ l20:
                 }
         }
 
-        if (p == content.data() && p != e && isdigit(*p))
+        if (p == content.data() && p != e && _isdigit(*p))
         {
                 // numeric transformations
                 // This is not very appropriate, all things considered
@@ -1916,14 +1966,14 @@ l20:
                 // Your parser implementation should account for it. For now, we just translate from 9.000 => 9
                 allAlphas = false;
 
-                for (++p; p != e && isdigit(*p); ++p)
+                for (++p; p != e && _isdigit(*p); ++p)
                         continue;
 
-                if (p + 2 <= e && (*p == '.' || *p == ',') && isdigit(p[1]))
+                if (p + 2 <= e && (*p == '.' || *p == ',') && _isdigit(p[1]))
                 {
                         auto it = p + 2;
 
-                        while (it != e && isdigit(*it))
+                        while (it != e && _isdigit(*it))
                                 ++it;
 
                         {
@@ -1988,13 +2038,13 @@ l20:
         for (;;)
         {
 #if 0
-		if (*p == '|' && p + 1 < e && isalnum(p[1])) 	// special compound tokens (foo|bar)
+		if (*p == '|' && p + 1 < e && _isalnum(p[1])) 	// special compound tokens (foo|bar)
 		{
 			for (p+=2; p != e; )
 			{
-				if (*p == '|' && p + 1 < e && isalnum(p[1]))
+				if (*p == '|' && p + 1 < e && _isalnum(p[1]))
 					p+=2;
-				else if (isalnum(*p))
+				else if (_isalnum(*p))
 					++p;
 				else
 					break;
@@ -2005,10 +2055,10 @@ l20:
 
                 while (p != e)
                 {
-                        if (isalpha(*p))
+                        if (_isalpha(*p))
                         {
                         }
-                        else if (isdigit(*p))
+                        else if (_isdigit(*p))
                         {
                                 allAlphas = false;
                         }
@@ -2025,9 +2075,9 @@ l20:
                         // which is true for all other heuristics and design decisions specific to this parser implementaiton.
                         str32_t s(b, p - b);
 
-                        if (p + 1 < e && toupper(p[1]) == 'S' && (p + 2 > e || (!isalnum(p[2]) && p[2] != '\'')))
+                        if (p + 1 < e && (p[1] == 'S' || p[1] == 's') && (p + 2 > e || (!_isalnum(p[2]) && p[2] != '\'')))
                         {
-				const auto saved{s.size()};
+                                const auto saved{s.size()};
 
                                 if (s.EqNoCase(_S("IT")))
                                 {
@@ -2037,11 +2087,11 @@ l20:
                                 const auto rem = oEnd - out;
 
                                 if (unlikely(s.size() + 1 > rem))
-				{
+                                {
                                         s.len = rem;
-                                	out = s.CopyTo(out);
-				}
-				else
+                                        out = s.CopyTo(out);
+                                }
+                                else
                                 {
                                         // genetive marker
                                         out = s.CopyTo(out);
@@ -2056,9 +2106,9 @@ l20:
 
                 if (allAlphas)
                 {
-                        if (p == content.data() + 1 && p + 2 <= e && *p == '&' && isalpha(p[1]))
+                        if (p == content.data() + 1 && p + 2 <= e && *p == '&' && _isalpha(p[1]))
                         {
-                                if (p + 2 == e || !isalnum(p[2]))
+                                if (p + 2 == e || !_isalnum(p[2]))
                                 {
                                         // d&d, x&y
                                         auto _p = content.Prefix(3);
@@ -2085,7 +2135,7 @@ l20:
                                 continue;
 #endif
                         }
-                        else if ((*p == '+' || *p == '#') && isalpha(p[-1]) && (p + 1 == e || !isalnum(p[1])))
+                        else if ((*p == '+' || *p == '#') && _isalpha(p[-1]) && (p + 1 == e || !_isalnum(p[1])))
                         {
                                 // C++, C#
                                 for (++p; p != e && *p == '+'; ++p)

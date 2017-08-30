@@ -1,11 +1,12 @@
 #pragma once
 #include <switch.h>
 #include <text.h>
-#define TRINITY_ENABLE_PREFETCH 1
+//#define TRINITY_ENABLE_PREFETCH 1
 #ifdef TRINITY_ENABLE_PREFETCH
 #include <emmintrin.h> // for _mm_prefetch() intrinsic . We could have also used __builtin_prefetch()
 #endif
 
+#define TRINITY_VERSION (2 * 10 + 0) // 2.0
 
 // Define if you want to read in the contents of the index instead of memory mapping it to the process space
 // You probably don't want to do that though
@@ -20,28 +21,23 @@ namespace Trinity
 	using char_t = str8_t::value_type;
 	using query_term_flags_t = uint16_t;
 
-	// You should be able to set docid_t to uint64_t, recompile and get 64bit document identifiers - though it hasn't been tested and there may be edge cases
-	// where this won't work but will likely be trivial to fix/implement whatever's required(Please file a GH issue)
+	// Index Source Document ID
+	// It is specific to index sources and the execution engine (and by extension, to the various documents set iterators).
 	//
-	// The bundled codecs(google, lucene) will not properly work if docid_it is 64bits or longer, so you 'd have to modify them or create a new codec
-	// that supports longer document IDs in the index (should be simple enough).
+	// Those can be translated to global docid_t via IndexSource::translate_docid() during query execution.
 	//
-	// Future updates will support 64bit document IDentifiers though. Currently, this is just the codecs implementations, and it should be a simple matter
-	// of using templated functions for the various varint encoding/decoding calls on there. This will make it possible to support e.g 2**64 documentIDs (so that you
-	// can build Google in your basement, like most cool kids want to do:)
-	//
-	// An alternative design would stick to 32bit identifiers for documents, except those would be specific to a segment, and you would map
-	// (i.e translate) from local(to segment) to global scope. For example, you could maintain a simple file that holds a list of globalID:u64
-	// and you could mmap it and dereference at ((localId-1) * sizeof(uint32_t)). That would reqire a few changes in the execution engine
-	// because you 'd need to work with both local and global ids, and docidsupdates would also need to support 64bit ops, but would work fine. That is, it would
-	// mean you 'd operate with source-local document IDs when accessing the source, but use global document IDs for docidsupdates and for passing that to callbacks etc.
-	// A virtual method in IndexSource would be used to translate from session-local to global document IDs, where the default impl. would return the local ID.
-	// Assuming that each segment is a few million documents on average, for 4M documents, we 'd need just 30MBs for that translation file, which is really low anyway.
-	// We 'd need to make sure merge() takes those into account though.
+	// When indexing, you are going to provide a meaningful isrc_docid. It can be the actual global ID of a document, or
+	// a translated - and you e.g store in a file at sizeof(docid_t) the actual value of the indexed isrc_docid and
+	// you consult it in translate_docid()
+	using isrc_docid_t = uint32_t;
+
+
+	// The global document ID
 	using docid_t = uint32_t;
 
-	// magic value; signifies end of document
-	static constexpr docid_t MaxDocIDValue{std::numeric_limits<docid_t>::max()};
+	// magic value; end of postinggs list or documents set
+	// This is specific to index source document IDs and DocsSets iterators -- not related to global document IDs.
+	static constexpr isrc_docid_t DocIDsEND{std::numeric_limits<isrc_docid_t>::max()};
 
 
 	// Represents the position of a token(i.e word) in a document

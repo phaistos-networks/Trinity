@@ -12,12 +12,12 @@ namespace Trinity
                 tokenpos_t pos;
                 uint8_t payloadLen;
 
-		auto bytes() const noexcept
+		inline auto bytes() const noexcept
 		{
 			return reinterpret_cast<const uint8_t *>(&payload);
 		}
 
-		auto bytes() noexcept
+		inline auto bytes() noexcept
 		{
 			return reinterpret_cast<uint8_t *>(&payload);
 		}

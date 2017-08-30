@@ -6,6 +6,11 @@
 // Efficient, lean, fixed-size bitmaps based document IDs tracking
 // You are expected to test for document IDs in ascending order, but if you need a different behavior, it should be easy to modify
 // the implementation to accomplish it.
+//
+// Note that it operates on docit_t, not on isrc_docid_t. Because we store isrc_docid in ascending order in
+// postings lists, but that doesn't guarantee that the translated global document IDs will also be
+// in ascending order, we should either account for that, or use e.g a SparseFixedBitSet which is
+// almost as fast, takes up less memory and is great for random access
 namespace Trinity
 {
         struct updated_documents final
@@ -44,8 +49,8 @@ namespace Trinity
 
                 void reset()
                 {
-                        curBankRange.Set(MaxDocIDValue, 0);
-			maxDocID = MaxDocIDValue;
+			maxDocID = std::numeric_limits<docid_t>::max();
+                        curBankRange.Set(maxDocID, 0);
                 }
 
                 updated_documents_scanner(const updated_documents &ud)
@@ -83,7 +88,7 @@ namespace Trinity
 
 	void pack_updates(std::vector<docid_t> &updatedDocumentIDs, IOBuffer *const buf);
 
-	updated_documents unpack_updates(const range_base<const uint8_t *, docid_t> content);
+	updated_documents unpack_updates(const range_base<const uint8_t *, uint32_t> content);
 
 
 	// manages multiple scanners and tests among all of them, and if any of them is exchausted, it is removed from the collection

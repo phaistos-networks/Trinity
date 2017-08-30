@@ -11,15 +11,17 @@ namespace Trinity
 		// We could have separated docSeq and termID into different arrays(as in, not in the same struct) so that reset()
 		// would only memset() the docSeq array(2 bytes vs 4 bytes) * maxPos
 		// but that 'd make access somewhat slower for set() and test() because we 'd get more cache misses so we optimise for it
+		using seq_t = uint16_t;
+
                 struct position
                 {
-                        uint16_t docSeq;
                         exec_term_id_t termID;  // See IMPL.md
+                        seq_t docSeq;
                 };
 
                 position *const positions;
                 const uint32_t maxPos;
-                uint16_t curSeq;
+                seq_t curSeq;
 
 
               public:
@@ -36,7 +38,7 @@ namespace Trinity
 
 		~DocWordsSpace()
 		{
-                        free(positions);
+                        std::free(positions);
 		}
 
 		void reset()
@@ -47,9 +49,9 @@ namespace Trinity
 			//
 			// In a previous Trinity design we stored the document ID as u32 but that is excessive, we care about cache-misses
 			// so now we instead use a `uint16_t curSeq` and periodically clear. This is more efficient
-                        if (unlikely(curSeq == UINT16_MAX))
+                        if (unlikely(curSeq == std::numeric_limits<seq_t>::max()))
                         {
-				// we reset every 65k documents
+				// we reset every 65k(for u16 seq_t) documents
 				// this is preferrable to using uint32_t to encode the actual document in position{}
 				// no need to memset() for (maxPos + 1 + Trinity::Limits::MaxPhraseSize), just upto (maxPos + 1)
                                 memset(positions, 0, sizeof(position) * (maxPos + 1));
@@ -62,7 +64,7 @@ namespace Trinity
 		// XXX: pos must be > 0
 		[[gnu::always_inline]] void set(const exec_term_id_t termID, const tokenpos_t pos) noexcept
 		{
-                        positions[pos] = {curSeq, termID};
+                        positions[pos] = {termID, curSeq};
 		}
 
 #if 1

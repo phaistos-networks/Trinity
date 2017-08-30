@@ -6,7 +6,7 @@
 
 #IncludeRegexTransform: 
 
-/home/system/Development/Switch/ext/FastPFor/src/codecs.cpp
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/codecs.cpp
 getopt.h
 -
 crtdefs.h
@@ -36,21 +36,21 @@ memory
 iomanip
 -
 codecfactory.h
-/home/system/Development/Switch/ext/FastPFor/src/codecfactory.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/codecfactory.h
 ztimer.h
-/home/system/Development/Switch/ext/FastPFor/src/ztimer.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/ztimer.h
 synthetic.h
-/home/system/Development/Switch/ext/FastPFor/src/synthetic.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/synthetic.h
 cpubenchmark.h
-/home/system/Development/Switch/ext/FastPFor/src/cpubenchmark.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/cpubenchmark.h
 stringutil.h
-/home/system/Development/Switch/ext/FastPFor/src/stringutil.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/stringutil.h
 entropy.h
-/home/system/Development/Switch/ext/FastPFor/src/entropy.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/entropy.h
 memutil.h
-/home/system/Development/Switch/ext/FastPFor/src/memutil.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/memutil.h
 deltautil.h
-/home/system/Development/Switch/ext/FastPFor/src/deltautil.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/deltautil.h
 
 headers/VarIntG8IU.h
 emmintrin.h

@@ -76,7 +76,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
         size_t termHitsCapacity{0};
         term_hit *termHitsStorage{nullptr};
         std::vector<Trinity::Codecs::IndexSession::merge_participant> mergeParticipants;
-        std::vector<std::pair<Trinity::Codecs::Decoder *, masked_documents_registry *>> decodersV;
+        std::vector<std::pair<
+		std::pair<Trinity::Codecs::Decoder *, Trinity::Codecs::PostingsListIterator *>,
+			masked_documents_registry *>> decodersV;
         term_index_ctx tctx;
         std::unique_ptr<Trinity::Codecs::Encoder> enc(is->new_encoder());
 
@@ -164,17 +166,18 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                 }
                                 else
                                 {
-                                        std::unique_ptr<Trinity::Codecs::Decoder> dec(c.ap->new_decoder(selected.second));
+                                        std::unique_ptr<Trinity::Codecs::Decoder> dec(c.ap->new_decoder(0 /* dummy */, selected.second));
+					std::unique_ptr<Trinity::Codecs::PostingsListIterator> it(dec->new_iterator());
 
-                                        dec->begin();
+					it->next();
                                         enc->begin_term();
 
                                         do
                                         {
-                                                const auto docID = dec->curDocument.id;
-                                                const auto freq = dec->curDocument.freq;
+                                                const auto docID = it->curDocument.id;
+                                                const auto freq = it->freq;
 
-                                                require(docID != MaxDocIDValue); // sanity check
+                                                require(docID != DocIDsEND); // sanity check
 
 						if (trace)
 							SLog("docID = ", docID, ", masked = ", maskedDocsReg->test(docID), "\n");
@@ -191,7 +194,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                         }
 
                                                         enc->begin_document(docID);
-                                                        dec->materialize_hits(1 /* dummy */, &dws /* dummy */, termHitsStorage);
+                                                        it->materialize_hits(1 /* dummy */, &dws /* dummy */, termHitsStorage);
 
                                                         for (uint32_t i{0}; i != freq; ++i)
                                                         {
@@ -204,7 +207,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                         enc->end_document();
                                                 }
 
-                                        } while (dec->next());
+                                        } while (it->next() != DocIDsEND);
 
                                         enc->end_term(&tctx);
 
@@ -269,12 +272,13 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                         {
                                                 // see earlier comments for why this is possible
                                                 auto ap = all[idx].candidate.ap;
-                                                auto dec = ap->new_decoder(all[idx].candidate.terms->cur().second);
+                                                auto dec = ap->new_decoder(0 /* dummy */, all[idx].candidate.terms->cur().second);
+						auto it = dec->new_iterator();
                                                 auto reg = scanner_registry_for(all[idx].idx).release();
 
                                                 require(reg);
-                                                dec->begin();
-                                                decodersV.push_back({dec, reg});
+						it->next();
+                                                decodersV.push_back({{dec, it}, reg});
                                         }
                                         else if (trace)
                                                 SLog("No documents for candidate ", i, "\n");
@@ -287,16 +291,17 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 
                                         require(sizeof_array(toAdvance) >= decodersV.size());
 
+					// TODO: just use a Switch::priority_queue<>
                                         enc->begin_term();
                                         for (;;)
                                         {
                                                 uint16_t toAdvanceCnt{1};
-                                                auto lowestDID = decoders[0].first->curDocument.id;
+                                                auto lowestDID = decoders[0].first.second->curDocument.id;
 
                                                 toAdvance[0] = 0;
                                                 for (uint16_t i{1}; i != rem; ++i)
                                                 {
-                                                        const auto id = decoders[i].first->curDocument.id;
+                                                        const auto id = decoders[i].first.second->curDocument.id;
 
                                                         if (id < lowestDID)
                                                         {
@@ -315,8 +320,8 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 
                                                 if (!decoders[toAdvance[0]].second->test(lowestDID))
                                                 {
-                                                        auto dec = decoders[toAdvance[0]].first;
-                                                        const auto freq = dec->curDocument.freq;
+                                                        auto it = decoders[toAdvance[0]].first.second;
+                                                        const auto freq = it->freq;
 
                                                         if (freq > termHitsCapacity)
                                                         {
@@ -328,7 +333,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                         }
 
                                                         enc->begin_document(lowestDID);
-                                                        dec->materialize_hits(1 /* dummy */, &dws /* dummy */, termHitsStorage);
+                                                        it->materialize_hits(1 /* dummy */, &dws /* dummy */, termHitsStorage);
 
                                                         for (uint32_t i{0}; i != freq; ++i)
                                                         {
@@ -343,11 +348,12 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                 do
                                                 {
                                                         const auto idx = toAdvance[--toAdvanceCnt];
-                                                        auto dec = decoders[idx].first;
+                                                        auto it = decoders[idx].first.second;
 
-                                                        if (!dec->next())
+                                                        if (it->next() == DocIDsEND)
                                                         {
-                                                                delete dec;
+								delete it;
+								delete decoders[idx].first.first;
                                                                 delete decoders[idx].second;
 
                                                                 if (!--rem)

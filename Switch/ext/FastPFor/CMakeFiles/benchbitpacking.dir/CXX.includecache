@@ -6,7 +6,7 @@
 
 #IncludeRegexTransform: 
 
-/home/system/Development/Switch/ext/FastPFor/src/benchbitpacking.cpp
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/benchbitpacking.cpp
 exception
 -
 iostream
@@ -16,19 +16,19 @@ iomanip
 vector
 -
 util.h
-/home/system/Development/Switch/ext/FastPFor/src/util.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/util.h
 bitpackinghelpers.h
-/home/system/Development/Switch/ext/FastPFor/src/bitpackinghelpers.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpackinghelpers.h
 simdbitpacking.h
-/home/system/Development/Switch/ext/FastPFor/src/simdbitpacking.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/simdbitpacking.h
 rolledbitpacking.h
-/home/system/Development/Switch/ext/FastPFor/src/rolledbitpacking.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/rolledbitpacking.h
 synthetic.h
-/home/system/Development/Switch/ext/FastPFor/src/synthetic.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/synthetic.h
 ztimer.h
-/home/system/Development/Switch/ext/FastPFor/src/ztimer.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/ztimer.h
 horizontalbitpacking.h
-/home/system/Development/Switch/ext/FastPFor/src/horizontalbitpacking.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/horizontalbitpacking.h
 
 headers/bitpacking.h
 common.h

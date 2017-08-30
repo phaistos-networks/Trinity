@@ -1,8 +1,8 @@
 #pragma once
+#include "docwordspace.h"
+#include "runtime.h"
 #include <switch.h>
 #include <switch_dictionary.h>
-#include "runtime.h"
-#include "docwordspace.h"
 
 namespace Trinity
 {
@@ -11,24 +11,24 @@ namespace Trinity
         //
         // Long story short, we track all distinct (termIDs, toNextSpan) combinations for each query index, where
         // termID is the term ID (execution space) and toNextSpan is how many indices ahead to advance to get
-        // to the net term (1 unless specific OR queries are processed. 
-	// Can also be 0 if there is no other token to the right)
+        // to the net term (1 unless specific OR queries are processed.
+        // Can also be 0 if there is no other token to the right)
         // Please see Trinity::phrase comments
         //
         // This is built by exec_query() and passed to MatchedIndexDocumentsFilter::prepare()
         // It is useful for proximity checks in conjuction with DocWordsSpace
-	//
-	// UPDATE: we should consider extend this from unique (termID, toNextSpan) to unique (termID, toNextSpan, flags) 
-	// so that, for example, we can consider flags when we are attempting to form a sequence, where we may want to
-	// ignore a query_index_term if the flags indicate the token was produced by a rewrite process, i.e term aliasing
-	//
-	// UPDATE: doing this now
-	// UPDATE: check ExecFlags::DisregardTokenFlagsForQueryIndicesTerms
-	struct query_index_term final
-	{
-		exec_term_id_t termID;
-		query_term_flags_t flags;
-		uint8_t toNextSpan;
+        //
+        // UPDATE: we should consider extend this from unique (termID, toNextSpan) to unique (termID, toNextSpan, flags)
+        // so that, for example, we can consider flags when we are attempting to form a sequence, where we may want to
+        // ignore a query_index_term if the flags indicate the token was produced by a rewrite process, i.e term aliasing
+        //
+        // UPDATE: doing this now
+        // UPDATE: check ExecFlags::DisregardTokenFlagsForQueryIndicesTerms
+        struct query_index_term final
+        {
+                exec_term_id_t termID;
+                query_term_flags_t flags;
+                uint8_t toNextSpan;
 
                 inline bool operator==(const query_index_term &o) const noexcept
                 {
@@ -39,8 +39,8 @@ namespace Trinity
         struct query_index_terms final
         {
                 uint16_t cnt;
-		// all distinct query_index_termS
-		// uniques are sorted by (termID ASC, toNextSpan ASC, flags ASC)
+                // all distinct query_index_termS
+                // uniques are sorted by (termID ASC, toNextSpan ASC, flags ASC)
                 query_index_term uniques[0];
         };
 
@@ -55,13 +55,16 @@ namespace Trinity
                 // Facilitates execution -- ignored during scoring
                 // This is internal and specific to the execution engine impl.
                 uint16_t allCapacity{0};
-                uint16_t docSeq;
+                union {
+                        uint16_t docSeq{0};
+                        isrc_docid_t docID;
+                };
 
                 void set_freq(const tokenpos_t newFreq)
                 {
                         if (unlikely(newFreq > allCapacity))
                         {
-                                allCapacity = newFreq + 32;
+                                allCapacity = newFreq + 128;
 
                                 if (all)
                                         std::free(all);
@@ -100,12 +103,12 @@ namespace Trinity
                         query_term_flags_t flags;
                         uint8_t rep;
                         uint8_t toNextSpan;
-			struct
-			{
-				range_base<uint16_t, uint8_t> range;
-				float translationCoefficient;
-				uint8_t srcSeqSize;
-			} rewrite_ctx;
+                        struct
+                        {
+                                range_base<uint16_t, uint8_t> range;
+                                float translationCoefficient;
+                                uint8_t srcSeqSize;
+                        } rewrite_ctx;
                 } instances[0];
         };
 
@@ -119,36 +122,48 @@ namespace Trinity
         // and are expected to return a score
         struct matched_document final
         {
-                docid_t id; // document ID
-                uint16_t matchedTermsCnt;
+                docid_t id; // document ID (GLOBAL)
+                uint16_t matchedTermsCnt{0};
                 matched_query_term *matchedTerms;
+                // lazily initialized
+                DocWordsSpace *dws{nullptr};
+
+                matched_document()
+                {
+                }
+
+                ~matched_document()
+                {
+                        delete dws;
+                }
+        };
+
+        struct aborted_search_exception final
+            : public std::exception
+        {
+                const char *what() const noexcept override
+                {
+                        return "Search Aborted";
+                }
         };
 
         struct MatchedIndexDocumentsFilter
         {
-                DocWordsSpace *dws;
                 const query_index_terms **queryIndicesTerms;
 
-                enum class ConsiderResponse : uint8_t
+                // You are no longer expected to return a value indicating wether you want to continue or abort
+                // instead, you can just throw an aborted_search_exception exception. The execution engine will handle it.
+                //
+                // e.g throw Trinity::aborted_search_exception{};
+                //
+                // This is for performance and simplicity reasons; the execution engine no longer needs to check for consider() return value in a loop
+                [[gnu::always_inline]] virtual void consider(const matched_document &match)
                 {
-                        Continue = 0,
-                        // If you return Abort, then the execution engine will stop immediately.
-                        // You should probably never to do that, but if you do, because for example you
-                        // are only interested in the first few documents matched regardless of their scores
-                        // then you can return Abort to return immediately from the execution to the callee
-                        // See RECIPES.md and CONCEPTS.md
-                        Abort,
-                };
-
-                [[gnu::always_inline]] virtual ConsiderResponse consider(const matched_document &match)
-                {
-                        return ConsiderResponse::Continue;
                 }
 
                 // Invoked before the query execution begins
-                virtual void prepare(DocWordsSpace *dws_, const query_index_terms **queryIndicesTerms_)
+                virtual void prepare(const query_index_terms **queryIndicesTerms_)
                 {
-                        dws = dws_;
                         queryIndicesTerms = queryIndicesTerms_;
                 }
 
@@ -169,7 +184,7 @@ namespace Trinity
         // In addition to that, you may have your own rules for ignoring documents and that can be implemented in your filter.
         struct IndexDocumentsFilter
         {
-		// return true if you want to disregard/ignore the document
-                virtual bool filter(const docid_t)  = 0;
+                // return true if you want to disregard/ignore the document
+                virtual bool filter(const docid_t) = 0;
         };
 }

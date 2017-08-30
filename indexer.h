@@ -4,7 +4,8 @@
 #include <switch_dictionary.h>
 #include <switch_mallocators.h>
 #include <switch_bitops.h>
-#include <set>
+#include <sparsefixedbitset.h>
+#include <ext/flat_hash_map.h>
 
 namespace Trinity
 {
@@ -20,81 +21,99 @@ namespace Trinity
         // You can use SegmentIndexSource to load the segment(and use it for search)
         class SegmentIndexSession final
         {
-              private:
-                IOBuffer b;
-                IOBuffer hitsBuf;
-		int backingFileFD{-1};
-                std::vector<std::pair<uint32_t, std::pair<uint32_t, range_base<uint32_t, uint8_t>>>> hits;
-                std::vector<docid_t> updatedDocumentIDs;
-		std::set<docid_t> commitedDocuments;
-                simple_allocator dictionaryAllocator;
-                Switch::unordered_map<str8_t, uint32_t> dictionary;
-                Switch::unordered_map<uint32_t, str8_t> invDict;
-		// See IndexSession::indexOutFlushed comments
-		uint32_t flushFreq{0}, intermediateStateFlushFreq{0};
+		private:
+                  // We needed a faster way for tracking committed document IDs
+                  struct bank
+                  {
+                          static constexpr std::size_t SPAN{1 << 20};
 
-              public:
-                struct document_proxy final
-                {
-                        SegmentIndexSession &sess;
-                        const docid_t did;
-                        std::vector<std::pair<uint32_t, std::pair<uint32_t, range_base<uint32_t, uint8_t>>>> &hits;
-                        IOBuffer &hitsBuf;
+                          SparseFixedBitSet bs{SPAN};
+                          isrc_docid_t base;
+                  };
 
-                        uint32_t term_id(const str8_t term)
-                        {
-                                return sess.term_id(term);
-                        }
+                  std::vector<bank *> banks;
+                  bank *curBank{nullptr};
 
-                        document_proxy(SegmentIndexSession &s, docid_t documentID, std::vector<std::pair<uint32_t, std::pair<uint32_t, range_base<uint32_t, uint8_t>>>> &h, IOBuffer &hb)
-                            : sess{s}, did{documentID}, hits{h}, hitsBuf{hb}
-                        {
-                        }
+                private:
+                  IOBuffer b;
+                  IOBuffer hitsBuf;
+                  int backingFileFD{-1};
+		  // by partitioning in hits based on term we save about 2s in a previous runtime of 39s down to 37s
+		  // maybe we can use radix sort there?
+                  std::vector<std::pair<uint32_t, std::pair<uint32_t, range_base<uint32_t, uint8_t>>>> hits[16];
+                  std::vector<isrc_docid_t> updatedDocumentIDs;
+                  simple_allocator dictionaryAllocator;
+		  // flat_hash_map<> is about 11% faster than alternative dictionaries
+		  // so we are using it now here
+                  ska::flat_hash_map<str8_t, uint32_t> dictionary;
+                  ska::flat_hash_map<uint32_t, str8_t> invDict;
+                  //See IndexSession::indexOutFlushed comments
+                  uint32_t flushFreq{0}, intermediateStateFlushFreq{0};
 
-                        void insert(const uint32_t termID, const tokenpos_t position, range_base<const uint8_t *, const uint8_t> payload);
+                public:
+                  struct document_proxy final
+                  {
+                          SegmentIndexSession &sess;
+                          const isrc_docid_t did;
+                          std::vector<std::pair<uint32_t, std::pair<uint32_t, range_base<uint32_t, uint8_t>>>> *hits;
+                          IOBuffer &hitsBuf;
 
-                        // new `term` hit at `position` with `payload`(attrs.)
-                        void insert(const str8_t term, const tokenpos_t position, range_base<const uint8_t *, const uint8_t> payload)
-                        {
-				Dexpect(term.size() <= Limits::MaxTermLength);
-                                insert(term_id(term), position, payload);
-                        }
+                          uint32_t term_id(const str8_t term)
+                          {
+                                  return sess.term_id(term);
+                          }
 
-                        void insert(const uint32_t termID, const tokenpos_t position)
-                        {
-                                insert(termID, position, {});
-                        }
+                          document_proxy(SegmentIndexSession &s, isrc_docid_t documentID, std::vector<std::pair<uint32_t, std::pair<uint32_t, range_base<uint32_t, uint8_t>>>> *h, IOBuffer &hb)
+                              : sess{s}, did{documentID}, hits{h}, hitsBuf{hb}
+                          {
+                          }
 
-                        // new `term` hit at `position`
-                        void insert(const str8_t term, const tokenpos_t position)
-                        {
-				Dexpect(term.size() <= Limits::MaxTermLength);
-                                insert(term_id(term), position, {});
-                        }
+                          void insert(const uint32_t termID, const tokenpos_t position, range_base<const uint8_t *, const uint8_t> payload);
 
-                        template <typename T>
-                        void insert(const uint32_t termID, const tokenpos_t position, const T &v)
-                        {
-                                insert(termID, position, {reinterpret_cast<const uint8_t *>(&v), uint32_t(sizeof(T))});
-                        }
+                          // new `term` hit at `position` with `payload`(attrs.)
+                          void insert(const str8_t term, const tokenpos_t position, range_base<const uint8_t *, const uint8_t> payload)
+                          {
+                                  Dexpect(term.size() <= Limits::MaxTermLength);
+                                  insert(term_id(term), position, payload);
+                          }
 
-                        template <typename T>
-                        void insert(const str8_t term, const tokenpos_t position, const T &v)
-                        {
-				Dexpect(term.size() <= Limits::MaxTermLength);
-                                insert(term_id(term), position, {static_cast<const uint8_t *>(&v), uint32_t(sizeof(T))});
-                        }
+                          void insert(const uint32_t termID, const tokenpos_t position)
+                          {
+                                  insert(termID, position, {});
+                          }
 
-			void insert_var_payload(const uint32_t termID, const tokenpos_t pos, const uint64_t payload)
-			{
-				const uint8_t requiredBytes = ((64 - SwitchBitOps::LeadingZeros(payload)) + 7) >> 3;
+                          // new `term` hit at `position`
+                          void insert(const str8_t term, const tokenpos_t position)
+                          {
+                                  Dexpect(term.size() <= Limits::MaxTermLength);
+                                  insert(term_id(term), position, {});
+                          }
 
-				insert(termID, pos, {reinterpret_cast<const uint8_t *>(&payload), requiredBytes});
-			}
+                          template <typename T>
+                          void insert(const uint32_t termID, const tokenpos_t position, const T &v)
+                          {
+                                  insert(termID, position, {reinterpret_cast<const uint8_t *>(&v), uint32_t(sizeof(T))});
+                          }
+
+                          template <typename T>
+                          void insert(const str8_t term, const tokenpos_t position, const T &v)
+                          {
+                                  Dexpect(term.size() <= Limits::MaxTermLength);
+                                  insert(term_id(term), position, {static_cast<const uint8_t *>(&v), uint32_t(sizeof(T))});
+                          }
+
+                          void insert_var_payload(const uint32_t termID, const tokenpos_t pos, const uint64_t payload)
+                          {
+                                  const uint8_t requiredBytes = ((64 - SwitchBitOps::LeadingZeros(payload)) + 7) >> 3;
+
+                                  insert(termID, pos, {reinterpret_cast<const uint8_t *>(&payload), requiredBytes});
+                          }
                 };
 
               private:
-                void commit_document_impl(const document_proxy &proxy, const bool isUpdate);
+                void commit_document_impl(const document_proxy &proxy, const bool replace);
+
+		bool track(const isrc_docid_t);
 
               public:
                 uint32_t term_id(const str8_t term);
@@ -104,6 +123,11 @@ namespace Trinity
                 void clear()
                 {
                         b.clear();
+			while (banks.size())
+			{
+				delete banks.back();
+				banks.pop_back();
+			}
                 }
 
 		// When != 0, whenever the session's indexOut size exceeds that value, the index
@@ -118,12 +142,12 @@ namespace Trinity
 			intermediateStateFlushFreq = n;
 		}
 
-                void erase(const docid_t documentID);
+                void erase(const isrc_docid_t documentID);
 
                 // After you have obtained a document_proxy, you can use its insert methods to register term hits
                 // and when you are done indexing a document, use insert() or update() to insert as a NEW document or UPDATE an existing
                 // document in case it is already indexed in another segments.
-                document_proxy begin(const docid_t documentID);
+                document_proxy begin(const isrc_docid_t documentID);
 
                 // In the past we 'd store those in reverse, so that if we were to erase a document and then index it
                 // We 'd read the document's terms first (because we 'd read in reverse from the buffer) and would ignore
@@ -136,7 +160,13 @@ namespace Trinity
 
 		// Use this method instead of insert() when you are updating a document.
 		// If you are not, you should (but are not required to) use insert()
-                void update(const document_proxy &proxy)
+		// XXX: update is a misnomer, should have been replace.  Please use replace()
+                [[deprecated("please use replace()")]] void update(const document_proxy &proxy)
+                {
+                        commit_document_impl(proxy, true);
+                }
+
+                void replace(const document_proxy &proxy)
                 {
                         commit_document_impl(proxy, true);
                 }
@@ -154,6 +184,11 @@ namespace Trinity
 		{
 			if (backingFileFD != -1)
 				close(backingFileFD);
+			while (banks.size())
+			{
+				delete banks.back();
+				banks.pop_back();
+			}
 		}
         };
 }

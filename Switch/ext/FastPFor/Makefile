@@ -3,7 +3,6 @@
 
 # Default target executed when no arguments are given to make.
 default_target: all
-CC=clang++
 
 .PHONY : default_target
 
@@ -49,24 +48,13 @@ RM = /usr/bin/cmake -E remove -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/system/Development/Switch/ext/FastPFor
+CMAKE_SOURCE_DIR = /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/system/Development/Switch/ext/FastPFor
+CMAKE_BINARY_DIR = /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor
 
 #=============================================================================
 # Targets provided globally by CMake.
-
-# Special rule for the target edit_cache
-edit_cache:
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --cyan "No interactive CMake dialog available..."
-	/usr/bin/cmake -E echo No\ interactive\ CMake\ dialog\ available.
-.PHONY : edit_cache
-
-# Special rule for the target edit_cache
-edit_cache/fast: edit_cache
-
-.PHONY : edit_cache/fast
 
 # Special rule for the target rebuild_cache
 rebuild_cache:
@@ -79,11 +67,22 @@ rebuild_cache/fast: rebuild_cache
 
 .PHONY : rebuild_cache/fast
 
+# Special rule for the target edit_cache
+edit_cache:
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --cyan "No interactive CMake dialog available..."
+	/usr/bin/cmake -E echo No\ interactive\ CMake\ dialog\ available.
+.PHONY : edit_cache
+
+# Special rule for the target edit_cache
+edit_cache/fast: edit_cache
+
+.PHONY : edit_cache/fast
+
 # The main all target
 all: cmake_check_build_system
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/system/Development/Switch/ext/FastPFor/CMakeFiles /home/system/Development/Switch/ext/FastPFor/CMakeFiles/progress.marks
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/CMakeFiles /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/CMakeFiles/progress.marks
 	$(MAKE) -f CMakeFiles/Makefile2 all
-	$(CMAKE_COMMAND) -E cmake_progress_start /home/system/Development/Switch/ext/FastPFor/CMakeFiles 0
+	$(CMAKE_COMMAND) -E cmake_progress_start /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/CMakeFiles 0
 .PHONY : all
 
 # The main clean target
@@ -112,30 +111,17 @@ depend:
 .PHONY : depend
 
 #=============================================================================
-# Target rules for targets named check
+# Target rules for targets named unit
 
 # Build rule for target.
-check: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 check
-.PHONY : check
+unit: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 unit
+.PHONY : unit
 
 # fast build rule for target.
-check/fast:
-	$(MAKE) -f CMakeFiles/check.dir/build.make CMakeFiles/check.dir/build
-.PHONY : check/fast
-
-#=============================================================================
-# Target rules for targets named FastPFor
-
-# Build rule for target.
-FastPFor: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 FastPFor
-.PHONY : FastPFor
-
-# fast build rule for target.
-FastPFor/fast:
-	$(MAKE) -f CMakeFiles/FastPFor.dir/build.make CMakeFiles/FastPFor.dir/build
-.PHONY : FastPFor/fast
+unit/fast:
+	$(MAKE) -f CMakeFiles/unit.dir/build.make CMakeFiles/unit.dir/build
+.PHONY : unit/fast
 
 #=============================================================================
 # Target rules for targets named example
@@ -151,69 +137,17 @@ example/fast:
 .PHONY : example/fast
 
 #=============================================================================
-# Target rules for targets named entropy
+# Target rules for targets named inmemorybenchmark
 
 # Build rule for target.
-entropy: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 entropy
-.PHONY : entropy
+inmemorybenchmark: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 inmemorybenchmark
+.PHONY : inmemorybenchmark
 
 # fast build rule for target.
-entropy/fast:
-	$(MAKE) -f CMakeFiles/entropy.dir/build.make CMakeFiles/entropy.dir/build
-.PHONY : entropy/fast
-
-#=============================================================================
-# Target rules for targets named csv2maropu
-
-# Build rule for target.
-csv2maropu: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 csv2maropu
-.PHONY : csv2maropu
-
-# fast build rule for target.
-csv2maropu/fast:
-	$(MAKE) -f CMakeFiles/csv2maropu.dir/build.make CMakeFiles/csv2maropu.dir/build
-.PHONY : csv2maropu/fast
-
-#=============================================================================
-# Target rules for targets named unit
-
-# Build rule for target.
-unit: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 unit
-.PHONY : unit
-
-# fast build rule for target.
-unit/fast:
-	$(MAKE) -f CMakeFiles/unit.dir/build.make CMakeFiles/unit.dir/build
-.PHONY : unit/fast
-
-#=============================================================================
-# Target rules for targets named benchbitpacking
-
-# Build rule for target.
-benchbitpacking: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 benchbitpacking
-.PHONY : benchbitpacking
-
-# fast build rule for target.
-benchbitpacking/fast:
-	$(MAKE) -f CMakeFiles/benchbitpacking.dir/build.make CMakeFiles/benchbitpacking.dir/build
-.PHONY : benchbitpacking/fast
-
-#=============================================================================
-# Target rules for targets named gapstats
-
-# Build rule for target.
-gapstats: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 gapstats
-.PHONY : gapstats
-
-# fast build rule for target.
-gapstats/fast:
-	$(MAKE) -f CMakeFiles/gapstats.dir/build.make CMakeFiles/gapstats.dir/build
-.PHONY : gapstats/fast
+inmemorybenchmark/fast:
+	$(MAKE) -f CMakeFiles/inmemorybenchmark.dir/build.make CMakeFiles/inmemorybenchmark.dir/build
+.PHONY : inmemorybenchmark/fast
 
 #=============================================================================
 # Target rules for targets named codecs
@@ -229,6 +163,71 @@ codecs/fast:
 .PHONY : codecs/fast
 
 #=============================================================================
+# Target rules for targets named gapstats
+
+# Build rule for target.
+gapstats: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 gapstats
+.PHONY : gapstats
+
+# fast build rule for target.
+gapstats/fast:
+	$(MAKE) -f CMakeFiles/gapstats.dir/build.make CMakeFiles/gapstats.dir/build
+.PHONY : gapstats/fast
+
+#=============================================================================
+# Target rules for targets named FastPFor
+
+# Build rule for target.
+FastPFor: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 FastPFor
+.PHONY : FastPFor
+
+# fast build rule for target.
+FastPFor/fast:
+	$(MAKE) -f CMakeFiles/FastPFor.dir/build.make CMakeFiles/FastPFor.dir/build
+.PHONY : FastPFor/fast
+
+#=============================================================================
+# Target rules for targets named check
+
+# Build rule for target.
+check: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 check
+.PHONY : check
+
+# fast build rule for target.
+check/fast:
+	$(MAKE) -f CMakeFiles/check.dir/build.make CMakeFiles/check.dir/build
+.PHONY : check/fast
+
+#=============================================================================
+# Target rules for targets named csv2maropu
+
+# Build rule for target.
+csv2maropu: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 csv2maropu
+.PHONY : csv2maropu
+
+# fast build rule for target.
+csv2maropu/fast:
+	$(MAKE) -f CMakeFiles/csv2maropu.dir/build.make CMakeFiles/csv2maropu.dir/build
+.PHONY : csv2maropu/fast
+
+#=============================================================================
+# Target rules for targets named entropy
+
+# Build rule for target.
+entropy: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 entropy
+.PHONY : entropy
+
+# fast build rule for target.
+entropy/fast:
+	$(MAKE) -f CMakeFiles/entropy.dir/build.make CMakeFiles/entropy.dir/build
+.PHONY : entropy/fast
+
+#=============================================================================
 # Target rules for targets named partitionbylength
 
 # Build rule for target.
@@ -242,17 +241,17 @@ partitionbylength/fast:
 .PHONY : partitionbylength/fast
 
 #=============================================================================
-# Target rules for targets named inmemorybenchmark
+# Target rules for targets named benchbitpacking
 
 # Build rule for target.
-inmemorybenchmark: cmake_check_build_system
-	$(MAKE) -f CMakeFiles/Makefile2 inmemorybenchmark
-.PHONY : inmemorybenchmark
+benchbitpacking: cmake_check_build_system
+	$(MAKE) -f CMakeFiles/Makefile2 benchbitpacking
+.PHONY : benchbitpacking
 
 # fast build rule for target.
-inmemorybenchmark/fast:
-	$(MAKE) -f CMakeFiles/inmemorybenchmark.dir/build.make CMakeFiles/inmemorybenchmark.dir/build
-.PHONY : inmemorybenchmark/fast
+benchbitpacking/fast:
+	$(MAKE) -f CMakeFiles/benchbitpacking.dir/build.make CMakeFiles/benchbitpacking.dir/build
+.PHONY : benchbitpacking/fast
 
 example.o: example.cpp.o
 
@@ -719,19 +718,19 @@ help:
 	@echo "... all (the default if no target is provided)"
 	@echo "... clean"
 	@echo "... depend"
-	@echo "... edit_cache"
 	@echo "... rebuild_cache"
-	@echo "... check"
-	@echo "... FastPFor"
-	@echo "... example"
-	@echo "... entropy"
-	@echo "... csv2maropu"
 	@echo "... unit"
-	@echo "... benchbitpacking"
-	@echo "... gapstats"
-	@echo "... codecs"
-	@echo "... partitionbylength"
+	@echo "... example"
 	@echo "... inmemorybenchmark"
+	@echo "... codecs"
+	@echo "... gapstats"
+	@echo "... FastPFor"
+	@echo "... check"
+	@echo "... csv2maropu"
+	@echo "... edit_cache"
+	@echo "... entropy"
+	@echo "... partitionbylength"
+	@echo "... benchbitpacking"
 	@echo "... example.o"
 	@echo "... example.i"
 	@echo "... example.s"

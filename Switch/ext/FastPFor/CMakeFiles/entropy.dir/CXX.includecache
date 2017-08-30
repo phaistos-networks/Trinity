@@ -6,17 +6,17 @@
 
 #IncludeRegexTransform: 
 
-/home/system/Development/Switch/ext/FastPFor/src/entropy.cpp
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/entropy.cpp
 common.h
-/home/system/Development/Switch/ext/FastPFor/src/common.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/common.h
 maropuparser.h
-/home/system/Development/Switch/ext/FastPFor/src/maropuparser.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/maropuparser.h
 util.h
-/home/system/Development/Switch/ext/FastPFor/src/util.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/util.h
 entropy.h
-/home/system/Development/Switch/ext/FastPFor/src/entropy.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/entropy.h
 deltautil.h
-/home/system/Development/Switch/ext/FastPFor/src/deltautil.h
+/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/deltautil.h
 
 headers/bitpacking.h
 common.h

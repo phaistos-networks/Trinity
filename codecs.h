@@ -1,11 +1,15 @@
 #pragma once
 #include "common.h"
 #include "docidupdates.h"
+#include "docset_iterators.h"
 #include "docwordspace.h"
 #include "runtime.h"
 
+// Use of Codecs::Google results in a somewhat large index, while the access time is similar(maybe somewhat slower) to Lucene's codec
 namespace Trinity
 {
+	struct candidate_document;
+
         // Information about a term's posting list and number of documents it matches.
         // We track the number of documents because it may be useful(and it is) to some codecs, and also
         // is extremely useful during execution where we re-order the query nodes based on evaluation cost which
@@ -180,7 +184,7 @@ namespace Trinity
 
                         virtual void begin_term() = 0;
 
-                        virtual void begin_document(const docid_t documentID) = 0;
+                        virtual void begin_document(const isrc_docid_t documentID) = 0;
 
                         // If you want to register a hit for a special token (e.g site:foo.com) where position makes no sense,
                         // you should use position 0(or a very high position, but 0 is preferrable)
@@ -193,69 +197,33 @@ namespace Trinity
                         virtual void end_term(term_index_ctx *) = 0;
                 };
 
-                // Decoder interface for decoding a single term's posting list.
-                // If a decoder makes use of skiplist data, they are expected to be serialized in the index
-                // and the decoder is responsible for deserializing and using them from there, although this is specific to the codec
-                struct Decoder
+
+		// This is how postings lists are accessed and hits are materialized.
+		// It is created by a Codecs::Decoder, and it should in practice hold a reference
+		// to the decoder and delegate work to it, but that should depend on your codec's impl.
+		//
+		// In the past, Decoder's implemented next() and advance()/seek(), but it turned to be a bad idea 
+		// because it was somewhat challenging to support multiple terms in the query, where you want to access
+		// the same underlying decoder state, but traverse them independently.
+		struct Decoder;
+
+		struct PostingsListIterator
+			: public Trinity::DocsSetIterators::Iterator
                 {
-                        // We now use a curDocument structure that holds the current document and its frequency(number of hits)
-                        // whereas in the past we only had access to those via cur_doc_id() and cur_doc_freq()
-                        // That results in potentially millions of virtual calls to those methods, wheras now can access them without
-                        // having to call anything.
-                        //
-                        // The only minor downside is that Decoder subclases *MUST* update curDocument in their begin(), next() and seek() methods
-                        // Recall that document ID MaxDocIDValue can be used for 'no more documents'.
-                        //
-                        // Using `dec->curDocument` instead of dec->cur_doc_id() and dec->cur_doc_freq()
-                        // results in a drop from 0.238s to 0.222s for a very fancy query
-                        //
-                        // UPDATE: now no longer expose cur_doc_id() and cur_doc_freq() which saves us 2*sizeof(void*) bytes
-                        // from the vtable which is potentially great
-                        struct __anonymous final
+			// decoder that created this iterator
+                        Decoder *const dec;
+
+			// For current document
+                        tokenpos_t freq;
+
+                        PostingsListIterator(Decoder *const d)
+                            : Iterator{Trinity::DocsSetIterators::Type::PostingsListIterator}, dec{d}
                         {
-                                docid_t id;
-                                tokenpos_t freq;
-                        } curDocument;
+                        }
 
-                        // Before iterating via next(), you need to begin()
-                        //
-                        // If you do not intend to iterate the documents list, and only wish to seek documents
-                        // you can/should skip begin() and just use seek()
-                        //
-                        // Returns MaxDocIDValue if there are no documents
-                        // (Remeber to update curDocument)
-                        virtual docid_t begin() = 0;
-
-                        // Returns false if the postings list has been exhausted
-                        // or advances to the next document in the postings list and return true
-                        //
-                        // - if at the end, return false
-                        // - otherwise advance by one and return the current document
-                        //
-                        // Make sure that you do not advance to `nowhere` if you are already at the end, because
-                        // e.g for a query that contains the same
-                        // term twice e.g [trinity search engine called trinity] (trinity is set twice in the query)
-                        // the execution engine may invoke seek() to the shared decoder for the second trinity
-                        // instance and getting to the end, and then attempt to advance the leader decoder for first trinity
-                        // by invoking next(), so the next() should be able to handle being at the end already
-                        // (Remeber to update curDocument)
-                        virtual bool next() = 0;
-
-                        // Seeks to a target document
-                        //
-                        // - If you are at a document > target, return false
-                        // - If you are at the end of the documents/hits, return false
-                        // - If you matched the document, return true
-                        //
-                        // XXX: it is important that you *always stop* if you are past the target(advance to that document past the target, and then stop)
-                        // or if you have exhausted the documents list then just return false and set curDocument.id  = MaxDocIDValue
-                        // i.e if you are at curDocument.id = 50 and the ids in the list are (20, 50, 55, 70, 80, 100, 150, 200) and
-                        // you seek to 110, then you must stop at 150 (or earlier but not earlier than 50)
-                        // See provided codecs implementations.
-                        //
-                        // This is important so that subsequent accesses to curDocument, and call to next() and seek() will work as expected
-                        // (Remeber to update curDocument)
-                        virtual bool seek(const docid_t target) = 0;
+                        virtual ~PostingsListIterator()
+			{
+			}
 
                         // Materializes hits for the _current_ document in the postings list
                         // You must also dwspace->set(termID, pos) for positions != 0
@@ -264,11 +232,47 @@ namespace Trinity
                         // so you should not materialize if have already done so.
                         virtual void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) = 0;
 
+                        inline auto decoder() noexcept
+                        {
+                                return dec;
+                        }
+
+			inline const Decoder *decoder() const noexcept
+			{
+				return dec;
+			}
+                };
+
+                // Decoder interface for decoding a single term's posting list.
+                // If a decoder makes use of skiplist data, they are expected to be serialized in the index
+                // and the decoder is responsible for deserializing and using them from there, although this is specific to the codec
+                //
+		// Decoder is responsible for maintaining term-specific segment state, and for creating new Posting Lists iterators, which in turn
+		// should just contain iterator-specific state and logic working in conjuction with the Decoder that created/provided it.
+                struct Decoder
+                {
+                        // Those can be useful during execution.
+                        // init() should, optionally set those- or reset to some dummy values (e.g 0 for execCtxTermID if you don't need them)
+                        term_index_ctx indexTermCtx;
+                        exec_term_id_t execCtxTermID;
+
+                        constexpr auto exec_ctx_termid() const noexcept
+                        {
+                                return execCtxTermID;
+                        }
+
                         // Initialise the decoding state for accessing the postings list
                         //
                         // Not going to rely on a constructor for initialization because
                         // we want to force subclasses to define a method with this signature
-                        virtual void init(const term_index_ctx &, AccessProxy *) = 0;
+                        virtual void init(const exec_term_id_t execCtxTermID, const term_index_ctx &, AccessProxy *) = 0;
+
+			// This is how you are going to access the postings list
+			virtual PostingsListIterator *new_iterator() = 0;
+
+                        Decoder()
+                        {
+                        }
 
                         virtual ~Decoder()
                         {
@@ -291,7 +295,9 @@ namespace Trinity
                         //
                         // XXX: Make sure you Decoder::init() before you return from the method
                         // see e.g Google::AccessProxy::new_decoder()
-                        virtual Decoder *new_decoder(const term_index_ctx &tctx) = 0;
+                        //
+                        // See Codecs::Decoder for execCtxTermID
+                        virtual Decoder *new_decoder(const exec_term_id_t execCtxTermID, const term_index_ctx &tctx) = 0;
 
                         AccessProxy(const char *bp, const uint8_t *index_ptr)
                             : basePath{bp}, indexPtr{index_ptr}

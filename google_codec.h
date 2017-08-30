@@ -4,7 +4,9 @@
 #pragma once
 #include "codecs.h"
 
-static_assert(sizeof(Trinity::docid_t) <= sizeof(uint32_t), "This codec implementation does not support 64bit document IDs. You can duplicate this file and update it to support larget document identifiers, or use another codec");
+#define TRINITY_CODECS_GOOGLE_AVAILABLE 1
+
+static_assert(sizeof(Trinity::isrc_docid_t) <= sizeof(uint32_t), "This codec implementation does not support 64bit document IDs. You can duplicate this file and update it to support larget document identifiers, or use another codec");
 namespace Trinity
 {
         namespace Codecs
@@ -46,10 +48,10 @@ namespace Trinity
                               private:
                                 IOBuffer skipListData;
                                 IOBuffer block, hitsData;
-                                docid_t prevBlockLastDocumentID{0}, curDocID{0}, lastCommitedDocID;
+                                isrc_docid_t prevBlockLastDocumentID{0}, curDocID{0}, lastCommitedDocID;
                                 uint8_t curBlockSize, curPayloadSize;
                                 uint32_t lastPos;
-                                docid_t docDeltas[N];
+                                isrc_docid_t docDeltas[N];
                                 uint32_t blockFreqs[N];
                                 uint32_t skiplistEntryCountdown{SKIPLIST_STEP};
                                 uint32_t curTermOffset;
@@ -71,7 +73,7 @@ namespace Trinity
 
                                 void begin_term() override final;
 
-                                void begin_document(const docid_t documentID) override final;
+                                void begin_document(const isrc_docid_t documentID) override final;
 
                                 void new_hit(const uint32_t pos, const range_base<const uint8_t *, const uint8_t> payload) override final;
 
@@ -98,7 +100,33 @@ namespace Trinity
                                         return "GOOGLE"_s8;
                                 }
 
-                                Trinity::Codecs::Decoder *new_decoder(const term_index_ctx &tctx) override final;
+                                Trinity::Codecs::Decoder *new_decoder(const exec_term_id_t execCtxTermID, const term_index_ctx &tctx) override final;
+                        };
+
+			struct PostingsListIterator
+				: public Trinity::Codecs::PostingsListIterator
+                        {
+                                friend class Decoder;
+
+				private:
+                                uint8_t blockDocIdx;
+                                isrc_docid_t documents[N];
+                                isrc_docid_t blockLastDocID{0};
+                                uint32_t freqs[N];
+                                uint32_t skipListIdx;
+				const uint8_t *p;
+
+                              public:
+                                inline isrc_docid_t next() override final;
+
+                                inline isrc_docid_t advance(const isrc_docid_t) override final;
+
+                                inline void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) override final;
+
+                                PostingsListIterator(Decoder *const d)
+                                    : Trinity::Codecs::PostingsListIterator{reinterpret_cast<Trinity::Codecs::Decoder *>(d)}
+                                {
+                                }
                         };
 
                         // We used to keep track of remDocsInBlocks
@@ -116,51 +144,64 @@ namespace Trinity
                         class Decoder final
                             : public Trinity::Codecs::Decoder
                         {
-                                docid_t documents[N];
-                                const uint8_t *p, *chunkEnd;
-                                uint8_t blockDocIdx;
-                                docid_t blockLastDocID{0};
-                                uint32_t freqs[N];
-                                uint32_t skipListIdx;
+				friend struct PostingsListIterator;
+
+                                const uint8_t *chunkEnd;
                                 const uint8_t *base;
-                                std::vector<std::pair<docid_t, uint32_t>> skiplist;
+                                std::vector<std::pair<isrc_docid_t, uint32_t>> skiplist;
+
+                              protected:
+                                void next(PostingsListIterator *);
+
+                                void advance(PostingsListIterator *, const isrc_docid_t);
+
+                                void materialize_hits(PostingsListIterator *, const exec_term_id_t, DocWordsSpace *, term_hit *);
 
                               private:
-                                uint32_t skiplist_search(const docid_t target) const noexcept;
+                                uint32_t skiplist_search(PostingsListIterator *, const isrc_docid_t target) const noexcept;
 
-                                void skip_block_doc();
+                                void skip_block_doc(PostingsListIterator *);
 
-                                void unpack_block(const docid_t thisBlockLastDocID, const uint8_t n);
+                                void unpack_block(PostingsListIterator *, const isrc_docid_t thisBlockLastDocID, const uint8_t n);
 
-                                void seek_block(const docid_t target);
+                                void seek_block(PostingsListIterator *, const isrc_docid_t target);
 
-                                void unpack_next_block();
+                                void unpack_next_block(PostingsListIterator *);
 
-                                void finalize()
+                                void finalize(PostingsListIterator *const it)
                                 {
-                                        blockDocIdx = 0;
-                                        blockLastDocID = MaxDocIDValue; // magic value; signifies end of documents
-                                        documents[0] = MaxDocIDValue;
-                                        p = chunkEnd;
-
-                                        curDocument.id = MaxDocIDValue;
+                                        it->blockDocIdx = 0;
+                                        it->blockLastDocID = DocIDsEND; // magic value; signifies end of documents
+                                        it->documents[0] = DocIDsEND;
+                                        it->p = chunkEnd;
+                                        it->curDocument.id = DocIDsEND;
                                 }
 
                                 // see skip_block_doc()
-                                void skip_remaining_block_documents();
+                                void skip_remaining_block_documents(PostingsListIterator *);
 
                               public:
-                                docid_t begin() override final;
+                                void init(const exec_term_id_t, const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access) override final;
 
-                                // XXX: make sure you check if (cur_document() != MaxDocIDValue)
-                                bool next() override final;
-
-                                bool seek(const docid_t target) override final;
-
-                                void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) override final;
-
-                                void init(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access) override final;
+				Trinity::Codecs::PostingsListIterator *new_iterator() override final;
                         };
+
+                        isrc_docid_t PostingsListIterator::next()
+                        {
+                                static_cast<Codecs::Google::Decoder *>(dec)->next(this);
+                                return curDocument.id;
+                        }
+
+                        isrc_docid_t PostingsListIterator::advance(const isrc_docid_t target)
+                        {
+                                static_cast<Codecs::Google::Decoder *>(dec)->advance(this, target);
+                                return curDocument.id;
+                        }
+
+                        void PostingsListIterator::materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out)
+                        {
+                                static_cast<Codecs::Google::Decoder *>(dec)->materialize_hits(this, termID, dwspace, out);
+                        }
                 }
         }
 }

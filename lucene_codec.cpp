@@ -9,12 +9,6 @@
 
 static constexpr bool trace{false};
 
-//#define __LUCENE_COUNTERS 1
-
-#ifdef __LUCENE_COUNTERS
-std::size_t luceneCnt1{0}, luceneCnt2{0}, luceneCnt3{0}, luceneCnt4{0}, luceneCnt5{0};
-#endif
-
 static bool all_equal(const uint32_t *const __restrict__ values, const size_t n) noexcept
 {
         const auto v = values[0];
@@ -33,6 +27,7 @@ static void pfor_encode(FastPForLib::FastPFor<4> &forUtil, const uint32_t *value
         {
                 if (trace)
                         SLog("ENCODING all equal ", values[0], "\n");
+
                 out.pack(uint8_t(0));
                 out.encode_varbyte32(values[0]);
                 return;
@@ -69,66 +64,8 @@ static const uint8_t *pfor_decode(FastPForLib::FastPFor<4> &forUtil, const uint8
                 if (trace)
                         SLog("All equal values of ", value, "\n");
 
-// the compiler is likely clever enough to unroll or whatever it is that it needs to do
-// UPDATE: well, it's not
-// with -Ofast -msse4  -ftree-vectorize -Wno-sign-compare
-// this is compiled down to
-/*
-		*
-			.LBB0_1:
-			movl    %eax, (%rsp,%rbx,4)
-			movl    %eax, 4(%rsp,%rbx,4)
-			movl    %eax, 8(%rsp,%rbx,4)
-			movl    %eax, 12(%rsp,%rbx,4)
-			movl    %eax, 16(%rsp,%rbx,4)
-			movl    %eax, 20(%rsp,%rbx,4)
-			movl    %eax, 24(%rsp,%rbx,4)
-			movl    %eax, 28(%rsp,%rbx,4)
-			addq    $8, %rbx
-			cmpq    $128, %rbx
-			jne     .LBB0_1
-
-		*
-		*/
-#if 1
-                // this is still faster than the optimised alternative below, for no good reason
                 for (uint32_t i{0}; i != Trinity::Codecs::Lucene::BLOCK_SIZE; ++i)
                         values[i] = value;
-#else
-                // this loop is compiled to
-                // it is unrolled as expected but its still not optimal
-                /*
-		 *
-
-			movq    8(%rsp), %rcx
-			movq    %rax, (%rcx,%rbx)
-			movq    8(%rsp), %rcx
-			movq    %rax, 8(%rcx,%rbx)
-			movq    8(%rsp), %rcx
-			movq    %rax, 16(%rcx,%rbx)
-			movq    8(%rsp), %rcx
-			movq    %rax, 24(%rcx,%rbx)
-			movq    8(%rsp), %rcx
-			movq    %rax, 32(%rcx,%rbx)
-			movq    8(%rsp), %rcx
-			movq    %rax, 40(%rcx,%rbx)
-			movq    8(%rsp), %rcx
-			movq    %rax, 48(%rcx,%rbx)
-			movq    8(%rsp), %rcx
-			movq    %rax, 56(%rcx,%rbx)
-			addq    $64, %rbx
-			cmpq    $512, %rbx              # imm = 0x200
-			jne     .LBB0_1
-		*
-		*/
-
-                const uint32_t pair[] = {value, value};
-                const uint64_t u64 = *(uint64_t *)pair;
-                auto *const out = (uint64_t *)values;
-
-                for (uint32_t i{0}; i != Trinity::Codecs::Lucene::BLOCK_SIZE / 2; ++i)
-                        out[i] = u64;
-#endif
         }
         else
         {
@@ -149,6 +86,7 @@ static const uint8_t *pfor_decode(FastPForLib::FastPFor<4> &forUtil, const uint8
 void Trinity::Codecs::Lucene::IndexSession::begin()
 {
         // We will need two extra/additional buffers, one for documents, another for the hits
+        // TODO: we really need to do the right thing here, reset etc
 }
 
 void Trinity::Codecs::Lucene::IndexSession::flush_positions_data()
@@ -213,7 +151,6 @@ range32_t Trinity::Codecs::Lucene::IndexSession::append_index_chunk(const Trinit
         return {uint32_t(o), srcTCTX.indexChunk.size()};
 }
 
-
 void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __restrict__ participants, const uint16_t participantsCnt, Trinity::Codecs::Encoder *const __restrict__ enc_)
 {
         // This is somewhat complicated
@@ -221,8 +158,8 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
 
         struct candidate
         {
-                docid_t lastDocID;
-                docid_t docDeltas[BLOCK_SIZE];
+                isrc_docid_t lastDocID;
+                isrc_docid_t docDeltas[BLOCK_SIZE];
                 uint32_t docFreqs[BLOCK_SIZE];
                 uint32_t hitsPayloadLengths[BLOCK_SIZE];
                 uint32_t hitsPositionDeltas[BLOCK_SIZE];
@@ -362,17 +299,17 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                                 SLog("Skipping omitted hits ", skippedHits, ", bufferedHits = ", bufferedHits, "\n");
 
                         if (!skippedHits)
-			{
-				// There was a silly fast-path optimization here
-				//
-				// if (!skipppedHits) return;
-				// else if (bufferedHits == skippedHits){ skippedHits = 0; bufferedHits = 0; hitsIndex = 0; payloadsIt = payloadsEnd; return;}
-				// else { ... }
-				//
-				// which was causing all kinds of random problems(missing positions/payloads etc)
-				// I should be able to figure out exactly what's wrong here, but just dropping this fixed everything and it's also simpler to reason about the state anyway. Better off without it
+                        {
+                                // There was a silly fast-path optimization here
+                                //
+                                // if (!skipppedHits) return;
+                                // else if (bufferedHits == skippedHits){ skippedHits = 0; bufferedHits = 0; hitsIndex = 0; payloadsIt = payloadsEnd; return;}
+                                // else { ... }
+                                //
+                                // which was causing all kinds of random problems(missing positions/payloads etc)
+                                // I should be able to figure out exactly what's wrong here, but just dropping this fixed everything and it's also simpler to reason about the state anyway. Better off without it
                                 return;
-			}
+                        }
                         else
                         {
 #if 0
@@ -417,22 +354,22 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                                 }
 #else
 
-				do
-				{
-					if (hitsIndex == bufferedHits)
-						refill_hits(forUtil);
+                                do
+                                {
+                                        if (hitsIndex == bufferedHits)
+                                                refill_hits(forUtil);
 
-					const auto step = std::min<uint32_t>(skippedHits, bufferedHits - hitsIndex);
+                                        const auto step = std::min<uint32_t>(skippedHits, bufferedHits - hitsIndex);
 
-					for (uint32_t i{0}; i != step; ++i)
-					{
-						const auto pl = hitsPayloadLengths[hitsIndex++];
+                                        for (uint32_t i{0}; i != step; ++i)
+                                        {
+                                                const auto pl = hitsPayloadLengths[hitsIndex++];
 
-						payloadsIt += pl;
-					}
+                                                payloadsIt += pl;
+                                        }
 
-					skippedHits -= step;
-				} while (skippedHits);
+                                        skippedHits -= step;
+                                } while (skippedHits);
 #endif
                         }
                 }
@@ -534,8 +471,8 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                                 if (!documentsLeft)
                                         return false;
 
-				// this is important, because refill_documents()
-				// will update cur_block
+                                // this is important, because refill_documents()
+                                // will update cur_block
                                 skip_ommitted_hits(forUtil);
 
                                 refill_documents(forUtil);
@@ -608,7 +545,7 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                 c->refill_documents(forUtil);
         }
 
-        for (docid_t prev{0};;)
+        for (isrc_docid_t prev{0};;)
         {
                 uint16_t toAdvanceCnt{1};
                 auto did = candidates[0].current();
@@ -739,11 +676,11 @@ void Trinity::Codecs::Lucene::Encoder::begin_document(const uint32_t documentID)
 
 void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_base<const uint8_t *, const uint8_t> payload)
 {
-	static constexpr bool trace{false};
-	//const bool trace = lastDocID== 2151228176 || lastDocID== 2152925656 || lastDocID==  2154895013;
+        static constexpr bool trace{false};
+        //const bool trace = lastDocID== 2151228176 || lastDocID== 2152925656 || lastDocID==  2154895013;
 
-	if (trace)
-		SLog("New hit (", pos, ", ", payload, ")\n");
+        if (trace)
+                SLog("New hit (", pos, ", ", payload, ")\n");
 
         if (!pos && !payload)
         {
@@ -808,7 +745,7 @@ void Trinity::Codecs::Lucene::Encoder::end_document()
 void Trinity::Codecs::Lucene::Encoder::end_term(term_index_ctx *out)
 {
         auto indexOut = &sess->indexOut;
-        auto s = static_cast<Trinity::Codecs::Lucene::IndexSession *>(sess);
+        auto *const __restrict__ s = static_cast<Trinity::Codecs::Lucene::IndexSession *>(sess);
 
         sumHits += totalHits;
 
@@ -890,7 +827,7 @@ void Trinity::Codecs::Lucene::Encoder::end_term(term_index_ctx *out)
         out->documents = termDocuments;
         out->indexChunk.Set(termIndexOffset, uint32_t((sess->indexOut.size() + sess->indexOutFlushed) - termIndexOffset));
 
-        if (const auto f = s->flushFreq; f && s->positionsOut.size() > f)
+        if (const auto f = s->flushFreq; f && unlikely(s->positionsOut.size() > f))
                 s->flush_positions_data();
 }
 
@@ -899,33 +836,30 @@ Trinity::Codecs::Encoder *Trinity::Codecs::Lucene::IndexSession::new_encoder()
         return new Trinity::Codecs::Lucene::Encoder(this);
 }
 
-Trinity::Codecs::Decoder *Trinity::Codecs::Lucene::AccessProxy::new_decoder(const term_index_ctx &tctx)
+Trinity::Codecs::Decoder *Trinity::Codecs::Lucene::AccessProxy::new_decoder(const exec_term_id_t execCtxTermID, const term_index_ctx &tctx)
 {
         auto d = std::make_unique<Trinity::Codecs::Lucene::Decoder>();
 
-        d->init(tctx, this);
+        d->init(execCtxTermID, tctx, this);
         return d.release();
 }
 
-void Trinity::Codecs::Lucene::Decoder::refill_hits()
+void Trinity::Codecs::Lucene::Decoder::refill_hits(PostingsListIterator *it)
 {
         uint32_t payloadsChunkLength;
 
-        if (trace)
-                SLog(ansifmt::color_green, "Refilling hits, hitsLeft = ", hitsLeft, ansifmt::reset, "\n");
-
-        if (hitsLeft >= BLOCK_SIZE)
+        if (it->hitsLeft >= BLOCK_SIZE)
         {
-                hdp = pfor_decode(forUtil, hdp, hitsPositionDeltas);
-                hdp = pfor_decode(forUtil, hdp, hitsPayloadLengths);
+                it->hdp = pfor_decode(forUtil, it->hdp, it->hitsPositionDeltas);
+                it->hdp = pfor_decode(forUtil, it->hdp, it->hitsPayloadLengths);
 
-                varbyte_get32(hdp, payloadsChunkLength);
-                payloadsIt = hdp;
-                hdp += payloadsChunkLength;
-                payloadsEnd = hdp;
+                varbyte_get32(it->hdp, payloadsChunkLength);
+                it->payloadsIt = it->hdp;
+                it->hdp += payloadsChunkLength;
+                it->payloadsEnd = it->hdp;
 
-                bufferedHits = BLOCK_SIZE;
-                hitsLeft -= BLOCK_SIZE;
+                it->bufferedHits = BLOCK_SIZE;
+                it->hitsLeft -= BLOCK_SIZE;
         }
         else
         {
@@ -933,128 +867,101 @@ void Trinity::Codecs::Lucene::Decoder::refill_hits()
                 uint8_t payloadLen{0};
 
                 payloadsChunkLength = 0;
-                for (uint32_t i{0}; i != hitsLeft; ++i)
+                for (uint32_t i{0}; i != it->hitsLeft; ++i)
                 {
-                        varbyte_get32(hdp, v);
+                        varbyte_get32(it->hdp, v);
 
                         if (v & 1)
                         {
-                                payloadLen = *hdp++;
+                                payloadLen = *(it->hdp++);
                         }
 
-                        if (trace)
-                                SLog("GOT ", v >> 1, " ", payloadLen, "\n");
-
-                        hitsPositionDeltas[i] = v >> 1;
-                        hitsPayloadLengths[i] = payloadLen;
+                        it->hitsPositionDeltas[i] = v >> 1;
+                        it->hitsPayloadLengths[i] = payloadLen;
                         payloadsChunkLength += payloadLen;
                 }
-                payloadsIt = hdp;
-                hdp += payloadsChunkLength;
-                payloadsEnd = hdp;
-                bufferedHits = hitsLeft;
-                hitsLeft = 0;
+                it->payloadsIt = it->hdp;
+                it->hdp += payloadsChunkLength;
+                it->payloadsEnd = it->hdp;
+                it->bufferedHits = it->hitsLeft;
+                it->hitsLeft = 0;
         }
-        hitsIndex = 0;
-
-        if (trace)
-                SLog("bufferedHits now = ", bufferedHits, ", hitsIndex  = ", hitsIndex, "\n");
+        it->hitsIndex = 0;
 }
 
-[[gnu::hot]] void Trinity::Codecs::Lucene::Decoder::skip_hits(const uint32_t n)
+[[gnu::hot]] void Trinity::Codecs::Lucene::Decoder::skip_hits(Trinity::Codecs::Lucene::PostingsListIterator *it, const uint32_t n)
 {
-	static constexpr bool trace{false}; 
-	
-        if constexpr (trace)
+        if (auto rem = n)
         {
-                if (!n)
-                        return;
-
-                SLog("SKIPPING ", n, " hits, hitsIndex = ", hitsIndex, ", bufferedHits = ", bufferedHits, " (for ", curDocument.id, ")\n");
-	}
-
-        if (n)
-        {
-                auto rem{n};
-
-                if constexpr (trace)
-                        SLog(ansifmt::bold, "NOW skippedHits = ", skippedHits, ", bufferedHits = ", bufferedHits, ", n = ", n, "\n");
+                auto &hitsPayloadLengths{it->hitsPayloadLengths};
 
                 do
                 {
-                        if (hitsIndex == bufferedHits)
+                        if (it->hitsIndex + rem == it->bufferedHits)
                         {
-                                if constexpr (trace)
-                                        SLog("Need to refill\n");
-
-                                refill_hits();
-
-                                if constexpr (trace)
-                                        SLog("DID refill hitsIndex = ", hitsIndex, "\n");
+                                // fast-path TODO: verify me
+                                it->skippedHits -= rem;
+                                it->hitsIndex = 0;
+                                it->bufferedHits = 0;
+                                return;
                         }
 
-                        const auto step = std::min<uint32_t>(rem, bufferedHits - hitsIndex);
+                        if (it->hitsIndex == it->bufferedHits)
+                        {
+                                refill_hits(it);
+                        }
 
-                        if constexpr (trace)
-                                SLog("skippedHits = ", skippedHits, ", hitsIndex = ", hitsIndex, ", step = ", step, ", bufferedHits  = ", bufferedHits, "\n");
+                        const auto step = std::min<uint32_t>(rem, it->bufferedHits - it->hitsIndex);
 
 #if defined(TRINITY_ENABLE_PREFETCH)
                         {
                                 const size_t prefetchIterations = step / 16; // 64/4
-                                const auto end = hitsIndex + step;
+                                const auto end = it->hitsIndex + step;
 
                                 for (uint32_t i{0}; i != prefetchIterations; ++i)
                                 {
                                         _mm_prefetch(hitsPayloadLengths + hitsIndex, _MM_HINT_NTA);
 
-                                        for (const auto upto = hitsIndex + 16; hitsIndex != upto; ++hitsIndex)
-                                                payloadsIt += hitsPayloadLengths[hitsIndex];
+                                        for (const auto upto = hitsIndex + 16; hitsIndex != upto; ++(it->hitsIndex))
+                                                payloadsIt += hitsPayloadLengths[it->hitsIndex];
                                 }
 
-                                while (hitsIndex != end)
-                                        payloadsIt += hitsPayloadLengths[hitsIndex++];
+                                while (it->hitsIndex != end)
+                                        it->payloadsIt += hitsPayloadLengths[it->hitsIndex++];
                         }
 #else
-                        for (uint32_t i{0}; i != step; ++i)
-                        {
-                                const auto pl = hitsPayloadLengths[hitsIndex++];
+                        uint32_t sum{0};
+                        auto hitsIndex{it->hitsIndex};
 
-                                payloadsIt += pl;
-                        }
+                        for (uint32_t i{0}; i != step; ++i)
+                                sum += hitsPayloadLengths[hitsIndex++];
+
+                        it->payloadsIt += sum;
+                        it->hitsIndex = hitsIndex;
 #endif
 
-                        skippedHits -= step;
+                        it->skippedHits -= step;
                         rem -= step;
-
-                        if constexpr (trace)
-                                SLog("hitsIndex now = ", hitsIndex, ", bufferedHits = ", bufferedHits, ", rem ", rem, "\n");
-
                 } while (rem);
         }
 }
 
-void Trinity::Codecs::Lucene::Decoder::refill_documents()
+void Trinity::Codecs::Lucene::Decoder::refill_documents(Trinity::Codecs::Lucene::PostingsListIterator *it)
 {
-        if constexpr (trace)
-                SLog("Refilling documents docsLeft = ", docsLeft, "\n");
-
-#ifdef __LUCENE_COUNTERS
-	++luceneCnt1;
-#endif
-
-        if (docsLeft >= BLOCK_SIZE)
+        if (it->docsLeft >= BLOCK_SIZE)
         {
-                if constexpr (trace)
-                        SLog(ansifmt::bold, ansifmt::color_brown, "REFILL ", docsLeft, ansifmt::reset, "\n");
-
-                p = pfor_decode(forUtil, p, docDeltas);
-                p = pfor_decode(forUtil, p, docFreqs);
-                bufferedDocs = BLOCK_SIZE;
-                docsLeft -= BLOCK_SIZE;
+                it->p = pfor_decode(forUtil, it->p, it->docDeltas);
+                it->p = pfor_decode(forUtil, it->p, it->docFreqs);
+                it->bufferedDocs = BLOCK_SIZE;
+                it->docsLeft -= BLOCK_SIZE;
         }
         else
         {
                 uint32_t v;
+                auto p{it->p};
+                auto &docFreqs{it->docFreqs};
+                auto &docDeltas{it->docDeltas};
+                const auto docsLeft{it->docsLeft};
 
                 for (uint32_t i{0}; i != docsLeft; ++i)
                 {
@@ -1074,87 +981,67 @@ void Trinity::Codecs::Lucene::Decoder::refill_documents()
                         varbyte_get32(p, v);
                         docFreqs[i] = v;
 #endif
-
-                        if constexpr (trace)
-                                SLog("deltas ", docDeltas[i], " ", docFreqs[i], "\n");
-
                 }
-                bufferedDocs = docsLeft;
-                docsLeft = 0;
+                it->p = p; // restore
+                it->bufferedDocs = docsLeft;
+                it->docsLeft = 0;
         }
 
-        docsIndex = 0;
-        update_curdoc();
+        it->docsIndex = 0;
+        update_curdoc(it);
 }
 
-void Trinity::Codecs::Lucene::Decoder::decode_next_block()
+void Trinity::Codecs::Lucene::Decoder::decode_next_block(Trinity::Codecs::Lucene::PostingsListIterator *it)
 {
         // this is important
-        skip_hits(skippedHits);
-        refill_documents();
+        if (const auto n = it->skippedHits)
+                skip_hits(it, n);
+
+        refill_documents(it);
 }
 
-uint32_t Trinity::Codecs::Lucene::Decoder::begin()
+[[gnu::hot]] void Trinity::Codecs::Lucene::Decoder::next(Trinity::Codecs::Lucene::PostingsListIterator *const __restrict__ it)
 {
-        if (p != chunkEnd)
+        auto &docFreqs{it->docFreqs};
+        auto &docDeltas{it->docDeltas};
+        auto idx{it->docsIndex};
+
+        it->skippedHits += docFreqs[idx];
+        it->lastDocID += docDeltas[idx++];
+
+        if (unlikely(idx >= it->bufferedDocs))
         {
-                decode_next_block();
-                update_curdoc();
-        }
-        else
-        {
-                finalize();
-        }
+                if (likely(it->p != chunkEnd))
+                {
+                        it->docsIndex = idx;
 
-        return curDocument.id;
-}
+                        decode_next_block(it);
 
-[[gnu::hot]] bool Trinity::Codecs::Lucene::Decoder::next_impl()
-{
-        if constexpr (trace)
-                SLog(ansifmt::color_brown, "NEXT: docsIndex = ", docsIndex, " / ", bufferedDocs, " (skippedHits increment by ", docFreqs[docsIndex], ") ", skippedHits, ansifmt::reset, "\n");
-
-        skippedHits += docFreqs[docsIndex];
-        lastDocID += docDeltas[docsIndex];
-
-        if (unlikely(++docsIndex == bufferedDocs))
-        {
-                if constexpr (trace)
-                        SLog("End of buffered documents, ", chunkEnd - p, "\n");
-
-                if (p != chunkEnd)
-                        decode_next_block();
+                        idx = it->docsIndex;
+                }
                 else
                 {
-                        if constexpr (trace)
-                                SLog(ansifmt::bold, ansifmt::color_cyan, "FINALIZING", ansifmt::reset, "\n");
+                        finalize(it);
 
-                        finalize();
-                        return false;
+                        it->docsIndex = idx;
+                        return;
                 }
         }
 
-        update_curdoc();
-        return true;
+        it->curDocument.id = it->lastDocID + docDeltas[idx];
+        it->freq = docFreqs[idx];
+        it->docsIndex = idx;
 }
 
-uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target) const noexcept
+uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(PostingsListIterator *it, const isrc_docid_t target) const noexcept
 {
-        // See Google::Decoder::skiplist_search()
-        static constexpr bool trace{false};
+#if 0
         uint32_t idx{UINT32_MAX};
 
-#ifdef __LUCENE_COUNTERS
-	++luceneCnt5;
-#endif
-
-        for (int32_t top{int32_t(skiplist.size()) - 1}, btm{int32_t(skipListIdx)}; btm <= top;)
+        for (int32_t top{int32_t(skiplist.size) - 1}, btm{int32_t(it->skipListIdx)}; btm <= top;)
         {
                 const auto mid = (btm + top) / 2;
-                const auto v = skiplist[mid].lastDocID;
-
-                if constexpr (trace)
-                        SLog("mid = ", mid, " ", v, " ", target, " ", TrivialCmp(target, v), "\n");
+                const auto v = skiplist.data[mid].lastDocID;
 
                 if (target < v)
                         top = mid - 1;
@@ -1162,7 +1049,7 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target)
                 {
                         if (v != target)
                                 idx = mid;
-                        else if (mid != skipListIdx)
+                        else if (mid != it->skipListIdx)
                         {
                                 // we need this
                                 idx = mid - 1;
@@ -1173,117 +1060,132 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(const docid_t target)
         }
 
         return idx;
+#else
+	// branchless binary search
+	// See: http://databasearchitects.blogspot.gr/2015/09/trying-to-speed-up-binary-search.html
+	// Need to verify this, but looks fine so far
+	//
+	// This compiles down to (modulo loading instructions for it->skipListIdx)
+	/*
+ 	 *
+	.L4:
+	  movl %esi, %edi
+	  leaq (%rcx,%rdi,4), %rdi
+	  cmpl (%rdi), %r8d
+	  cmova %rdi, %rcx
+	  subl %esi, %edx
+	  movl %edx, %esi
+	  shrl %esi
+	  jne .L4
+	*
+	*/
+	// which is pretty good - no branches, and few instructions	
+        const auto idx{it->skipListIdx};
+        const auto *data = skiplist.data + idx;
+        uint32_t n = skiplist.size - idx;
+
+        while (const auto h = n / 2)
+        {
+                const auto m = data + h;
+
+                data = (m->lastDocID < target) ? m : data;
+                n -= h;
+        }
+
+	return target > data->lastDocID ? data - skiplist.data  : UINT32_MAX;
+#endif
 }
 
-[[gnu::hot]] bool Trinity::Codecs::Lucene::Decoder::seek(const docid_t target)
+[[gnu::hot]] void Trinity::Codecs::Lucene::Decoder::advance(Trinity::Codecs::Lucene::PostingsListIterator *it, const isrc_docid_t target)
 {
-	auto localBufferedDocs{bufferedDocs}; 	// the compiler may be able to better deal with aliasing here
+        auto localBufferedDocs{it->bufferedDocs}; // the compiler may be able to better deal with aliasing here
 
-        if constexpr (trace)
-                SLog(ansifmt::bold, ansifmt::color_blue, ptr_repr(this), " SKIPPING TO ", target, ansifmt::reset, " (SS = ", SKIPLIST_STEP, "), skipListIdx = ", skipListIdx, " / ", skiplist.size(), "\n");
-
-
-#ifdef LUCENE_SKIPLIST_SEEK_EARLY
-        if (target > curSkipListLastDocID)
+#ifdef LUCENE_LAZY_SKIPLIST_INIT
+        if (unlikely(skiplistSize))
         {
-// We need to skip ahead right now
-#ifdef __LUCENE_COUNTERS
-                ++luceneCnt3;
+                init_skiplist(skiplistSize);
+                skiplistSize = 0;
+        }
 #endif
 
-                if constexpr (trace)
-                        SLog("Skip ahead ", target, " ", skiplist[skipListIdx + 1].lastDocID, " ", skipListIdx, " ", skiplist_search(target), "/", skiplist.size(), "\n");
+        auto &curDocument{it->curDocument};
+        auto &docFreqs{it->docFreqs};
+        auto &docDeltas{it->docDeltas};
+        auto docsIndex{it->docsIndex};
 
+#ifdef LUCENE_SKIPLIST_SEEK_EARLY
+        if (target > it->curSkipListLastDocID)
+        {
+                // We need to skip ahead right now
                 goto skip1;
         }
 #endif
 
-
-
-
-
         for (;;)
         {
-		if constexpr (trace)
-                        SLog("docsIndex = ", docsIndex, " ", localBufferedDocs, ", curDocument.id = ", curDocument.id, ", skipListIdx = ", skipListIdx, "/", skiplist.size(), "\n");
-
-#ifdef __LUCENE_COUNTERS
-		++luceneCnt4;
-#endif
-
                 if (unlikely(docsIndex == localBufferedDocs))
                 {
-                        if (unlikely(p == chunkEnd))
+                        if (unlikely(it->p == chunkEnd))
                         {
-                                if constexpr (trace)
-                                        SLog("At the end already\n");
-
-                                finalize();
-                                return false;
+                                finalize(it);
+                                it->docsIndex = docsIndex;
+                                return;
                         }
                         else
                         {
 #if 1
-                                if constexpr (trace)
-                                        SLog("skipListIdx = ", skipListIdx, " ", skiplist.size(), " ", target, "\n");
-
-                                if (skipListIdx != skiplist.size())
+                                if (it->skipListIdx != skiplist.size)
                                 {
-                                        // see if we can determine where to seek to here
-skip1:
-                                        if (const auto index = skiplist_search(target); index != UINT32_MAX)
+                                // see if we can determine where to seek to here
+                                skip1:
+                                        if (const auto index = skiplist_search(it, target); index != UINT32_MAX)
                                         {
                                                 // we can advance here; we will only attempt to skiplist search
                                                 // next time we are done with a block
-						skipListIdx = index + 1;
+                                                it->skipListIdx = index + 1;
 #ifdef LUCENE_SKIPLIST_SEEK_EARLY
-						if (SKIPLIST_STEP == 1)
-							curSkipListLastDocID = skipListIdx == skiplist.size() ? MaxDocIDValue : skiplist[skipListIdx].lastDocID;
+                                                if (SKIPLIST_STEP == 1)
+                                                        it->curSkipListLastDocID = it->skipListIdx == skiplist.size ? DocIDsEND : skiplist.data[it->skipListIdx].lastDocID;
 #endif
 
-
-                                                const auto &it = skiplist[index];
-
-                                                if constexpr (trace)
-                                                        SLog("index now = ", index, "\n");
+                                                const auto &r = skiplist.data[index];
 
 #if 1
-                                                const auto blockPtr = postingListBase + it.indexOffset;
-                                                const auto hitsBlockPtr = hitsBase + it.lastHitsBlockOffset;
+                                                const auto blockPtr = postingListBase + r.indexOffset;
+                                                const auto hitsBlockPtr = hitsBase + r.lastHitsBlockOffset;
 
-                                                p = blockPtr;
-                                                hdp = hitsBlockPtr;
+                                                it->p = blockPtr;
+                                                it->hdp = hitsBlockPtr;
 
-                                                lastDocID = it.lastDocID;
-                                                docsLeft = totalDocuments - it.totalDocumentsSoFar;
-                                                hitsLeft = totalHits - it.totalHitsSoFar;
+                                                it->lastDocID = r.lastDocID;
+                                                it->docsLeft = totalDocuments - r.totalDocumentsSoFar;
+                                                it->hitsLeft = totalHits - r.totalHitsSoFar;
 
-                                                skippedHits = 0;
-                                                bufferedHits = 0;
+                                                it->skippedHits = 0;
+                                                it->bufferedHits = 0;
 
-                                                refill_documents();
-                                                refill_hits();
-                                                update_curdoc();
+                                                refill_documents(it);
+                                                refill_hits(it);
+                                                update_curdoc(it);
 
-                                                if constexpr (trace)
-                                                        SLog("SKIPPING ", it.curHitsBlockHits, "\n");
+                                                it->skippedHits = r.curHitsBlockHits;
+                                                if (const auto n = it->skippedHits)
+                                                        skip_hits(it, n);
 
-                                                skippedHits = it.curHitsBlockHits;
-                                                skip_hits(skippedHits);
-
-						localBufferedDocs = bufferedDocs;
-
+                                                localBufferedDocs = it->bufferedDocs;
+                                                docsIndex = it->docsIndex;
                                                 goto l10;
 #endif
                                         }
                                 }
 #endif
 
-                                if constexpr (trace)
+                                if (trace)
                                         SLog("Will decode next block\n");
 
-                                decode_next_block();
-				localBufferedDocs = bufferedDocs;
+                                decode_next_block(it);
+                                localBufferedDocs = it->bufferedDocs;
+                                docsIndex = it->docsIndex;
                         }
                 }
                 else
@@ -1291,55 +1193,52 @@ skip1:
                 l10:
                         if (curDocument.id == target)
                         {
-                                if constexpr (trace)
+                                if (trace)
                                         SLog("Found it\n");
 
-                                return true;
+                                it->docsIndex = docsIndex;
+                                return;
                         }
                         else if (curDocument.id > target)
                         {
-                                if constexpr (trace)
+                                if (trace)
                                         SLog("Not Here, now past target\n");
 
-                                return false;
+                                it->docsIndex = docsIndex;
+                                return;
                         }
                         else
                         {
-                                skippedHits += docFreqs[docsIndex];
-                                lastDocID += docDeltas[docsIndex];
+                                it->skippedHits += docFreqs[docsIndex];
+                                it->lastDocID += docDeltas[docsIndex];
 
                                 ++docsIndex;
 
                                 // see: update_curdoc();
-                                curDocument.id = lastDocID + docDeltas[docsIndex];
-                                curDocument.freq = docFreqs[docsIndex];
+                                curDocument.id = it->lastDocID + docDeltas[docsIndex];
+                                it->freq = docFreqs[docsIndex];
                         }
                 }
         }
 }
 
-void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t termID, DocWordsSpace *__restrict__ dws, term_hit *__restrict__ out)
+void Trinity::Codecs::Lucene::Decoder::materialize_hits(PostingsListIterator *it, const exec_term_id_t termID, DocWordsSpace *const __restrict__ dws, term_hit *const __restrict__ out)
 {
-	static constexpr bool trace{false};
-	//const bool trace = curDocument.id == 2151228176 || curDocument.id == 2152925656 || curDocument.id == 2154895013 || curDocument.id == 2151228176;
-        auto freq = docFreqs[docsIndex];
+        auto freq = it->docFreqs[it->docsIndex];
         auto outPtr = out;
 
-        if constexpr (trace)
-                SLog(ansifmt::bold, ansifmt::color_blue, "materializing, skippedHits = ", skippedHits, ", hitsLeft = ", hitsLeft, ansifmt::reset, "\n");
-
-        skip_hits(skippedHits);
-
-        if constexpr (trace)
-                SLog("hitsIndex = ", hitsIndex, ", freq = ", freq, ", bufferedHits = ", bufferedHits, "\n");
+        if (const auto skippedHits = it->skippedHits)
+                skip_hits(it, skippedHits);
 
         // fast-path; can satisfy directly from the current hits block
+        auto hitsIndex = it->hitsIndex;
+        auto &hitsPayloadLengths{it->hitsPayloadLengths};
+        auto &hitsPositionDeltas{it->hitsPositionDeltas};
+        const auto bufferedHits{it->bufferedHits};
+
         if (const auto upto = hitsIndex + freq; upto <= bufferedHits)
         {
                 tokenpos_t pos{0};
-
-                if constexpr (trace)
-                        SLog("fast-path\n");
 
                 while (hitsIndex != upto)
                 {
@@ -1349,16 +1248,13 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
                         outPtr->pos = pos;
                         outPtr->payloadLen = pl;
 
-                        if constexpr (trace)
-                                SLog(" POS = ", pos, ", length = ", pl, "\n");
-
                         if (pos)
                                 dws->set(termID, pos);
 
                         if (pl)
                         {
-                                memcpy(&outPtr->payload, payloadsIt, pl);
-                                payloadsIt += pl;
+                                memcpy(&outPtr->payload, it->payloadsIt, pl);
+                                it->payloadsIt += pl;
                         }
                         else
                                 outPtr->payload = 0;
@@ -1371,16 +1267,10 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
         {
                 tokenpos_t pos{0};
 
-                if constexpr (trace)
-                        SLog("slow path, freq = ", freq, ", hitsIndex =", hitsIndex, ", bufferedHits = ", bufferedHits, "\n");
-
                 for (;;)
                 {
-                        const auto n = std::min<uint32_t>(bufferedHits - hitsIndex, freq);
+                        const auto n = std::min<uint32_t>(it->bufferedHits - hitsIndex, freq);
                         const auto upto = hitsIndex + n;
-
-                        if constexpr (trace)
-                                SLog("UPTO = ", upto, ", bufferedHits = ", bufferedHits, ", hitsIndex = ", hitsIndex, ", freq = ", freq, ", n = ", n, "\n");
 
                         while (hitsIndex != upto)
                         {
@@ -1393,13 +1283,10 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
                                 if (pos)
                                         dws->set(termID, pos);
 
-                                if constexpr (trace)
-                                        SLog("FROM ", hitsIndex, ": pos = ", pos, " payload size =  ", pl, "\n");
-
                                 if (pl)
                                 {
-                                        memcpy(&outPtr->payload, payloadsIt, pl);
-                                        payloadsIt += pl;
+                                        memcpy(&outPtr->payload, it->payloadsIt, pl);
+                                        it->payloadsIt += pl;
                                 }
                                 else
                                         outPtr->payload = 0;
@@ -1409,75 +1296,101 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(const exec_term_id_t ter
                         }
                         freq -= n;
 
-                        if constexpr (trace)
-                                SLog("freq now = ", freq, "\n");
-
                         if (freq)
-                                refill_hits();
+                        {
+                                it->hitsIndex = hitsIndex;
+                                refill_hits(it);
+                                hitsIndex = it->hitsIndex;
+                        }
                         else
                                 break;
                 }
         }
 
-        docFreqs[docsIndex] = 0; // simplifies processing logic
+        it->hitsIndex = hitsIndex;       // restore
+        it->docFreqs[it->docsIndex] = 0; // simplifies processing logic
 }
 
-void Trinity::Codecs::Lucene::Decoder::init(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access)
+Trinity::Codecs::PostingsListIterator *Trinity::Codecs::Lucene::Decoder::new_iterator()
+{
+        auto it = std::make_unique<Trinity::Codecs::Lucene::PostingsListIterator>(this);
+
+        it->lastDocID = 0;
+        it->lastPosition = 0;
+        it->docsLeft = totalDocuments;
+        it->hitsLeft = totalHits;
+        it->docsIndex = it->hitsIndex = 0;
+        it->bufferedDocs = it->bufferedHits = 0;
+        it->skippedHits = 0;
+        it->docFreqs[0] = 0;
+        it->docDeltas[0] = 0;
+        it->skipListIdx = 0;
+        it->hdp = hitsBase;
+        it->p = postingListBase + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint32_t) + sizeof(uint16_t);
+
+        return it.release();
+}
+
+void Trinity::Codecs::Lucene::Decoder::init_skiplist(const uint16_t size)
+{
+        static constexpr size_t skiplistEntrySize{sizeof(uint32_t) * 5 + sizeof(uint16_t)};
+        const auto *sit = chunkEnd;
+
+        skiplist.size = size;
+        skiplist.data = (skiplist_entry *)malloc(sizeof(skiplist_entry) * size);
+        for (uint32_t i{0}; i != size; ++i, sit += skiplistEntrySize)
+        {
+                const auto it = reinterpret_cast<const uint32_t *>(sit);
+                auto &e = skiplist.data[i];
+
+                e.indexOffset = it[0];
+                e.lastDocID = it[1];
+                e.lastHitsBlockOffset = it[2];
+                e.totalDocumentsSoFar = it[3];
+                e.totalHitsSoFar = it[4];
+                e.curHitsBlockHits = *(uint16_t *)(sit + skiplistEntrySize - sizeof(uint16_t));
+        }
+}
+
+void Trinity::Codecs::Lucene::Decoder::init(const exec_term_id_t tid, const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access)
 {
         auto ap = static_cast<Trinity::Codecs::Lucene::AccessProxy *>(access);
         const auto indexPtr = ap->indexPtr;
         const auto ptr = indexPtr + tctx.indexChunk.offset;
         const auto chunkSize = tctx.indexChunk.size();
+        auto p = ptr;
 
+        execCtxTermID = tid;
+        indexTermCtx = tctx;
         postingListBase = ptr;
-        p = ptr;
         chunkEnd = ptr + chunkSize;
-        lastDocID = 0;
-        lastPosition = 0;
-        totalDocuments = docsLeft = tctx.documents;
-        docsIndex = hitsIndex = 0;
-        bufferedDocs = bufferedHits = 0;
-        skippedHits = 0;
-        // important:
-        docFreqs[0] = 0;
-        docDeltas[0] = 0;
+        totalDocuments = tctx.documents;
 
         const auto hitsDataOffset = *(uint32_t *)p;
         p += sizeof(uint32_t);
-        totalHits = hitsLeft = *(uint32_t *)p;
+        totalHits = *(uint32_t *)p;
         p += sizeof(uint32_t);
         p += sizeof(uint32_t); // positions chunk size
-        [[maybe_unused]] const auto skiplistSize = *(uint16_t *)p;
+#ifdef LUCENE_LAZY_SKIPLIST_INIT
+        skiplistSize = *(uint16_t *)p;
+#else
+        const auto skiplistSize = *(uint16_t *)p;
+#endif
         p += sizeof(uint16_t);
 
         if (skiplistSize)
         {
                 // deserialize the skiplist and maybe use it
                 static constexpr size_t skiplistEntrySize{sizeof(uint32_t) * 5 + sizeof(uint16_t)};
-                const auto *sit = (ptr + chunkSize) - (skiplistSize * skiplistEntrySize);
-                struct skiplist_entry e;
 
-                chunkEnd = sit;
-                skiplist.reserve(skiplistSize);
-                for (uint32_t i{0}; i != skiplistSize; ++i, sit += skiplistEntrySize)
-                {
-                        const auto it = reinterpret_cast<const uint32_t *>(sit);
+                chunkEnd = (ptr + chunkSize) - (skiplistSize * skiplistEntrySize);
 
-                        e.indexOffset = it[0];
-                        e.lastDocID = it[1];
-                        e.lastHitsBlockOffset = it[2];
-                        e.totalDocumentsSoFar = it[3];
-                        e.totalHitsSoFar = it[4];
-                        e.curHitsBlockHits = *(uint16_t *)(sit + skiplistEntrySize - sizeof(uint16_t));
-                        skiplist.push_back(e);
-                }
+#ifndef LUCENE_LAZY_SKIPLIST_INIT
+                init_skiplist(skiplistSize);
+#endif
         }
 
-        skipListIdx = 0;
-        hitsBase = hdp = ap->hitsDataPtr + hitsDataOffset;
-
-        if constexpr (trace)
-                SLog("skiplist.size = ", skiplist.size(), ", docsLeft = ", docsLeft, ", hitsLeft = ", hitsLeft, "\n");
+        hitsBase = ap->hitsDataPtr + hitsDataOffset;
 }
 
 Trinity::Codecs::Lucene::AccessProxy::AccessProxy(const char *bp, const uint8_t *p, const uint8_t *hd)

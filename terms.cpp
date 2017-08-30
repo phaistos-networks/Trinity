@@ -1,23 +1,27 @@
 #include "terms.h"
 #include <compress.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <text.h>
-#include <fcntl.h>
 
 Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_t> termsData, const str8_t q, const std::vector<Trinity::terms_skiplist_entry> &skipList)
 {
-        int32_t top{int32_t(skipList.size()) - 1};
+        int32_t top{int32_t(skipList.size()) - 1}, btm{0};
         const auto skipListData = skipList.data();
+        static constexpr bool trace{false};
 
-	expect(q.size() <= Limits::MaxTermLength);
+        expect(q.size() <= Limits::MaxTermLength);
 
         // skiplist search for the appropriate block
         // we can't use lower_bound
-        for (int32_t btm{0}; btm <= top;)
+        while (btm <= top)
         {
                 const auto mid = (btm + top) / 2;
                 const auto t = skipListData + mid;
+
+                if (trace)
+                        SLog("mid = ", mid, "(", t->term, ") ", terms_cmp(q.data(), q.size(), t->term.data(), t->term.size()), "\n");
 
                 if (t->term == q)
                 {
@@ -25,8 +29,8 @@ Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_
                         // found in the index/skiplist
                         return t->tctx;
 #else
-			top = mid;
-			goto l100;
+                        top = mid;
+                        goto l100;
 #endif
                 }
                 else if (terms_cmp(q.data(), q.size(), t->term.data(), t->term.size()) < 0)
@@ -35,6 +39,9 @@ Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_
                         btm = mid + 1;
         }
 
+        if (trace)
+                SLog("top = ", top, ", btm = ", btm, "\n");
+
         if (top == -1)
                 return {};
 
@@ -42,9 +49,9 @@ l100:
         const auto &it = skipList[top];
         const auto o = it.blockOffset;
         auto prev = it.term;
-	char_t termStorage[Limits::MaxTermLength];
+        char_t termStorage[Limits::MaxTermLength];
 
-	Dexpect(prev.size() <= sizeof_array(termStorage));
+        Dexpect(prev.size() <= sizeof_array(termStorage));
         memcpy(termStorage, prev.data(), prev.size() * sizeof(char_t));
 
         for (const auto *p = termsData.offset + o, *const e = termsData.offset + termsData.size(); p != e;)
@@ -52,10 +59,13 @@ l100:
                 const auto commonPrefixLen = *p++;
                 const auto suffixLen = *p++;
 
-		Dexpect(commonPrefixLen + suffixLen <= sizeof_array(termStorage));
+                Dexpect(commonPrefixLen + suffixLen <= sizeof_array(termStorage));
 
                 memcpy(termStorage + commonPrefixLen * sizeof(char_t), p, suffixLen * sizeof(char_t));
                 p += suffixLen * sizeof(char_t);
+
+                if (trace)
+                        SLog("At [", strwlen8_t(termStorage, uint8_t(suffixLen + commonPrefixLen)), "]\n");
 
                 const auto curTermLen = commonPrefixLen + suffixLen;
                 const auto r = terms_cmp(q.data(), q.size(), termStorage, curTermLen);
@@ -63,6 +73,8 @@ l100:
                 if (r < 0)
                 {
                         // definitely not here
+                        if (trace)
+                                SLog("Definitely not here\n");
                         break;
                 }
                 else if (r == 0)
@@ -73,6 +85,9 @@ l100:
                         tctx.indexChunk.len = Compression::decode_varuint32(p);
                         tctx.indexChunk.offset = *(uint32_t *)p;
 
+                        if (trace)
+                                SLog("matched\n");
+
                         return tctx;
                 }
                 else
@@ -82,6 +97,9 @@ l100:
                         p += sizeof(uint32_t);
                 }
         }
+
+        if (trace)
+                SLog("nope\n");
 
         return {};
 }
@@ -111,15 +129,15 @@ void Trinity::unpack_terms_skiplist(const range_base<const uint8_t *, const uint
 
 void Trinity::pack_terms(std::vector<std::pair<str8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index)
 {
-        static constexpr uint32_t SKIPLIST_INTERVAL{64};	 // 128 or 64 is more than fine
-        uint32_t nextSkipListEntry{1}; 	// so that we will output for the first term (required)
+        static constexpr uint32_t SKIPLIST_INTERVAL{64}; // 128 or 64 is more than fine
+        uint32_t nextSkipListEntry{1};                   // so that we will output for the first term (required)
         str8_t prev;
 
         std::sort(terms.begin(), terms.end(), [](const auto &a, const auto &b) {
                 return terms_cmp(a.first.data(), a.first.size(), b.first.data(), b.first.size()) < 0;
         });
 
-	for (const auto &it : terms)
+        for (const auto &it : terms)
         {
                 const auto cur = it.first;
 
@@ -139,7 +157,6 @@ void Trinity::pack_terms(std::vector<std::pair<str8_t, term_index_ctx>> &terms, 
                         }
 #endif
                         index->encode_varuint32(data->size()); // offset in the terms data file
-
                 }
 #ifdef TRINITY_TERMS_FAT_INDEX
                 else
@@ -167,22 +184,22 @@ Trinity::SegmentTerms::SegmentTerms(const char *segmentBasePath)
 
         fd = open(Buffer{}.append(segmentBasePath, "/terms.idx").c_str(), O_RDONLY | O_LARGEFILE);
         if (fd == -1)
-	{
-		if (errno == ENOENT)
-		{
-			// That's OK
-			return;
-		}
-		else
-	                throw Switch::system_error("Failed to access terms.idx: ", strerror(errno));
-	}
+        {
+                if (errno == ENOENT)
+                {
+                        // That's OK
+                        return;
+                }
+                else
+                        throw Switch::system_error("Failed to access terms.idx: ", strerror(errno));
+        }
         else if (const auto fileSize = lseek64(fd, 0, SEEK_END))
         {
                 auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
 
                 close(fd);
-		if (unlikely(fileData == MAP_FAILED))
-			throw Switch::data_error("Failed to access terms.idx: ", strerror(errno));
+                if (unlikely(fileData == MAP_FAILED))
+                        throw Switch::data_error("Failed to access terms.idx: ", strerror(errno));
 
                 madvise(fileData, fileSize, MADV_SEQUENTIAL);
 
@@ -193,10 +210,10 @@ Trinity::SegmentTerms::SegmentTerms(const char *segmentBasePath)
 
         fd = open(Buffer{}.append(segmentBasePath, "/terms.data").c_str(), O_RDONLY | O_LARGEFILE);
         if (fd == -1)
-	{
-		// we have terms.idx, we must have terms.data
+        {
+                // we have terms.idx, we must have terms.data
                 throw Switch::system_error("Failed to access terms.data");
-	}
+        }
 
         if (const auto fileSize = lseek64(fd, 0, SEEK_END))
         {
@@ -208,24 +225,24 @@ Trinity::SegmentTerms::SegmentTerms(const char *segmentBasePath)
 
                 termsData.Set(reinterpret_cast<const uint8_t *>(fileData), fileSize);
         }
-	else
-		close(fd);
+        else
+                close(fd);
 }
 
 void Trinity::terms_data_view::iterator::decode_cur()
 {
-	if (!cur.term)
-	{
-		const auto commonPrefixLen = *p++;
-		const auto suffixLen = *p++;
+        if (!cur.term)
+        {
+                const auto commonPrefixLen = *p++;
+                const auto suffixLen = *p++;
 
-		memcpy(termStorage + commonPrefixLen * sizeof(char_t), p, suffixLen * sizeof(char_t));
-		p += suffixLen * sizeof(char_t);
+                memcpy(termStorage + commonPrefixLen * sizeof(char_t), p, suffixLen * sizeof(char_t));
+                p += suffixLen * sizeof(char_t);
 
-		cur.term.len = commonPrefixLen + suffixLen;
-		cur.tctx.documents = Compression::decode_varuint32(p);
-		cur.tctx.indexChunk.len = Compression::decode_varuint32(p);
-		cur.tctx.indexChunk.offset = *(uint32_t *)p;
-		p += sizeof(uint32_t);
-	}
+                cur.term.len = commonPrefixLen + suffixLen;
+                cur.tctx.documents = Compression::decode_varuint32(p);
+                cur.tctx.indexChunk.len = Compression::decode_varuint32(p);
+                cur.tctx.indexChunk.offset = *(uint32_t *)p;
+                p += sizeof(uint32_t);
+        }
 }

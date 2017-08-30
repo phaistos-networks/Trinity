@@ -6,6 +6,7 @@
 #include <unordered_map>
 #include <switch_mallocators.h>
 #include <mutex>
+#include <ext/flat_hash_map.h>
 
 namespace Trinity
 {
@@ -23,7 +24,7 @@ namespace Trinity
               protected:
 	      	std::mutex cacheLock;
 		simple_allocator keysAllocator{512};
-		std::unordered_map<str8_t, term_index_ctx> cache;
+		ska::flat_hash_map<str8_t, term_index_ctx> cache;
                 uint64_t gen{0}; // See IndexSourcesCollection
 
               public:
@@ -78,7 +79,7 @@ namespace Trinity
 		// By default, it's an identity method -- no translation between index source and global space
 		// You can override it to return 0, if you want to ommit the document ID completely for whatever reason
 		// or otherwise translate it to global space here
-		virtual docid_t translate_docid(const docid_t indexSourceSpaceDocumentID)
+		virtual isrc_docid_t translate_docid(const isrc_docid_t indexSourceSpaceDocumentID)
 		{
 			return indexSourceSpaceDocumentID;
 		}
@@ -86,12 +87,30 @@ namespace Trinity
 
 
 
-                // Subclasses only need to implement 3 methods
                 virtual term_index_ctx resolve_term_ctx(const str8_t term) = 0;
+
+		// For performance reasons, if you are going to perform any kind of translation in your translate_docid()
+		// then you should also implement and override this method, and return true, so that the exec.engine
+		// will know if it need to invoke the virtual method or not. This is for performance reasons.
+		// Also, if we know that no translation is required, we can use masked_documents_registry or some other
+		// datastructure that's optimised for in-order lookups, otherwise use e.g a SparseFixedBitSet which is
+		// optimised for random access
+		inline virtual bool require_docid_translation() const
+		{
+			return false;
+		}
+
+		// The default impl. assumes you used the actual id during indexing.
+		// See common.h for comments on relationship between the two different document IDs domains.
+		inline virtual docid_t translate_docid(const isrc_docid_t localId)
+                {
+                        return docid_t(localId);
+                }
 
                 // factory method
 		// see RECIPES.md for when you should perhaps make use of the passed `term`
-                virtual Trinity::Codecs::Decoder *new_postings_decoder(const str8_t term, const term_index_ctx ctx) = 0;
+		// See Codecs::Decoder::init() for execCtxTermID
+                virtual Trinity::Codecs::Decoder *new_postings_decoder(const exec_term_id_t execCtxTermID, const str8_t term, const term_index_ctx ctx) = 0;
 
                 // Override if you have any masked documents
                 virtual updated_documents masked_documents()
@@ -151,7 +170,7 @@ namespace Trinity
                 }
 
                 // Currently, term is not really useful, but see RECIPES.md for how it could really help with some specific designs
-                Trinity::Codecs::Decoder *new_postings_decoder(const str8_t term, const term_index_ctx) override final
+                Trinity::Codecs::Decoder *new_postings_decoder(const exec_term_id_t execCtxTermID, const str8_t term, const term_index_ctx) override final
                 {
                         return nullptr;
                 }

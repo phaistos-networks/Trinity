@@ -6,6 +6,8 @@
 #include <set>
 #include <switch_bitops.h>
 
+// This only works(currently) if IndexSource::translate_docid() is an identify function
+// because we are merge-sorting expecting the order of IDs to be be monotonically ascending
 namespace Trinity
 {
         // tokens is a std::vector<> of std::set<> where each set represents the list of synonymous tokens (e.g ball, balls)
