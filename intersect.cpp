@@ -1,4 +1,5 @@
 #include "intersect.h"
+#include <ext/flat_hash_map.h>
 
 using namespace Trinity;
 
@@ -31,7 +32,7 @@ void Trinity::intersect_impl(const uint64_t stopwordsMask,
                                 auto dec = src->new_postings_decoder(0 /* dummy */, token, tctx);
 				auto it = dec->new_iterator();
 
-				it->next();
+				it->next();	// seek to the first document
                                 remaining[rem++] = {it, i, dec};
                                 origMask |= uint64_t(1u) << i;
 
@@ -182,7 +183,7 @@ void Trinity::intersect_impl(const uint64_t stopwordsMask,
                 {
                         const auto idx = selected[--cnt];
 
-                        if (!remaining[idx].it->next())
+                        if (unlikely(DocIDsEND == remaining[idx].it->next()))
                         {
                                 delete remaining[idx].dec;
                                 delete remaining[idx].it;
@@ -335,7 +336,7 @@ std::vector<std::pair<range_base<str8_t *, uint8_t>, std::pair<uint8_t, std::siz
 
         uint8_t indices[64];
         Buffer b, b2;
-        Switch::unordered_map<uint8_t, str8_t> map;
+        ska::flat_hash_map<uint8_t, str8_t> map;
         std::vector<str8_t> tokens;
 
 	// So that we can map original query index => original query token at index

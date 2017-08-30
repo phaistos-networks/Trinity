@@ -612,6 +612,7 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
                                 return;
                         }
 
+#if 0 // this is wrong, because we don't want e.g [ FOO <BAR> | <PONG> ] to [ FOO AND <FOO | PONG > ]
                         if (ctx->lhs.fp == ENT::consttrueexpr && ctx->rhs.fp == ENT::consttrueexpr)
                         {
                                 // [<foo> OR <bar>] => [ OR<foo, bar> ]
@@ -652,6 +653,7 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
                                         }
                                 }
                         }
+#endif
                 }
         }
 }
@@ -1050,6 +1052,22 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                                         return n;
                                 }
                         }
+			else if (ctx->lhs.fp == ENT::consttrueexpr)
+			{
+                		auto c = static_cast<const runtime_ctx::unaryop_ctx *>(ctx->lhs.ptr);
+
+				ctx->lhs = c->expr;
+				set_dirty();
+				return n;
+			}
+			if (ctx->rhs.fp == ENT::consttrueexpr)
+			{
+                		auto c = static_cast<const runtime_ctx::unaryop_ctx *>(ctx->rhs.ptr);
+
+				ctx->rhs = c->expr;
+				set_dirty();
+				return n;
+			}
                 }
                 else if (n.fp == ENT::logicaland)
                 {
@@ -1789,11 +1807,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
         before = Timings::Microseconds::Tick();
         for (const auto &kv : rctx.tctxMap)
         {
-#ifdef LEAN_SWITCH
                 const auto termID = kv.first;
-#else
-                const auto termID = kv.key();
-#endif
 
                 rctx.prepare_decoder(termID);
         }
@@ -1916,81 +1930,47 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
         }
         else if (n.fp == ENT::logicalor)
         {
+                // <foo> | bar => (foo | bar)
                 const auto e = static_cast<const runtime_ctx::binop_ctx *>(n.ptr);
+                std::vector<DocsSetIterators::Iterator *> its;
+                DocsSetIterators::Iterator *v[2] = {build_iterator(e->lhs, execFlags), build_iterator(e->rhs, execFlags)};
 
-		if (e->lhs.fp == ENT::consttrueexpr)
-		{
-                        const auto op = static_cast<const runtime_ctx::unaryop_ctx *>(e->lhs.ptr);
-
-			if (op->expr.fp == ENT::matchterm)
-			{
-				if (e->rhs.fp == ENT::matchterm)
-	                        	return reg_docset_it(new DocsSetIterators::OptionalAllPLI(reg_pli(decode_ctx.decoders[e->rhs.u16]->new_iterator()), reg_pli(decode_ctx.decoders[op->expr.u16]->new_iterator())));
-				else
-	                        	return reg_docset_it(new DocsSetIterators::OptionalOptPLI(build_iterator(e->rhs, execFlags), reg_pli(decode_ctx.decoders[op->expr.u16]->new_iterator())));
-			}
-			else
-                        	return reg_docset_it(new DocsSetIterators::Optional(build_iterator(e->rhs, execFlags), build_iterator(op->expr, execFlags)));
-
-		}
-		else if (e->rhs.fp == ENT::consttrueexpr)
-		{
-                        const auto op = static_cast<const runtime_ctx::unaryop_ctx *>(e->rhs.ptr);
-
-			if (op->expr.fp == ENT::matchterm)
-			{
-				if (e->lhs.fp == ENT::matchterm)
-	                        	return reg_docset_it(new DocsSetIterators::OptionalAllPLI(reg_pli(decode_ctx.decoders[e->lhs.u16]->new_iterator()), reg_pli(decode_ctx.decoders[op->expr.u16]->new_iterator())));
-				else
-	                        	return reg_docset_it(new DocsSetIterators::OptionalOptPLI(build_iterator(e->lhs, execFlags), reg_pli(decode_ctx.decoders[op->expr.u16]->new_iterator())));
-			}
-			else
-			{
-                        	return reg_docset_it(new DocsSetIterators::Optional(build_iterator(e->lhs, execFlags), build_iterator(op->expr, execFlags)));
-			}
-		}
-		else
+                // Pulling Iterators from (lhs, rhs) to this disjunction when possible is extremely important
+                // Over 50% perf.improvement
+                for (uint32_t i{0}; i != 2; ++i)
                 {
-                        std::vector<DocsSetIterators::Iterator *> its;
-                        DocsSetIterators::Iterator *v[2] = {build_iterator(e->lhs, execFlags), build_iterator(e->rhs, execFlags)};
+                        auto it = v[i];
 
-                        // Pulling Iterators from (lhs, rhs) to this disjunction when possible is extremely important
-                        // Over 50% perf.improvement
-                        for (uint32_t i{0}; i != 2; ++i)
+                        if (it->type == DocsSetIterators::Type::Disjunction)
                         {
-                                auto it = v[i];
+                                auto internal = static_cast<DocsSetIterators::Disjunction *>(it);
 
-                                if (it->type == DocsSetIterators::Type::Disjunction)
+                                while (internal->pq.size())
                                 {
-                                        auto internal = static_cast<DocsSetIterators::Disjunction *>(it);
-
-                                        while (internal->pq.size())
-                                        {
-                                                its.push_back(internal->pq.top());
-                                                internal->pq.pop();
-                                        }
+                                        its.push_back(internal->pq.top());
+                                        internal->pq.pop();
                                 }
-                                else if (it->type == DocsSetIterators::Type::DisjunctionAllPLI)
-                                {
-                                        auto internal = static_cast<DocsSetIterators::DisjunctionAllPLI *>(it);
-
-                                        while (internal->pq.size())
-                                        {
-                                                its.push_back(internal->pq.top());
-                                                internal->pq.pop();
-                                        }
-                                }
-                                else
-                                        its.push_back(it);
                         }
+                        else if (it->type == DocsSetIterators::Type::DisjunctionAllPLI)
+                        {
+                                auto internal = static_cast<DocsSetIterators::DisjunctionAllPLI *>(it);
 
-                        if (traceCompile)
-                                SLog("Final ", its.size(), " ", execFlags & unsigned(ExecFlags::DocumentsOnly), ": ", all_pli(its), "\n");
-
-                        return reg_docset_it(all_pli(its)
-                                                 ? static_cast<DocsSetIterators::Iterator *>(new DocsSetIterators::DisjunctionAllPLI(its.data(), its.size()))
-                                                 : static_cast<DocsSetIterators::Iterator *>(new DocsSetIterators::Disjunction(its.data(), its.size())));
+                                while (internal->pq.size())
+                                {
+                                        its.push_back(internal->pq.top());
+                                        internal->pq.pop();
+                                }
+                        }
+                        else
+                                its.push_back(it);
                 }
+
+                if (traceCompile)
+                        SLog("Final ", its.size(), " ", execFlags & unsigned(ExecFlags::DocumentsOnly), ": ", all_pli(its), "\n");
+
+                return reg_docset_it(all_pli(its)
+                                         ? static_cast<DocsSetIterators::Iterator *>(new DocsSetIterators::DisjunctionAllPLI(its.data(), its.size()))
+                                         : static_cast<DocsSetIterators::Iterator *>(new DocsSetIterators::Disjunction(its.data(), its.size())));
         }
         else if (n.fp == ENT::logicaland)
         {
@@ -2071,9 +2051,16 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
 
 		return build_iterator(ctx->expr, execFlags);
 	}
+	else if (n.fp == ENT::consttrueexpr)
+        {
+                // not part of a binary op.
+                const auto op = static_cast<const runtime_ctx::unaryop_ctx *>(n.ptr);
+
+                return build_iterator(op->expr, execFlags);
+        }
         else
         {
-                if (traceCompile || traceExec)
+                if (traceCompile || traceExec || true)
                 {
                         SLog("Not supported:", n, "\n");
                         exit(1);
