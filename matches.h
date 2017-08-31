@@ -1,8 +1,6 @@
 #pragma once
 #include "docwordspace.h"
 #include "runtime.h"
-#include <switch.h>
-#include <switch_dictionary.h>
 
 namespace Trinity
 {

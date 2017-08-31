@@ -1,9 +1,7 @@
 #pragma once
 #include "common.h"
-#include <switch.h>
 #include <switch_mallocators.h>
-#include <switch_vector.h>
-#include <text.h>
+#include <vector>
 
 namespace Trinity
 {

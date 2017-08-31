@@ -2,9 +2,6 @@
 #include "docwordspace.h"
 #include "exec.h"
 #include "matches.h"
-#include <prioqueue.h>
-#include <queue>
-#include <set>
 
 namespace Trinity
 {

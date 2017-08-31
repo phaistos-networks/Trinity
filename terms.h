@@ -1,9 +1,7 @@
 #pragma once
 #include "codecs.h"
 #include <compress.h>
-#include <switch.h>
 #include <switch_mallocators.h>
-#include <switch_vector.h>
 
 // Prefic compressed terms dictionary
 // Maps from str8_t=>term_index_ctx
