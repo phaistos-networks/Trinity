@@ -2067,7 +2067,7 @@ l20:
                         ++p;
                 }
 
-                if (*p == '\'' && allAlphas)
+                if (p != e && *p == '\'' && allAlphas)
                 {
                         // Apostrophes
                         // Can be used for clitic contractions (we're => we are), as genitive markers (John's boat), or as quotative markers

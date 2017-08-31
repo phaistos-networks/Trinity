@@ -1,4 +1,5 @@
 #include "runtime_ctx.h"
+#include "docset_iterators.h"
 
 using namespace Trinity;
 

@@ -1,7 +1,7 @@
 #pragma once
 #include "common.h"
 #include "docidupdates.h"
-#include "docset_iterators.h"
+#include "docset_iterators_base.h"
 #include "docwordspace.h"
 #include "runtime.h"
 
