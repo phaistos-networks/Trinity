@@ -6,7 +6,7 @@
 
 #IncludeRegexTransform: 
 
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/unit.cpp
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/unit.cpp
 memory
 -
 iomanip
@@ -14,17 +14,17 @@ iomanip
 time.h
 -
 codecfactory.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/codecfactory.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/codecfactory.h
 util.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/util.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/util.h
 ztimer.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/ztimer.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/ztimer.h
 bitpacking.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpacking.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpacking.h
 synthetic.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/synthetic.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/synthetic.h
 cpubenchmark.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/cpubenchmark.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/cpubenchmark.h
 
 headers/VarIntG8IU.h
 emmintrin.h

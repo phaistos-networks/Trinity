@@ -43,10 +43,10 @@ RM = /usr/bin/cmake -E remove -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor
+CMAKE_SOURCE_DIR = /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor
+CMAKE_BINARY_DIR = /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor
 
 # Include any dependencies generated for this target.
 include CMakeFiles/FastPFor.dir/depend.make
@@ -59,16 +59,16 @@ include CMakeFiles/FastPFor.dir/flags.make
 
 CMakeFiles/FastPFor.dir/src/bitpacking.cpp.o: CMakeFiles/FastPFor.dir/flags.make
 CMakeFiles/FastPFor.dir/src/bitpacking.cpp.o: src/bitpacking.cpp
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/FastPFor.dir/src/bitpacking.cpp.o"
-	/usr/bin/c++   $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/FastPFor.dir/src/bitpacking.cpp.o -c /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpacking.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_1) "Building CXX object CMakeFiles/FastPFor.dir/src/bitpacking.cpp.o"
+	/usr/bin/c++   $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/FastPFor.dir/src/bitpacking.cpp.o -c /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpacking.cpp
 
 CMakeFiles/FastPFor.dir/src/bitpacking.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/FastPFor.dir/src/bitpacking.cpp.i"
-	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpacking.cpp > CMakeFiles/FastPFor.dir/src/bitpacking.cpp.i
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpacking.cpp > CMakeFiles/FastPFor.dir/src/bitpacking.cpp.i
 
 CMakeFiles/FastPFor.dir/src/bitpacking.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/FastPFor.dir/src/bitpacking.cpp.s"
-	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpacking.cpp -o CMakeFiles/FastPFor.dir/src/bitpacking.cpp.s
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpacking.cpp -o CMakeFiles/FastPFor.dir/src/bitpacking.cpp.s
 
 CMakeFiles/FastPFor.dir/src/bitpacking.cpp.o.requires:
 
@@ -83,16 +83,16 @@ CMakeFiles/FastPFor.dir/src/bitpacking.cpp.o.provides.build: CMakeFiles/FastPFor
 
 CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.o: CMakeFiles/FastPFor.dir/flags.make
 CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.o: src/bitpackingaligned.cpp
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.o"
-	/usr/bin/c++   $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.o -c /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpackingaligned.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_2) "Building CXX object CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.o"
+	/usr/bin/c++   $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.o -c /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpackingaligned.cpp
 
 CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.i"
-	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpackingaligned.cpp > CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.i
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpackingaligned.cpp > CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.i
 
 CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.s"
-	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpackingaligned.cpp -o CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.s
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpackingaligned.cpp -o CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.s
 
 CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.o.requires:
 
@@ -107,16 +107,16 @@ CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.o.provides.build: CMakeFiles/F
 
 CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.o: CMakeFiles/FastPFor.dir/flags.make
 CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.o: src/bitpackingunaligned.cpp
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.o"
-	/usr/bin/c++   $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.o -c /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpackingunaligned.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_3) "Building CXX object CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.o"
+	/usr/bin/c++   $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.o -c /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpackingunaligned.cpp
 
 CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.i"
-	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpackingunaligned.cpp > CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.i
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpackingunaligned.cpp > CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.i
 
 CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.s"
-	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpackingunaligned.cpp -o CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.s
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpackingunaligned.cpp -o CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.s
 
 CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.o.requires:
 
@@ -131,16 +131,16 @@ CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.o.provides.build: CMakeFiles
 
 CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.o: CMakeFiles/FastPFor.dir/flags.make
 CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.o: src/horizontalbitpacking.cpp
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.o"
-	/usr/bin/c++   $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.o -c /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/horizontalbitpacking.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_4) "Building CXX object CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.o"
+	/usr/bin/c++   $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.o -c /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/horizontalbitpacking.cpp
 
 CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.i"
-	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/horizontalbitpacking.cpp > CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.i
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/horizontalbitpacking.cpp > CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.i
 
 CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.s"
-	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/horizontalbitpacking.cpp -o CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.s
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/horizontalbitpacking.cpp -o CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.s
 
 CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.o.requires:
 
@@ -155,16 +155,16 @@ CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.o.provides.build: CMakeFile
 
 CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.o: CMakeFiles/FastPFor.dir/flags.make
 CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.o: src/simdunalignedbitpacking.cpp
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.o"
-	/usr/bin/c++   $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.o -c /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/simdunalignedbitpacking.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_5) "Building CXX object CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.o"
+	/usr/bin/c++   $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.o -c /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/simdunalignedbitpacking.cpp
 
 CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.i"
-	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/simdunalignedbitpacking.cpp > CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.i
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/simdunalignedbitpacking.cpp > CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.i
 
 CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.s"
-	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/simdunalignedbitpacking.cpp -o CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.s
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/simdunalignedbitpacking.cpp -o CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.s
 
 CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.o.requires:
 
@@ -179,16 +179,16 @@ CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.o.provides.build: CMakeF
 
 CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.o: CMakeFiles/FastPFor.dir/flags.make
 CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.o: src/simdbitpacking.cpp
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.o"
-	/usr/bin/c++   $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.o -c /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/simdbitpacking.cpp
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_6) "Building CXX object CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.o"
+	/usr/bin/c++   $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -o CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.o -c /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/simdbitpacking.cpp
 
 CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing CXX source to CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.i"
-	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/simdbitpacking.cpp > CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.i
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -E /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/simdbitpacking.cpp > CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.i
 
 CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling CXX source to assembly CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.s"
-	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/simdbitpacking.cpp -o CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.s
+	/usr/bin/c++  $(CXX_DEFINES) $(CXX_INCLUDES) $(CXX_FLAGS) -S /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/simdbitpacking.cpp -o CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.s
 
 CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.o.requires:
 
@@ -203,16 +203,16 @@ CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.o.provides.build: CMakeFiles/Fast
 
 CMakeFiles/FastPFor.dir/src/varintdecode.c.o: CMakeFiles/FastPFor.dir/flags.make
 CMakeFiles/FastPFor.dir/src/varintdecode.c.o: src/varintdecode.c
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building C object CMakeFiles/FastPFor.dir/src/varintdecode.c.o"
-	/usr/bin/cc  $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -o CMakeFiles/FastPFor.dir/src/varintdecode.c.o   -c /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/varintdecode.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_7) "Building C object CMakeFiles/FastPFor.dir/src/varintdecode.c.o"
+	/usr/bin/cc  $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -o CMakeFiles/FastPFor.dir/src/varintdecode.c.o   -c /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/varintdecode.c
 
 CMakeFiles/FastPFor.dir/src/varintdecode.c.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing C source to CMakeFiles/FastPFor.dir/src/varintdecode.c.i"
-	/usr/bin/cc  $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/varintdecode.c > CMakeFiles/FastPFor.dir/src/varintdecode.c.i
+	/usr/bin/cc  $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/varintdecode.c > CMakeFiles/FastPFor.dir/src/varintdecode.c.i
 
 CMakeFiles/FastPFor.dir/src/varintdecode.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling C source to assembly CMakeFiles/FastPFor.dir/src/varintdecode.c.s"
-	/usr/bin/cc  $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/varintdecode.c -o CMakeFiles/FastPFor.dir/src/varintdecode.c.s
+	/usr/bin/cc  $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/varintdecode.c -o CMakeFiles/FastPFor.dir/src/varintdecode.c.s
 
 CMakeFiles/FastPFor.dir/src/varintdecode.c.o.requires:
 
@@ -227,16 +227,16 @@ CMakeFiles/FastPFor.dir/src/varintdecode.c.o.provides.build: CMakeFiles/FastPFor
 
 CMakeFiles/FastPFor.dir/src/streamvbyte.c.o: CMakeFiles/FastPFor.dir/flags.make
 CMakeFiles/FastPFor.dir/src/streamvbyte.c.o: src/streamvbyte.c
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building C object CMakeFiles/FastPFor.dir/src/streamvbyte.c.o"
-	/usr/bin/cc  $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -o CMakeFiles/FastPFor.dir/src/streamvbyte.c.o   -c /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/streamvbyte.c
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --progress-dir=/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_8) "Building C object CMakeFiles/FastPFor.dir/src/streamvbyte.c.o"
+	/usr/bin/cc  $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -o CMakeFiles/FastPFor.dir/src/streamvbyte.c.o   -c /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/streamvbyte.c
 
 CMakeFiles/FastPFor.dir/src/streamvbyte.c.i: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Preprocessing C source to CMakeFiles/FastPFor.dir/src/streamvbyte.c.i"
-	/usr/bin/cc  $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/streamvbyte.c > CMakeFiles/FastPFor.dir/src/streamvbyte.c.i
+	/usr/bin/cc  $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -E /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/streamvbyte.c > CMakeFiles/FastPFor.dir/src/streamvbyte.c.i
 
 CMakeFiles/FastPFor.dir/src/streamvbyte.c.s: cmake_force
 	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green "Compiling C source to assembly CMakeFiles/FastPFor.dir/src/streamvbyte.c.s"
-	/usr/bin/cc  $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/streamvbyte.c -o CMakeFiles/FastPFor.dir/src/streamvbyte.c.s
+	/usr/bin/cc  $(C_DEFINES) $(C_INCLUDES) $(C_FLAGS) -S /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/streamvbyte.c -o CMakeFiles/FastPFor.dir/src/streamvbyte.c.s
 
 CMakeFiles/FastPFor.dir/src/streamvbyte.c.o.requires:
 
@@ -273,7 +273,7 @@ libFastPFor.a: CMakeFiles/FastPFor.dir/src/varintdecode.c.o
 libFastPFor.a: CMakeFiles/FastPFor.dir/src/streamvbyte.c.o
 libFastPFor.a: CMakeFiles/FastPFor.dir/build.make
 libFastPFor.a: CMakeFiles/FastPFor.dir/link.txt
-	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Linking CXX static library libFastPFor.a"
+	@$(CMAKE_COMMAND) -E cmake_echo_color --switch=$(COLOR) --green --bold --progress-dir=/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles --progress-num=$(CMAKE_PROGRESS_9) "Linking CXX static library libFastPFor.a"
 	$(CMAKE_COMMAND) -P CMakeFiles/FastPFor.dir/cmake_clean_target.cmake
 	$(CMAKE_COMMAND) -E cmake_link_script CMakeFiles/FastPFor.dir/link.txt --verbose=$(VERBOSE)
 
@@ -298,6 +298,6 @@ CMakeFiles/FastPFor.dir/clean:
 .PHONY : CMakeFiles/FastPFor.dir/clean
 
 CMakeFiles/FastPFor.dir/depend:
-	cd /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/DependInfo.cmake --color=$(COLOR)
+	cd /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/FastPFor.dir/depend
 

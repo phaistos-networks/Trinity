@@ -6,15 +6,15 @@
 
 #IncludeRegexTransform: 
 
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/partitionbylength.cpp
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/partitionbylength.cpp
 sstream
 -
 vector
 -
 maropuparser.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/maropuparser.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/maropuparser.h
 util.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/util.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/util.h
 
 headers/common.h
 errno.h

@@ -43,10 +43,10 @@ RM = /usr/bin/cmake -E remove -f
 EQUALS = =
 
 # The top-level source directory on which CMake was run.
-CMAKE_SOURCE_DIR = /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor
+CMAKE_SOURCE_DIR = /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor
 
 # The top-level build directory on which CMake was run.
-CMAKE_BINARY_DIR = /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor
+CMAKE_BINARY_DIR = /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor
 
 # Utility rule file for check.
 
@@ -71,6 +71,6 @@ CMakeFiles/check.dir/clean:
 .PHONY : CMakeFiles/check.dir/clean
 
 CMakeFiles/check.dir/depend:
-	cd /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/CMakeFiles/check.dir/DependInfo.cmake --color=$(COLOR)
+	cd /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor && $(CMAKE_COMMAND) -E cmake_depends "Unix Makefiles" /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles/check.dir/DependInfo.cmake --color=$(COLOR)
 .PHONY : CMakeFiles/check.dir/depend
 

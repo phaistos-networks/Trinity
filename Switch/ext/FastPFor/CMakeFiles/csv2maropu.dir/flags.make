@@ -6,5 +6,5 @@ CXX_FLAGS = -Wall -Wcast-align -Ofast -lm  -DNDEBUG -std=c++11 -DHAVE_CXX0X -mar
 
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/headers 
+CXX_INCLUDES = -I/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/headers 
 

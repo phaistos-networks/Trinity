@@ -6,7 +6,7 @@
 
 #IncludeRegexTransform: 
 
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/streamvbyte.c
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/streamvbyte.c
 intrin.h
 -
 iso646.h
@@ -36,7 +36,7 @@ string.h
 /opt/intel/iaca/include/iacaMarks.h
 -
 
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/varintdecode.c
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/varintdecode.c
 intrin.h
 -
 x86intrin.h

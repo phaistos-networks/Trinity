@@ -7,11 +7,11 @@ C_FLAGS = -Wall -Wcast-align -Ofast -lm  -DNDEBUG -std=c99  -march=native
 
 C_DEFINES = 
 
-C_INCLUDES = -I/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/headers 
+C_INCLUDES = -I/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/headers 
 
 CXX_FLAGS = -Wall -Wcast-align -Ofast -lm  -DNDEBUG -std=c++11 -DHAVE_CXX0X -march=native  
 
 CXX_DEFINES = 
 
-CXX_INCLUDES = -I/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/headers 
+CXX_INCLUDES = -I/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/headers 
 
