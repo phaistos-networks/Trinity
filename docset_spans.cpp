@@ -5,6 +5,96 @@
 using namespace Trinity;
 extern thread_local Trinity::runtime_ctx *curRCTX;
 
+Trinity::isrc_docid_t Trinity::DocsSetSpanForPartialMatch::process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max)
+{
+        isrc_docid_t id{DocIDsEND};
+
+        for (;;)
+        {
+                auto it = pq.top();
+
+                id = it->current();
+                if (id >= max)
+                        break;
+
+                const isrc_docid_t windowBase = id & ~MASK;
+                [[maybe_unused]] const auto windowMin = std::max<isrc_docid_t>(min, windowBase);
+                const auto windowMax = std::min<isrc_docid_t>(max, windowBase + SIZE);
+                uint16_t collectedCnt{1};
+
+                collected[0] = it;
+                for (pq.pop(); likely(pq.size()) && (it = pq.top())->current() < windowMax; pq.pop())
+                {
+                        collected[collectedCnt++] = it;
+                }
+
+                if (collectedCnt == 1)
+                {
+                        auto *const it = collected[0];
+                        auto id = it->current();
+
+                        while (id < windowMax)
+                        {
+                                mp->process(id);
+                                id = it->next();
+                        }
+
+                        pq.push(it);
+                }
+                else
+                {
+                        uint32_t m{0};
+
+                        for (uint32_t i_{0}; i_ != collectedCnt; ++i_)
+                        {
+                                auto *const it = collected[i_];
+
+                                for (auto id = it->current(); id < windowMax; id = it->next())
+                                {
+                                        const auto i = id - windowBase;
+                                        const auto mi = i >> 6;
+
+                                        m = std::max<uint32_t>(m, mi);
+                                        matching[mi] |= uint64_t(1) << (i & 63);
+
+                                        tracker[i].second++;
+                                }
+
+                                pq.push(it);
+                        }
+
+                        for (uint32_t idx{0}; idx <= m; ++idx)
+                        {
+                                const uint64_t _b = uint64_t(idx) << 6;
+
+                                for (auto b = matching[idx]; b;)
+                                {
+                                        const auto bidx = SwitchBitOps::TrailingZeros(b);
+                                        const auto translated = _b + bidx;
+                                        const auto id = windowBase + translated;
+					auto &trackInfo = tracker[translated]; //require(translated == (id & MASK));
+
+                                        b ^= uint64_t(1) << bidx;
+
+					if (trackInfo.second  >= matchThreshold)
+					{
+						// TODO: for a future ExecFlags specified op.mode where
+						// we simply aggregate scores(see Lucene), we 'd just use trackInfo.first as the aggregated score
+                                        	mp->process(id);
+					}
+
+					trackInfo.first = 0;
+					trackInfo.second = 0;
+                                }
+                        }
+
+                        memset(matching, 0, (m + 1) * sizeof(matching[0])); // yes, we can
+                }
+        }
+
+        // XXX: Shouldn't we return (id + 1) if (id == max && id != DocIDsEND) ?
+        return id;
+}
 
 Trinity::DocsSetSpanForDisjunctionsWithSpans::DocsSetSpanForDisjunctionsWithSpans(std::vector<DocsSetSpan *> &its, const bool root)
 	: DocsSetSpan{root}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((span_ctx *)malloc(sizeof(span_ctx) * (its.size() + 1))), tracker(matching, curRCTX)
@@ -62,29 +152,22 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctions::process(MatchesProxy 
                         // Encode document presence(matched) in bitmap for this window
                         uint32_t m{0};
 
+
                         for (uint32_t i_{0}; i_ != collectedCnt; ++i_)
                         {
                                 auto *const it = collected[i_];
-                                auto id = it->current();
 
                                 // no need for if (id < windowMin) id = it->advance(windowMin);
                                 // see comments above
-
-                                while (id < windowMax)
+                                for (auto id = it->current(); id < windowMax ;  id = it->next())
                                 {
-                                        const auto i = id & MASK;
+					const auto i = id - windowBase;
                                         const auto mi = i >> 6;
 
                                         // std::max() is at least as fast as the branchless alt.
                                         // m = m ^ ((m ^ mi) & -(m < mi));
                                         m = std::max<uint32_t>(m, mi);
                                         matching[mi] |= uint64_t(1) << (i & 63);
-
-#ifdef TRACK_DOCTERMS
-                                        tracker[i].push_back({t, 0});
-#endif
-
-                                        id = it->next();
                                 }
 
                                 pq.push(it);
@@ -102,13 +185,6 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctions::process(MatchesProxy 
                                         const auto id = windowBase + translated;
 
                                         b ^= uint64_t(1) << bidx;
-
-#ifdef TRACK_DOCTERMS
-                                        auto &v = tracker[id & MASK];
-
-                                        require(v.size());
-                                        v.clear();
-#endif
 
                                         mp->process(id);
                                 }
@@ -256,6 +332,8 @@ Trinity::isrc_docid_t Trinity::GenericDocsSetSpan::process(MatchesProxy *const m
 
 void Trinity::DocsSetSpanForDisjunctionsWithSpans::Tracker::process(const isrc_docid_t id)
 {
+	//TODO: considering reset() setting windowBase for this object so that
+	// we can compute i = (id - windowBase) which is likely faster than (id & MASK)
         const auto i = id & MASK;
         const auto mi = i >> 6;
 

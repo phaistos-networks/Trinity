@@ -17,6 +17,8 @@ namespace Trinity
 	// 
 	// Such a mode would make sense where we want to trade-off flexibility and power(not being able to evaluate a document
 	// only when it's matched, and having access to all hits of all matched terms) for faster runtime.
+	//
+	// See Also: Lucene's Scorer concept
         class MatchesProxy
         {
               public:
@@ -137,7 +139,6 @@ namespace Trinity
 
 // See comments about RelevanceProvider
 // If we get to implement this mode, we 'll need to aggregate some kind of 'score' and count for each matched document
-                //#define TRACK_DOCTERMS 1
                 static constexpr std::size_t SHIFT{13};
                 static constexpr std::size_t SIZE{1 << SHIFT};
                 static constexpr std::size_t MASK{SIZE - 1};
@@ -151,19 +152,13 @@ namespace Trinity
                         }
                 };
 
-                // Alloc on the heap so that we won't possibly overrun the stack and because
-                // it'd help with cache hit rate of locals
                 uint64_t *const matching;
-
-#ifdef TRACK_DOCTERMS
-                std::vector<std::pair<DocsSetIterators::Iterator *, uint32_t>> tracker[SIZE];
-#endif
                 Switch::priority_queue<DocsSetIterators::Iterator *, Compare> pq;
                 DocsSetIterators::Iterator **const collected;
 
               public:
                 DocsSetSpanForDisjunctions(std::vector<Trinity::DocsSetIterators::Iterator *> &its, const bool root = false)
-                    : DocsSetSpan{root}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1)))
+                    : DocsSetSpan{root}, matching((uint64_t *)calloc(SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1)))
                 {
                         for (auto it : its)
                         {
@@ -178,6 +173,56 @@ namespace Trinity
                 {
                         std::free(matching);
                         std::free(collected);
+                }
+
+                isrc_docid_t process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max) override final;
+        };
+
+        class DocsSetSpanForPartialMatch final
+            : public DocsSetSpan
+        {
+                static constexpr std::size_t SHIFT{13};
+                static constexpr std::size_t SIZE{1 << SHIFT};
+                static constexpr std::size_t MASK{SIZE - 1};
+                static constexpr std::size_t SET_SIZE{SIZE / sizeof(uint64_t)};
+
+                struct Compare
+                {
+                        [[gnu::always_inline]] inline bool operator()(const DocsSetIterators::Iterator *a, const DocsSetIterators::Iterator *b) const noexcept
+                        {
+                                return a->current() < b->current();
+                        }
+                };
+
+		const uint16_t matchThreshold;
+                uint64_t *const matching;
+		std::pair<double, uint32_t> *const tracker;
+                Switch::priority_queue<DocsSetIterators::Iterator *, Compare> pq;
+                DocsSetIterators::Iterator **const collected;
+
+              public:
+                DocsSetSpanForPartialMatch(std::vector<Trinity::DocsSetIterators::Iterator *> &its, const uint16_t min, const bool root = false)
+                    : DocsSetSpan{root}, 
+		    	matchThreshold{min}, 
+			matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), 
+			pq(its.size() + 16), 
+			tracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>))), 
+			collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1)))
+                {
+                        for (auto it : its)
+                        {
+                                it->next();
+                                pq.push(it);
+                        }
+
+                        require(pq.size());
+                }
+
+                ~DocsSetSpanForPartialMatch()
+                {
+                        std::free(matching);
+                        std::free(collected);
+			std::free(tracker);
                 }
 
                 isrc_docid_t process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max) override final;
@@ -235,6 +280,7 @@ namespace Trinity
                         {
                         }
 
+			// See Tracker::process() def. comments
                         inline void reset()
                         {
                                 m = 0;
@@ -257,4 +303,5 @@ namespace Trinity
 
                 isrc_docid_t process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max) override final;
         };
+
 }

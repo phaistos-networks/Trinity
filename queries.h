@@ -34,6 +34,13 @@ namespace Trinity
                                 }
                         } binop;
 
+			struct
+			{
+				uint16_t size; 	// among that many nodes here
+                                uint16_t min;   // at least those many should match
+                                ast_node **nodes;
+                        } match_some;
+
                         struct
                         {
                                 ast_node *expr;
@@ -70,6 +77,13 @@ namespace Trinity
                         //
                         // You an also think of this as an 'optional match' node.
                         ConstTrueExpr,
+
+			// This is a special-purprose type, and it can be used to specify 2+ nodes and a threshold; at least threshold many
+			// of those should be matched during execution.
+			// Suppose you are buiding a visual search engine, and you extract all images features(say, maybe about 1000 or so for each image). You can then index them, and then for each input image, extract
+			// its own features, and use MatchSome ast_node with all the features extracted from the input image, and a threshold set to say 50% of the total features in that input image, and then execute
+			// the query; it will match all images that have at least 50% common features with the input image. This is going to be very fast and very handy.
+			MatchSome,
                 } type;
 
                 // this is handy if you want to delete a node
@@ -121,6 +135,20 @@ namespace Trinity
                         r->type = t;
                         return r;
                 }
+
+		static ast_node *make_match_some(simple_allocator &a, ast_node **nodes, const uint16_t cnt, const uint16_t min)
+		{
+			auto res = make(a, Type::MatchSome);
+
+			expect(cnt);
+			expect(min <= cnt);
+
+			res->match_some.size = cnt;
+			res->match_some.min = min;
+			res->match_some.nodes = a.CopyOf(nodes, cnt);
+
+			return res;
+		}
 
                 static ast_node *make_binop(simple_allocator &a)
                 {
@@ -556,6 +584,11 @@ namespace Trinity
                                                 if (includePhrases)
                                                         unaryNodes.push_back({seg, n});
                                                 break;
+
+					case ast_node::Type::MatchSome:
+						for (uint32_t i{0}; i != n->match_some.size; ++i)
+							stack.push_back({seg, n->match_some.nodes[i]});
+						break;
 
                                         case ast_node::Type::BinOp:
                                                 if (n->binop.op == Operator::AND)

@@ -3,17 +3,26 @@
 #include "runtime_ctx.h"
 
 // see reorder_execnode_impl()
-uint64_t Trinity::DocsSetIterators::cost(const runtime_ctx *const rctx, const Iterator *it)
+uint64_t Trinity::DocsSetIterators::cost(const Iterator *it)
 {
         switch (it->type)
         {
+                case Type::AppIterator:
+                        std::abort();
+
+                case Type::DisjunctionSome:
+                        return static_cast<const DisjunctionSome *>(it)->cost_;
+
                 case Type::Filter:
                 {
                         const auto self = static_cast<const Filter *>(it);
 
-                        return cost(rctx, self->req);
+                        return cost(self->req);
                 }
                 break;
+
+                case Type::VectorIDs:
+                        return static_cast<const VectorIDs *>(it)->ids.size();
 
                 case Type::Optional:
                 {
@@ -39,14 +48,13 @@ uint64_t Trinity::DocsSetIterators::cost(const runtime_ctx *const rctx, const It
                 }
                 break;
 
-
                 case Type::Disjunction:
                 {
                         const auto self = static_cast<const Disjunction *>(it);
                         uint64_t sum{0};
 
                         for (uint32_t i{0}; i != self->pq.size(); ++i)
-                                sum += cost(rctx, self->pq.data()[i]);
+                                sum += cost(self->pq.data()[i]);
                         return sum;
                 }
                 break;
@@ -57,18 +65,17 @@ uint64_t Trinity::DocsSetIterators::cost(const runtime_ctx *const rctx, const It
                         uint64_t sum{0};
 
                         for (uint32_t i{0}; i != self->pq.size(); ++i)
-                                sum += cost(rctx, self->pq.data()[i]);
+                                sum += cost(self->pq.data()[i]);
                         return sum;
                 }
                 break;
-
 
                 case Type::Conjuction:
                 case Type::ConjuctionAllPLI:
                 {
                         const auto self = static_cast<const Conjuction *>(it);
 
-                        return cost(rctx, self->its[0]);
+                        return cost(self->its[0]);
                 }
                 break;
 
@@ -77,7 +84,7 @@ uint64_t Trinity::DocsSetIterators::cost(const runtime_ctx *const rctx, const It
                         const auto self = static_cast<const Phrase *>(it);
 
                         // XXX: see phrase_cost()
-                        return cost(rctx, self->its[0]) + UINT32_MAX + UINT16_MAX * self->size;
+                        return cost(self->its[0]) + UINT32_MAX + UINT16_MAX * self->size;
                 }
                 break;
 
@@ -85,9 +92,8 @@ uint64_t Trinity::DocsSetIterators::cost(const runtime_ctx *const rctx, const It
                 {
                         const auto self = static_cast<const Codecs::PostingsListIterator *>(it);
                         const auto dec = self->decoder();
-                        const auto termID = dec->exec_ctx_termid();
 
-                        return const_cast<runtime_ctx *>(rctx)->term_ctx(termID).documents;
+                        return dec->indexTermCtx.documents;
                 }
                 break;
 
@@ -158,7 +164,6 @@ uint16_t Trinity::DocsSetIterators::reset_depth(Iterator *const it, const uint16
         }
 }
 #endif
-
 
 bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
 {
@@ -441,7 +446,7 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Conjuction::next()
 Trinity::isrc_docid_t Trinity::DocsSetIterators::Conjuction::next_impl(isrc_docid_t id)
 {
         static constexpr bool trace{false};
-	const auto localSize{size}; // alias just in case the compiler can't do it itself
+        const auto localSize{size}; // alias just in case the compiler can't do it itself
 
 restart:
         for (uint32_t i{1}; i != localSize; ++i)
@@ -552,7 +557,6 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionAllPLI::advance(cons
 
         return curDocument.id;
 }
-
 
 #if 0
 // This is a nifty idea; we don't need to first check which to advance and then advance
@@ -898,4 +902,151 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::OptionalAllPLI::advance(const i
 
         opt->advance(id);
         return curDocument.id = id;
+}
+
+void Trinity::DocsSetIterators::DisjunctionSome::update_current()
+{
+        // the top of head defines the next potential match
+        // pop all documents which are on that document
+        lead = head.pop();
+        lead->next = nullptr;
+        curDocMatchedItsCnt = 1;
+
+        curDocument.id = lead->id;
+        while (head.size() && head.top()->id == curDocument.id)
+                add_lead(head.pop());
+}
+
+Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::next_impl()
+{
+        while (curDocMatchedItsCnt < matchThreshold)
+        {
+                if (curDocMatchedItsCnt + tail.size() >= matchThreshold)
+                {
+			// we may still be able to match, advance tail.top()
+                        advance_tail();
+                }
+                else
+                {
+			// Match impossibl for this document
+			// Advance to the next potential document that may match
+                        for (auto it{lead}; it; it = it->next)
+                                tail.push(it);
+
+                        update_current();
+                }
+        }
+
+        return curDocument.id;
+}
+
+Trinity::DocsSetIterators::DisjunctionSome::DisjunctionSome(Trinity::DocsSetIterators::Iterator **const iterators, const uint16_t cnt, const uint16_t minMatch)
+    : Iterator{Type::DisjunctionSome}, matchThreshold{minMatch}, head{uint32_t(cnt - minMatch + 1)}, tail{uint32_t(minMatch - 1)}
+{
+        expect(minMatch <= cnt);
+        expect(minMatch);
+
+        trackersStorage = (it_tracker *)malloc(sizeof(it_tracker) * cnt);
+
+        for (uint32_t i{0}; i != cnt; ++i)
+        {
+                auto t = trackersStorage + i;
+
+                t->it = iterators[i];
+                t->cost = cost(t->it);
+                add_lead(t);
+        }
+
+        {
+                // Idea: a query c1,c2,..cn with minMatch = m
+                // can be rewritten to:
+                // (c1 AND (c2 ..cn | msm = n -1)) OR (!c1 AND (c2 .. cn|msm = m))
+                // if we assume the iterators are provided in ascending cost, then the cost
+                // for the first part is the cost of c1 (because the cost of a conjuction is the cost of the least costly clause)
+                // the cost of the second part is the cost of finding m matches among the c2 .. cn remaining queries
+                // if we recurse infinitely, we find out what the cost of a msm query is the sum of the costs of all (cnt - minMatch + 1)
+                //
+                // we can just sort that and be done with it anyway, no need to use a pq, but let's use it anyway
+                Switch::priority_queue<uint64_t, std::greater<uint64_t>> pq{uint32_t(cnt - minMatch + 1)};
+                uint64_t evicted;
+
+                for (auto it{lead}; it; it = it->next)
+                        pq.try_push(it->cost, evicted);
+
+                cost_ = 0;
+                for (uint32_t i{0}; i != pq.size(); ++i)
+                        cost_ += pq.data()[i];
+        }
+}
+
+Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::next()
+{
+        it_tracker *evicted;
+
+        for (auto it{lead}; it; it = it->next)
+        {
+                if (!tail.try_push(it, evicted))
+                {
+                        evicted->id = (evicted->id == curDocument.id)
+                                          ? evicted->it->next()
+                                          : evicted->it->advance(curDocument.id + 1);
+
+                        head.push(evicted);
+                }
+        }
+
+        update_current();
+        return next_impl();
+}
+
+Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::advance(const isrc_docid_t target)
+{
+        it_tracker *evicted;
+
+        for (auto it{lead}; it; it = it->next)
+        {
+                if (!tail.try_push(it, evicted))
+                {
+                        evicted->id = evicted->it->advance(target);
+                        head.push(evicted);
+                }
+        }
+
+        for (auto top = head.top();
+             top->id < target; top = head.top())
+        {
+                // We know the tail is full, because it contains at most
+                // (matchThreshold - 1) entries, and we have moved at least matchThreshold entries to it, so try_push()
+                // would return false
+                tail.try_push(top, evicted);
+
+                evicted->id = evicted->it->advance(target);
+                head.update_top(evicted);
+        }
+
+        update_current();
+        return next_impl();
+}
+
+void Trinity::DocsSetIterators::DisjunctionSome::advance_tail(it_tracker *const top)
+{
+        top->id = top->it->advance(curDocument.id);
+
+        if (top->id == curDocument.id)
+                add_lead(top);
+        else
+                head.push(top);
+}
+
+void Trinity::DocsSetIterators::DisjunctionSome::update_matched_cnt()
+{
+	// We return the next document when there are matchThreshold matching iterators
+	// but some of the iterators in tail might match as well.
+	// In general, we want to advance least-costly iterators first in order to skip over non-matching
+	// documents as fast as possible.
+	// Here however we are advancing every iterator anyway, so iterating ovedr iterators in (roughly) cost-descending
+	// order might help avoid some permutations in the head heap.
+	for (int32_t i = int32_t(tail.size())  - 1; i >= 0; --i)
+		advance_tail(tail.data()[i]);
+	tail.clear();
 }

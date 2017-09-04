@@ -87,6 +87,14 @@ static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, runtime_ctx &
                 reorder_execnode(ctx->expr, updates, rctx);
                 return UINT64_MAX - 1;
         }
+	else if (n.fp == ENT::matchsome)
+	{
+		auto pm = static_cast<runtime_ctx::partial_match_ctx *>(n.ptr);
+
+		for (uint32_t i{0}; i != pm->size; ++i)
+			reorder_execnode(pm->nodes[i], updates, rctx);
+                return UINT64_MAX - 1;
+	}
         else if (n.fp == ENT::matchallterms)
         {
                 const auto run = static_cast<const runtime_ctx::termsrun *>(n.ptr);
@@ -166,6 +174,11 @@ static void reorder(ast_node *n, reorder_ctx *const ctx)
                 reorder(n->unaryop.expr, ctx);
         else if (n->type == ast_node::Type::ConstTrueExpr)
                 reorder(n->expr, ctx);
+	else if (n->type == ast_node::Type::MatchSome)
+	{
+		for (uint32_t i{0}; i != n->match_some.size; ++i)
+			reorder(n->match_some.nodes[i], ctx);
+	}
         if (n->type == ast_node::Type::BinOp)
         {
                 const auto lhs = n->binop.lhs, rhs = n->binop.rhs;
@@ -333,6 +346,8 @@ static auto impl_repr(const ENT fp) noexcept
                 return "unary not"_s8;
         else if (fp == ENT::consttrueexpr)
                 return "const true expr"_s8;
+        else if (fp == ENT::matchsome)
+                return "[matchsome]"_s8;
         else if (fp == ENT::constfalse)
                 return "false"_s8;
         else if (fp == ENT::dummyop)
@@ -459,6 +474,22 @@ static exec_node compile_node(const ast_node *const n, runtime_ctx &rctx, simple
                         res.fp = ENT::constfalse;
                         break;
 
+		case ast_node::Type::MatchSome:
+			res.fp = ENT::matchsome;
+                        {
+                                auto pm = (runtime_ctx::partial_match_ctx *)a.Alloc(sizeof(runtime_ctx::partial_match_ctx) + sizeof(exec_node) * n->match_some.size);
+
+                                pm->min = n->match_some.min;
+                                pm->size = n->match_some.size;
+
+                                for (uint32_t i{0}; i != n->match_some.size; ++i)
+                                        pm->nodes[i] = compile_node(n->match_some.nodes[i], rctx, a);
+
+                                res.ptr = pm;
+                        }
+                        break;
+
+
                 case ast_node::Type::UnaryOp:
                         switch (n->unaryop.op)
                         {
@@ -529,6 +560,13 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
 
                 collapse_node(ctx->expr, rctx, a, terms, phrases, stack);
         }
+	else if (n.fp == ENT::matchsome)
+	{
+		auto pm = static_cast<runtime_ctx::partial_match_ctx *>(n.ptr);
+
+		for (uint32_t i{0}; i != pm->size; ++i)
+			collapse_node(pm->nodes[i], rctx, a, terms, phrases, stack);
+	}
         else if (n.fp == ENT::logicaland || n.fp == ENT::logicalor || n.fp == ENT::logicalnot)
         {
                 auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
@@ -698,6 +736,13 @@ static void expand_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, st
 
                 expand_node(ctx->expr, rctx, a, terms, phrases, stack);
         }
+	else if (n.fp == ENT::matchsome)
+	{
+		auto ctx = static_cast<runtime_ctx::partial_match_ctx *>(n.ptr);
+
+		for (uint32_t i{0}; i != ctx->size; ++i)
+			expand_node(ctx->nodes[i], rctx, a, terms, phrases, stack);
+	}
         else if (n.fp == ENT::logicaland || n.fp == ENT::logicalor || n.fp == ENT::logicalnot)
         {
                 auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
@@ -919,6 +964,61 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                 {
                         n.fp = ENT::dummyop;
                         set_dirty();
+                }
+        }
+	else if (n.fp == ENT::matchsome)
+	{
+		auto ctx = static_cast<runtime_ctx::partial_match_ctx *>(n.ptr);
+		const auto saved{ctx->size};
+		
+		for (uint32_t i{0}; i < ctx->size; ++i)
+		{
+			ctx->nodes[i] = optimize_node(ctx->nodes[i], rctx, a, terms, phrases, stack, updates, root);
+
+			if (ctx->nodes[i].fp == ENT::constfalse || ctx->nodes[i].fp == ENT::dummyop)
+				ctx->nodes[i] = ctx->nodes[--(ctx->size)];
+			else
+				++i;
+		}
+
+		if (ctx->min > ctx->size)
+		{
+			n.fp = ENT::constfalse;
+			set_dirty();
+		}
+		else
+                {
+                        if (ctx->size == 1)
+                        {
+                                n = ctx->nodes[0];
+                                set_dirty();
+                        }
+                        else if (ctx->min == ctx->size)
+                        {
+                                // transform to binary op that includes all those
+                                auto en = ctx->nodes[0];
+
+                                for (uint32_t i{1}; i != ctx->size; ++i)
+                                {
+                                        auto b = (runtime_ctx::binop_ctx *)a.Alloc(sizeof(runtime_ctx::binop_ctx));
+
+                                        b->lhs = en;
+                                        b->rhs = ctx->nodes[i];
+                                        en.fp = ENT::logicaland;
+                                        en.ptr = b;
+                                }
+
+                                n = en;
+                                set_dirty();
+                        }
+                        else if (ctx->min == 1)
+                        {
+                                // TODO: consider expanding to OR sequence
+                        }
+                        else if (ctx->size != saved)
+                        {
+                                set_dirty();
+                        }
                 }
         }
         else if (n.fp == ENT::unaryand)
@@ -1874,6 +1974,7 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
                 }
 
                 return reg_docset_it(new DocsSetIterators::DisjunctionAllPLI(decoders, run->size));
+		//SLog("foo\n"); return reg_docset_it(new DocsSetIterators::DisjunctionSome(decoders, run->size, 8));
         }
         else if (n.fp == ENT::matchphrase)
         {
@@ -2072,7 +2173,18 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
 
 static std::unique_ptr<DocsSetSpan> build_span(DocsSetIterators::Iterator *root, runtime_ctx *const rctx, const bool asRoot)
 {
-        if (rctx->documentsOnly && (root->type == DocsSetIterators::Type::Disjunction || root->type == DocsSetIterators::Type::DisjunctionAllPLI))
+	if (rctx->documentsOnly && root->type == DocsSetIterators::Type::DisjunctionSome)
+	{
+		auto d = static_cast<DocsSetIterators::DisjunctionSome *>(root);
+		std::vector<Trinity::DocsSetIterators::Iterator *> its;
+
+		for (auto it{d->lead}; it; it = it->next)
+			its.push_back(it->it);
+		
+		SLog("LEt's see\n");
+		return std::make_unique<DocsSetSpanForPartialMatch>(its, d->matchThreshold, asRoot);
+	}
+        else if (rctx->documentsOnly && (root->type == DocsSetIterators::Type::Disjunction || root->type == DocsSetIterators::Type::DisjunctionAllPLI))
         {
                 std::vector<Trinity::DocsSetIterators::Iterator *> its;
 
@@ -2103,8 +2215,8 @@ static std::unique_ptr<DocsSetSpan> build_span(DocsSetIterators::Iterator *root,
         else if (root->type == DocsSetIterators::Type::Filter)
         {
                 const auto f = static_cast<DocsSetIterators::Filter *>(root);
-                const auto filterCost = Trinity::DocsSetIterators::cost(rctx, f->filter);
-                const auto reqCost = Trinity::DocsSetIterators::cost(rctx, f->req);
+                const auto filterCost = Trinity::DocsSetIterators::cost(f->filter);
+                const auto reqCost = Trinity::DocsSetIterators::cost(f->req);
 
 		if (traceCompile || traceExec)
 			SLog("filterCost ", filterCost, " reqCost ", reqCost, "\n");
@@ -2184,6 +2296,10 @@ void Trinity::exec_query(const query &in,
                                 case ast_node::Type::Phrase:
                                         collected.push_back(n->p);
                                         break;
+
+				case ast_node::Type::MatchSome:
+					stack.insert(stack.end(), n->match_some.nodes, n->match_some.nodes + n->match_some.size);
+					break;
 
                                 case ast_node::Type::UnaryOp:
                                         if (n->unaryop.op != Operator::NOT)
