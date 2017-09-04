@@ -6,31 +6,31 @@
 
 #IncludeRegexTransform: 
 
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpacking.cpp
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpacking.cpp
 bitpacking.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpacking.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpacking.h
 
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpackingaligned.cpp
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpackingaligned.cpp
 bitpackingaligned.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpackingaligned.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpackingaligned.h
 
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpackingunaligned.cpp
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpackingunaligned.cpp
 exception
 -
 bitpackingunaligned.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/bitpackingunaligned.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/bitpackingunaligned.h
 
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/horizontalbitpacking.cpp
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/horizontalbitpacking.cpp
 horizontalbitpacking.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/horizontalbitpacking.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/horizontalbitpacking.h
 
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/simdbitpacking.cpp
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/simdbitpacking.cpp
 simdbitpacking.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/simdbitpacking.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/simdbitpacking.h
 
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/simdunalignedbitpacking.cpp
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/simdunalignedbitpacking.cpp
 usimdbitpacking.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/usimdbitpacking.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/usimdbitpacking.h
 
 headers/bitpacking.h
 common.h

@@ -24,7 +24,130 @@ namespace Trinity
                 uint16_t reset_depth(Iterator *const it, const uint16_t d);
 #endif
 
-                uint64_t cost(const runtime_ctx *, const Iterator *);
+                uint64_t cost(const Iterator *);
+
+                // This is Lucene's MinShouldMatchSumScorer.java port
+                // It's a clever design. From their description:
+                // It tracks iterators in:
+                // - lead: a linked list of iterators that are positioned on the desired docID, i.t (iterator->current() == curDocument.id)
+                //
+                // - tail: a heap/prioqueue that contains at most (matchThreshold - 1) iterators
+                //	that are behind the desired docID. Those iterators are ordered by COST
+                // 	so that we can advance the least costly ones first. i.e it tracks
+                //	the top-k most expensive trackers ordered by cost ASC, i.e top() is the
+                //	least expensive tracker to advance.
+                //
+                // - head: a heap that tracks iterators that are past the desired documentID
+                //	ordered by docID in order to advance quickly to the next candidate.
+                // 	i.e it tracks the top-k trackers ordered by docID ASC
+                //
+                // Finding the next match comes down to first setting the desired docID to the
+                // least entry in head, and then advancing tail until there's a match
+		//
+		// This is suitable for when you need to match between 2 and the total number of iterators
+		//
+		// It's not that fast though -- over 35% of run-time is spent manipulating head and tail priority queues.
+		// push/pop is fairly expensive, and unless we can figure out a way for this to work with sentinels or some other scheme, it's going to
+		// be faster to use a much simpler design that doesn't take into account costs etc, as long as it doesn't need to hammer those queues.	
+                class DisjunctionSome final
+                    : public Iterator
+                {
+                        friend uint64_t cost(const Iterator *);
+
+                      public:
+                        struct it_tracker
+                        {
+                                Iterator *it;
+                                uint64_t cost;
+                                isrc_docid_t id; // we could just use it->current(), but this simplifies processing somewhat
+                                it_tracker *next;
+                        } * lead{nullptr};
+
+			public:
+                        const uint16_t matchThreshold;
+
+                      private:
+                        uint16_t curDocMatchedItsCnt{0};
+                        it_tracker *trackersStorage{nullptr};
+
+                      protected:
+                        uint64_t cost_;
+
+                      private:
+                        struct Compare
+                        {
+                                inline bool operator()(const it_tracker *const a, const it_tracker *const b) const noexcept
+                                {
+                                        return a->id < b->id;
+                                }
+                        };
+
+                        struct CompareCost
+                        {
+                                inline bool operator()(const it_tracker *const a, const it_tracker *const b) const noexcept
+                                {
+                                        return a->cost < b->cost;
+                                }
+                        };
+
+                        Switch::priority_queue<it_tracker *, Compare> head;
+                        Switch::priority_queue<it_tracker *, CompareCost> tail;
+
+                      private:
+                        void update_current();
+
+                        void advance_tail(it_tracker *const top);
+
+                        inline void advance_tail()
+                        {
+                                advance_tail(tail.pop());
+                        }
+
+                        isrc_docid_t next_impl();
+
+#if 0
+			double score()
+			{
+				double sum{0};
+
+				update_matched_cnt();
+				for (auto it{lead}; it; it != it->next)
+					sum += it->score();
+				return sum;
+			}
+#endif
+
+                        auto matched_cnt()
+                        {
+                                update_matched_cnt();
+                                return curDocMatchedItsCnt;
+                        }
+
+                        inline void add_lead(it_tracker *const t)
+                        {
+                                t->next = lead;
+                                lead = t;
+                                ++curDocMatchedItsCnt;
+                        }
+
+                      public:
+                        DisjunctionSome(Iterator **const iterators, const uint16_t cnt, const uint16_t minMatch);
+
+                        ~DisjunctionSome()
+                        {
+                                if (trackersStorage)
+                                        std::free(trackersStorage);
+                        }
+
+                        // Advancing to the next document. Iterators in the lead LL need to migrate to
+                        // tail. If tail is full, we take the least costly iterators and advance them.
+                        isrc_docid_t next() override final;
+
+                        isrc_docid_t advance(const isrc_docid_t target) override final;
+
+                        // advance all entries from the tail to know about all matches on the current document
+                        void update_matched_cnt();
+                };
 
                 // This is very handy, and we can use it to model NOT clauses
                 // e.g (foo NOT bar)
@@ -99,7 +222,7 @@ namespace Trinity
 
                       public:
                         Iterator *const main;
-			Codecs::PostingsListIterator *const opt;
+                        Codecs::PostingsListIterator *const opt;
 
                       public:
                         OptionalOptPLI(Iterator *const m, Iterator *const o)
@@ -107,9 +230,9 @@ namespace Trinity
                         {
                         }
 
-			isrc_docid_t next() override final;
+                        isrc_docid_t next() override final;
 
-			isrc_docid_t advance(const isrc_docid_t) override final;
+                        isrc_docid_t advance(const isrc_docid_t) override final;
                 };
 
                 struct OptionalAllPLI final
@@ -118,8 +241,8 @@ namespace Trinity
                         friend uint16_t reset_depth(Iterator *, const uint16_t);
 
                       public:
-			Codecs::PostingsListIterator *const main;
-			Codecs::PostingsListIterator *const opt;
+                        Codecs::PostingsListIterator *const main;
+                        Codecs::PostingsListIterator *const opt;
 
                       public:
                         OptionalAllPLI(Iterator *const m, Iterator *const o)
@@ -127,9 +250,9 @@ namespace Trinity
                         {
                         }
 
-			isrc_docid_t next() override final;
+                        isrc_docid_t next() override final;
 
-			isrc_docid_t advance(const isrc_docid_t) override final;
+                        isrc_docid_t advance(const isrc_docid_t) override final;
                 };
 
                 struct idx_stack final
@@ -180,7 +303,6 @@ namespace Trinity
 
                         isrc_docid_t advance(const isrc_docid_t target) override final;
                 };
-
 
                 // Will only match one, and will ignore the rest
                 // for 759721, std::priority_queue<> based requires 186ms
@@ -367,13 +489,17 @@ struct TwoPhaseIterator final
                 struct VectorIDs final
                     : public Iterator
                 {
-                      private:
+                        friend uint64_t cost(const Iterator *);
+
+                      protected:
                         std::vector<isrc_docid_t> ids;
+
+                      private:
                         uint32_t idx{0};
 
                       public:
                         VectorIDs(const std::initializer_list<isrc_docid_t> list)
-                            : Iterator{Type::Dummy}
+                            : Iterator{Type::VectorIDs}
                         {
                                 for (const auto id : list)
                                         ids.push_back(id);

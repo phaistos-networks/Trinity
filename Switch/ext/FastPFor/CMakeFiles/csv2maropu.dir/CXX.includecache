@@ -6,17 +6,17 @@
 
 #IncludeRegexTransform: 
 
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/csv2maropu.cpp
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/csv2maropu.cpp
 vector
 -
 iostream
 -
 csv.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/csv.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/csv.h
 externalvector.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/externalvector.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/externalvector.h
 util.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/util.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/util.h
 
 headers/common.h
 errno.h

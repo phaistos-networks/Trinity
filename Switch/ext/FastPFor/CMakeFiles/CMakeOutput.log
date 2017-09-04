@@ -750,3 +750,69 @@ __m256i x=_mm256_set1_epi32(5);
 x=_mm256_add_epi32(x,x);
 return _mm256_movemask_epi8(x);
 }
+Performing C++ SOURCE FILE Test SUPPORT_SSE42 succeeded with the following output:
+Change Dir: /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_5d663/fast"
+/usr/bin/make -f CMakeFiles/cmTC_5d663.dir/build.make CMakeFiles/cmTC_5d663.dir/build
+make[1]: Entering directory '/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_5d663.dir/src.cxx.o
+/usr/bin/c++     -DSUPPORT_SSE42 -march=native -msse4.2   -o CMakeFiles/cmTC_5d663.dir/src.cxx.o -c /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles/CMakeTmp/src.cxx
+Linking CXX executable cmTC_5d663
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_5d663.dir/link.txt --verbose=1
+/usr/bin/c++    -DSUPPORT_SSE42 -march=native -msse4.2    CMakeFiles/cmTC_5d663.dir/src.cxx.o  -o cmTC_5d663 -rdynamic 
+make[1]: Leaving directory '/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+
+#include<smmintrin.h>
+int main(){
+__m128 x=_mm_set1_ps(0.5);
+x=_mm_dp_ps(x,x,0x77);
+return _mm_movemask_ps(x);
+}
+Performing C++ SOURCE FILE Test SUPPORT_AVX succeeded with the following output:
+Change Dir: /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_823fb/fast"
+/usr/bin/make -f CMakeFiles/cmTC_823fb.dir/build.make CMakeFiles/cmTC_823fb.dir/build
+make[1]: Entering directory '/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_823fb.dir/src.cxx.o
+/usr/bin/c++     -DSUPPORT_AVX -march=native -mavx   -o CMakeFiles/cmTC_823fb.dir/src.cxx.o -c /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles/CMakeTmp/src.cxx
+Linking CXX executable cmTC_823fb
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_823fb.dir/link.txt --verbose=1
+/usr/bin/c++    -DSUPPORT_AVX -march=native -mavx    CMakeFiles/cmTC_823fb.dir/src.cxx.o  -o cmTC_823fb -rdynamic 
+make[1]: Leaving directory '/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+
+#include<immintrin.h>
+int main(){
+__m128 x=_mm_set1_ps(0.5);
+x=_mm_permute_ps(x,1);
+return _mm_movemask_ps(x);
+}
+Performing C++ SOURCE FILE Test SUPPORT_AVX2 succeeded with the following output:
+Change Dir: /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/bin/make" "cmTC_39001/fast"
+/usr/bin/make -f CMakeFiles/cmTC_39001.dir/build.make CMakeFiles/cmTC_39001.dir/build
+make[1]: Entering directory '/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles/CMakeTmp'
+Building CXX object CMakeFiles/cmTC_39001.dir/src.cxx.o
+/usr/bin/c++     -DSUPPORT_AVX2 -march=native -mavx2   -o CMakeFiles/cmTC_39001.dir/src.cxx.o -c /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles/CMakeTmp/src.cxx
+Linking CXX executable cmTC_39001
+/usr/bin/cmake -E cmake_link_script CMakeFiles/cmTC_39001.dir/link.txt --verbose=1
+/usr/bin/c++    -DSUPPORT_AVX2 -march=native -mavx2    CMakeFiles/cmTC_39001.dir/src.cxx.o  -o cmTC_39001 -rdynamic 
+make[1]: Leaving directory '/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/CMakeFiles/CMakeTmp'
+
+Source file was:
+
+
+#include<immintrin.h>
+int main(){
+__m256i x=_mm256_set1_epi32(5);
+x=_mm256_add_epi32(x,x);
+return _mm256_movemask_epi8(x);
+}

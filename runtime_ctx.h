@@ -27,6 +27,7 @@ namespace Trinity
                 logicaland,
                 logicalnot,
                 logicalor,
+		matchsome,
                 SPECIALIMPL_COLLECTION_LOGICALOR,
                 SPECIALIMPL_COLLECTION_LOGICALAND,
         };
@@ -157,6 +158,13 @@ namespace Trinity
                 {
                         exec_node expr;
                 };
+
+		struct partial_match_ctx final
+		{
+			uint16_t size;
+			uint16_t min;
+			exec_node nodes[0];
+		};
 
                 struct termsrun final
                 {

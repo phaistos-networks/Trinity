@@ -1,4 +1,4 @@
-# Install script for directory: /home/system/Development/Projects/Trinity2/Switch/ext/FastPFor
+# Install script for directory: /db/storage/Development/Projects/Trinity/Switch/ext/FastPFor
 
 # Set the install prefix
 if(NOT DEFINED CMAKE_INSTALL_PREFIX)
@@ -40,5 +40,5 @@ endif()
 
 string(REPLACE ";" "\n" CMAKE_INSTALL_MANIFEST_CONTENT
        "${CMAKE_INSTALL_MANIFEST_FILES}")
-file(WRITE "/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/${CMAKE_INSTALL_MANIFEST}"
+file(WRITE "/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/${CMAKE_INSTALL_MANIFEST}"
      "${CMAKE_INSTALL_MANIFEST_CONTENT}")

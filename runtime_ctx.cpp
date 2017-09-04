@@ -183,17 +183,17 @@ bool runtime_ctx::phrase::is_set(const exec_term_id_t id) const noexcept
 runtime_ctx::~runtime_ctx()
 {
 #ifdef USE_BANKS
-	while (banks.size())
-	{
-		delete banks.back();
-		banks.pop_back();
-	}
+        while (banks.size())
+        {
+                delete banks.back();
+                banks.pop_back();
+        }
 
-	while (reusableBanks.size())
-	{
-		delete reusableBanks.back();
-		reusableBanks.pop_back();
-	}
+        while (reusableBanks.size())
+        {
+                delete reusableBanks.back();
+                reusableBanks.pop_back();
+        }
 #endif
 
         while (allIterators.size())
@@ -206,6 +206,10 @@ runtime_ctx::~runtime_ctx()
         {
                 switch (ptr->type)
                 {
+                        case DocsSetIterators::Type::AppIterator:
+                                delete static_cast<DocsSetIterators::AppIterator *>(ptr);
+                                break;
+
                         case DocsSetIterators::Type::Filter:
                                 delete static_cast<DocsSetIterators::Filter *>(ptr);
                                 break;
@@ -224,16 +228,23 @@ runtime_ctx::~runtime_ctx()
 
                         case DocsSetIterators::Type::Disjunction:
                                 delete static_cast<DocsSetIterators::Disjunction *>(ptr);
-				break;
+                                break;
 
                         case DocsSetIterators::Type::DisjunctionAllPLI:
                                 delete static_cast<DocsSetIterators::DisjunctionAllPLI *>(ptr);
                                 break;
 
+                        case DocsSetIterators::Type::DisjunctionSome:
+                                delete static_cast<DocsSetIterators::DisjunctionSome *>(ptr);
+                                break;
+
+                        case DocsSetIterators::Type::VectorIDs:
+                                delete static_cast<DocsSetIterators::VectorIDs *>(ptr);
+                                break;
 
                         case DocsSetIterators::Type::Conjuction:
                                 delete static_cast<DocsSetIterators::Conjuction *>(ptr);
-				break;
+                                break;
 
                         case DocsSetIterators::Type::ConjuctionAllPLI:
                                 delete static_cast<DocsSetIterators::ConjuctionAllPLI *>(ptr);
@@ -399,26 +410,36 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
                         const auto n = I->size;
                         auto its = I->its;
 
-			memcpy(out->data + out->cnt, its, sizeof(its[0]) * n);
-			out->cnt += n;
+                        memcpy(out->data + out->cnt, its, sizeof(its[0]) * n);
+                        out->cnt += n;
+                }
+                break;
+
+                case DocsSetIterators::Type::DisjunctionSome:
+                {
+                        auto d = static_cast<DocsSetIterators::DisjunctionSome *>(it);
+
+                        d->update_matched_cnt();
+                        for (auto i{d->lead}; i; i = i->next)
+                                collect_doc_matching_terms(i->it, docID, out);
                 }
                 break;
 
                 case DocsSetIterators::Type::PostingsListIterator:
-			out->data[out->cnt++] = reinterpret_cast<Codecs::PostingsListIterator *>(it);
+                        out->data[out->cnt++] = reinterpret_cast<Codecs::PostingsListIterator *>(it);
                         break;
 
-		case DocsSetIterators::Type::Optional:
-			collect_doc_matching_terms(reinterpret_cast<DocsSetIterators::Optional *>(it)->main, docID, out);
-			break;
+                case DocsSetIterators::Type::Optional:
+                        collect_doc_matching_terms(reinterpret_cast<DocsSetIterators::Optional *>(it)->main, docID, out);
+                        break;
 
-		case DocsSetIterators::Type::OptionalOptPLI:
-			collect_doc_matching_terms(reinterpret_cast<DocsSetIterators::OptionalOptPLI *>(it)->main, docID, out);
-			break;
+                case DocsSetIterators::Type::OptionalOptPLI:
+                        collect_doc_matching_terms(reinterpret_cast<DocsSetIterators::OptionalOptPLI *>(it)->main, docID, out);
+                        break;
 
-		case DocsSetIterators::Type::OptionalAllPLI:
-			out->data[out->cnt++] = reinterpret_cast<DocsSetIterators::OptionalAllPLI *>(it)->main;
-			break;
+                case DocsSetIterators::Type::OptionalAllPLI:
+                        out->data[out->cnt++] = reinterpret_cast<DocsSetIterators::OptionalAllPLI *>(it)->main;
+                        break;
 
                 case DocsSetIterators::Type::Filter:
                         collect_doc_matching_terms(reinterpret_cast<DocsSetIterators::Filter *>(it)->req, docID, out);
@@ -435,14 +456,14 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
                 }
                 break;
 
-		case DocsSetIterators::Type::ConjuctionAllPLI:
+                case DocsSetIterators::Type::ConjuctionAllPLI:
                 {
                         const auto I = static_cast<const DocsSetIterators::ConjuctionAllPLI *>(it);
                         const auto n = I->size;
                         auto its = I->its;
 
-			memcpy(out->data + out->cnt, its, sizeof(its[0]) * n);
-			out->cnt += n;
+                        memcpy(out->data + out->cnt, its, sizeof(its[0]) * n);
+                        out->cnt += n;
                 }
                 break;
 
@@ -453,7 +474,7 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
                         const auto size = pq.size();
                         const auto heap = pq.data();
 
-			out->data[out->cnt++] = (Codecs::PostingsListIterator *)heap[0];
+                        out->data[out->cnt++] = (Codecs::PostingsListIterator *)heap[0];
                         if (size >= 3)
                         {
                                 auto &stack = I->istack;
@@ -468,7 +489,7 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
 
                                         if (auto it = heap[i]; it->current() == docID)
                                         {
-						out->data[out->cnt++] = (Codecs::PostingsListIterator *)it;
+                                                out->data[out->cnt++] = (Codecs::PostingsListIterator *)it;
 
                                                 const auto left = ((i + 1) << 1) - 1;
                                                 const auto right = left + 1;
@@ -480,7 +501,7 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
                                                 }
                                                 else if (left < size && (it = heap[left])->current() == docID)
                                                 {
-							out->data[out->cnt++] = (Codecs::PostingsListIterator *)it;
+                                                        out->data[out->cnt++] = (Codecs::PostingsListIterator *)it;
                                                 }
                                         }
                                 } while (stack.cnt);
@@ -548,30 +569,28 @@ void Trinity::runtime_ctx::prepare_match(Trinity::candidate_document *const doc)
 {
         auto &md = doc->matchedDocument;
         const auto did = doc->id;
-	auto dws = md.dws;
+        auto dws = md.dws;
 
         collectedIts.cnt = 0;
         collect_doc_matching_terms(rootIterator, doc->id, &collectedIts);
-	md.matchedTermsCnt = 0;
+        md.matchedTermsCnt = 0;
 
-	//SLog("collectedIts.size() = ", collectedIts.size(), "\n");
+        //SLog("collectedIts.size() = ", collectedIts.size(), "\n");
 
+        if (!dws)
+                dws = md.dws = new DocWordsSpace(idxsrc->max_indexed_position());
 
-	if (!dws)
-		dws = md.dws = new DocWordsSpace(idxsrc->max_indexed_position());
+        if (!doc->dwsInUse)
+                dws->reset();
+        else
+                doc->dwsInUse = false;
 
-	if (!doc->dwsInUse)
-		dws->reset();
-	else
-		doc->dwsInUse = false;
+        const auto cnt = collectedIts.cnt;
+        auto *const data = collectedIts.data;
 
-
-	const auto cnt = collectedIts.cnt;
-	auto *const data = collectedIts.data;
-
-	for (uint32_t i{0}; i != cnt; ++i)
-	{
-		auto *const it = data[i];
+        for (uint32_t i{0}; i != cnt; ++i)
+        {
+                auto *const it = data[i];
                 const auto tid = it->decoder()->exec_ctx_termid();
 
                 if (const auto *const qti = originalQueryTermCtx[tid]) // not in a NOT branch
@@ -587,7 +606,7 @@ void Trinity::runtime_ctx::prepare_match(Trinity::candidate_document *const doc)
 
                                 if (th->docID != did)
                                 {
-					// could have been materialized earlier for a phrase check
+                                        // could have been materialized earlier for a phrase check
                                         const auto docHits = it->freq;
 
                                         th->docID = did;
@@ -602,7 +621,7 @@ void Trinity::runtime_ctx::prepare_match(Trinity::candidate_document *const doc)
 void Trinity::runtime_ctx::forget_document(candidate_document *const doc)
 {
 #ifdef USE_BANKS
-	forget_document_inbank(doc);
+        forget_document_inbank(doc);
 #endif
 }
 
@@ -611,17 +630,17 @@ static constexpr bool traceBindings{false};
 Trinity::candidate_document *Trinity::runtime_ctx::lookup_document(const isrc_docid_t id)
 {
 #ifdef USE_BANKS
-	return lookup_document_inbank(id);
+        return lookup_document_inbank(id);
 #else
         auto &v = trackedDocuments[id & (sizeof_array(trackedDocuments) - 1)];
 
         if (traceBindings)
                 SLog("Lookup among ", v.size(), "\n");
 
-	auto data = v.data();
-	auto size = v.size();
+        auto data = v.data();
+        auto size = v.size();
 
-        for (uint32_t i{0}; i < size; )
+        for (uint32_t i{0}; i < size;)
         {
                 auto doc = data[i];
 
@@ -631,7 +650,7 @@ Trinity::candidate_document *Trinity::runtime_ctx::lookup_document(const isrc_do
                                 SLog("Letting go of document\n");
 
                         cds_release(doc);
-			data[i] = data[--size];
+                        data[i] = data[--size];
                         v.pop_back();
                 }
                 else if (doc->id == id)
@@ -657,32 +676,32 @@ void Trinity::runtime_ctx::unbind_document(candidate_document *&dt)
         auto d = dt;
 
         if (1 == d->bindCnt--)
-	{
+        {
                 forget_document(d);
 #ifdef USE_BANKS
-		cds_release(d);
+                cds_release(d);
 #endif
-	}
+        }
         else // Will defer release to lookup_document(). Will only release if more bound to that document
         {
                 cds_release(d);
         }
 
-	dt = nullptr;
+        dt = nullptr;
 }
 
 void Trinity::runtime_ctx::bind_document(candidate_document *&dt, candidate_document *const doc)
 {
         if (auto prev = dt)
         {
-		if (unlikely(prev == doc))
-		{
-			// binding to the same document
-			// can't forget_document() and track_document()
-			// because if prev->bindCnt == 1 now, it will forget i.e release
-			// and then will attempt to track it once it's been released
-			return;
-		}
+                if (unlikely(prev == doc))
+                {
+                        // binding to the same document
+                        // can't forget_document() and track_document()
+                        // because if prev->bindCnt == 1 now, it will forget i.e release
+                        // and then will attempt to track it once it's been released
+                        return;
+                }
 
                 if (1 == prev->bindCnt--)
                 {
@@ -696,7 +715,6 @@ void Trinity::runtime_ctx::bind_document(candidate_document *&dt, candidate_docu
                         cds_release(prev);
                 }
         }
-
 
         if (0 == doc->bindCnt++)
         {
@@ -723,7 +741,7 @@ Trinity::docstracker_bank *Trinity::runtime_ctx::new_bank(const Trinity::isrc_do
                 b->base = base;
                 b->setCnt = 0;
 
-		lastBank = b;
+                lastBank = b;
                 banks.push_back(b);
                 return b;
         }
@@ -746,37 +764,37 @@ Trinity::docstracker_bank *Trinity::runtime_ctx::new_bank(const Trinity::isrc_do
 
 void Trinity::runtime_ctx::forget_document_inbank(Trinity::candidate_document *const doc)
 {
-	const auto id = doc->id;
-	auto b = bank_for(id);
+        const auto id = doc->id;
+        auto b = bank_for(id);
 
-	if (1 == b->setCnt--)
-	{
-		if (lastBank == b)
-			lastBank = nullptr;
+        if (1 == b->setCnt--)
+        {
+                if (lastBank == b)
+                        lastBank = nullptr;
 
-		for (uint32_t i{0}; i != banks.size(); ++i)
-		{
-			if (banks[i] == b)
-			{
-				banks[i] = banks.back();
-				banks.pop_back();
-				break;
-			}
-		}
+                for (uint32_t i{0}; i != banks.size(); ++i)
+                {
+                        if (banks[i] == b)
+                        {
+                                banks[i] = banks.back();
+                                banks.pop_back();
+                                break;
+                        }
+                }
 
-		reusableBanks.push_back(b);
-		lastBank = nullptr;
-	}
-	else
-	{
-		const auto idx = id - b->base;
+                reusableBanks.push_back(b);
+                lastBank = nullptr;
+        }
+        else
+        {
+                const auto idx = id - b->base;
 
 #ifdef BANKS_USE_BM
                 b->bm[idx >> 6] &= ~(uint64_t(1) << (idx & (docstracker_bank::SIZE - 1)));
 #else
                 b->entries[idx].document = nullptr;
 #endif
-	}
+        }
 }
 
 Trinity::candidate_document *Trinity::runtime_ctx::lookup_document_inbank(const isrc_docid_t id)
@@ -796,14 +814,14 @@ Trinity::candidate_document *Trinity::runtime_ctx::lookup_document_inbank(const 
 
 void Trinity::runtime_ctx::track_document_inbank(Trinity::candidate_document *const d)
 {
-	const auto id = d->id;
-	auto b = bank_for(id);
-	const auto idx= id - b->base;
+        const auto id = d->id;
+        auto b = bank_for(id);
+        const auto idx = id - b->base;
 
 #ifdef BANKS_USE_BM
-	b->bm[idx >> 6] |= uint64_t(1) << (idx & (docstracker_bank::SIZE - 1));
+        b->bm[idx >> 6] |= uint64_t(1) << (idx & (docstracker_bank::SIZE - 1));
 #endif
-	b->entries[idx].document = d;
-	++(b->setCnt);
+        b->entries[idx].document = d;
+        ++(b->setCnt);
 }
 #endif

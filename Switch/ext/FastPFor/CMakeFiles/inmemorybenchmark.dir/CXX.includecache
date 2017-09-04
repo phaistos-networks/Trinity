@@ -6,7 +6,7 @@
 
 #IncludeRegexTransform: 
 
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/inmemorybenchmark.cpp
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/inmemorybenchmark.cpp
 getopt.h
 -
 crtdefs.h
@@ -24,21 +24,21 @@ stdio.h
 windows.h
 -
 common.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/common.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/common.h
 codecfactory.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/codecfactory.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/codecfactory.h
 maropuparser.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/maropuparser.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/maropuparser.h
 util.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/util.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/util.h
 ztimer.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/ztimer.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/ztimer.h
 cpubenchmark.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/cpubenchmark.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/cpubenchmark.h
 deltautil.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/deltautil.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/deltautil.h
 stringutil.h
-/home/system/Development/Projects/Trinity2/Switch/ext/FastPFor/src/stringutil.h
+/db/storage/Development/Projects/Trinity/Switch/ext/FastPFor/src/stringutil.h
 
 headers/VarIntG8IU.h
 emmintrin.h

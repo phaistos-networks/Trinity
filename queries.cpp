@@ -323,6 +323,10 @@ void PrintImpl(Buffer &b, const Trinity::ast_node &n)
                         b.append("<dummy>"_s8);
                         break;
 
+		case ast_node::Type::MatchSome:
+			b.append('[', n.match_some.min, '/', n.match_some.size, ']');
+			break;
+
                 case ast_node::Type::ConstFalse:
                         b.append("<FALSE>"_s8);
                         break;
@@ -1015,6 +1019,28 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx)
                         ++ctx.updates;
                 }
         }
+	else if (n->type == ast_node::Type::MatchSome)
+	{
+		for (uint32_t i{0}; i < n->match_some.size; )
+                {
+                        auto it = n->match_some.nodes[i];
+
+                        normalize(it, ctx);
+                        if (it->is_dummy() || it->is_const_false())
+			{
+				++ctx.updates;
+                                n->match_some.nodes[i] = n->match_some.nodes[--(n->match_some.size)];
+			}
+                        else
+                                ++i;
+                }
+
+		if (n->match_some.min > n->match_some.size)
+		{
+			++ctx.updates;
+			n->set_const_false();
+		}
+        }
         else if (n->type == ast_node::Type::UnaryOp)
         {
                 normalize(n->unaryop.expr, ctx);
@@ -1164,6 +1190,19 @@ static void assign_query_indices(ast_node *const n, query_assign_ctx &ctx)
                 assign_query_indices(n->unaryop.expr, ctx);
         else if (n->type == ast_node::Type::ConstTrueExpr)
                 assign_query_indices(n->expr, ctx);
+	else if (n->type == ast_node::Type::MatchSome)
+	{
+		// What do we do here? they shouldn't have an index at all
+		// those should be special purprose nodes. We need to assign them all to some special magic value
+		// index perhaps?
+		// TODO: does this make sense?
+		for (uint32_t i{0}; i != n->match_some.size; ++i)
+		{
+                        auto it = n->match_some.nodes[i];
+
+                        it->p->index = std::numeric_limits<uint16_t>::max();
+                }
+	}
         else if (n->type == ast_node::Type::BinOp)
         {
                 const auto lhs = n->binop.lhs, rhs = n->binop.rhs;
@@ -1337,6 +1376,14 @@ ast_node *ast_node::copy(simple_allocator *const a)
                 }
                 break;
 
+		case ast_node::Type::MatchSome:
+                        res->match_some.size = n->match_some.size;
+                        res->match_some.min = n->match_some.min;
+                        res->match_some.nodes = (ast_node **)a->Alloc(sizeof(ast_node *) * res->match_some.size);
+                        for (uint32_t i{0}; i != res->match_some.size; ++i)
+                                res->match_some.nodes[i] = n->match_some.nodes[i]->copy(a);
+                        break;
+
                 case ast_node::Type::ConstTrueExpr:
                         res->expr = n->expr->copy(a);
                         break;
@@ -1368,6 +1415,14 @@ ast_node *ast_node::shallow_copy(simple_allocator *const a)
                 case ast_node::Type::Token:
                 case ast_node::Type::Phrase:
                         res->p = n->p;
+                        break;
+
+		case ast_node::Type::MatchSome:
+                        res->match_some.size = n->match_some.size;
+                        res->match_some.min = n->match_some.min;
+                        res->match_some.nodes = (ast_node **)a->Alloc(sizeof(ast_node *) * res->match_some.size);
+                        for (uint32_t i{0}; i != res->match_some.size; ++i)
+                                res->match_some.nodes[i] = n->match_some.nodes[i]->shallow_copy(a);
                         break;
 
                 case ast_node::Type::ConstTrueExpr:
@@ -1517,6 +1572,10 @@ bool query::can_intersect() const
                                 stack.push_back(n->expr);
                                 break;
 
+			case ast_node::Type::MatchSome:
+				stack.insert(stack.end(), n->match_some.nodes, n->match_some.nodes + n->match_some.size);
+				break;
+
                         default:
                                 return false;
                 }
@@ -1614,6 +1673,9 @@ void ast_node::set_rewrite_range(const range_base<uint16_t, uint8_t> r)
                         expr->set_rewrite_range(r);
                         break;
 
+		case Type::MatchSome:
+			break;
+
                 default:
                         break;
         }
@@ -1640,6 +1702,9 @@ void ast_node::set_alltokens_flags(const uint16_t flags)
                 case Type::ConstTrueExpr:
                         expr->set_alltokens_flags(flags);
                         break;
+
+		case Type::MatchSome:
+			break;
 
                 default:
                         break;
@@ -1717,6 +1782,10 @@ std::vector<ast_node *> &query::nodes(ast_node *root, std::vector<ast_node *> *c
                                 case ast_node::Type::ConstTrueExpr:
                                         res->push_back(n->expr);
                                         break;
+
+				case ast_node::Type::MatchSome:
+					res->insert(res->end(), n->match_some.nodes, n->match_some.nodes + n->match_some.size);
+					break;
 
                                 default:
                                         break;
@@ -1799,6 +1868,10 @@ void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a)
                         case ast_node::Type::ConstTrueExpr:
                                 stack.push_back(n->expr);
                                 break;
+
+			case ast_node::Type::MatchSome:
+				stack.insert(stack.end(), n->match_some.nodes, n->match_some.nodes + n->match_some.size);
+				break;
 
                         case ast_node::Type::Dummy:
                         case ast_node::Type::ConstFalse:

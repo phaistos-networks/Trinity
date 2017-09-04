@@ -12,6 +12,7 @@ namespace Trinity
                 enum class Type : uint8_t
                 {
                         PostingsListIterator = 0,
+			DisjunctionSome,
                         Filter,
                         Optional,
                         OptionalOptPLI,
@@ -21,6 +22,8 @@ namespace Trinity
                         Phrase,
                         Conjuction,
                         ConjuctionAllPLI,
+			AppIterator,
+			VectorIDs,
                         Dummy,
                 };
 
@@ -82,5 +85,32 @@ namespace Trinity
                         // 	while (id < max) { consider(id); id = next(); }
                         // }
                 };
+
+
+		class IndexSource;
+
+		// If you are going to provide your own application iterator, you will need
+		// to subclass AppIterator. It's main purpose is to provide a virtual destructor, which
+		// is required for docsetsIterators destruction, and some other facilities specific to those iterators
+		//
+		// They are produced by factory functions and are trackedby the execution engine.
+		// That is, ast_node nodes of Type::app_ids_set (or whaever) will embed a pointer to a factory class
+		// which will be asked to provide an AppIterator instance (which would be passed the context embedded in
+		// the ast_node).
+		struct AppIterator
+			: public Iterator
+		{
+			IndexSource *const isrc;
+
+                        AppIterator(IndexSource *const src)
+                            : Iterator(Type::AppIterator), isrc{src}
+                        {
+                        }
+
+                        virtual ~AppIterator()
+			{
+
+			}
+		};
         }
 }
