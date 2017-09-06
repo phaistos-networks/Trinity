@@ -836,11 +836,11 @@ Trinity::Codecs::Encoder *Trinity::Codecs::Lucene::IndexSession::new_encoder()
         return new Trinity::Codecs::Lucene::Encoder(this);
 }
 
-Trinity::Codecs::Decoder *Trinity::Codecs::Lucene::AccessProxy::new_decoder(const exec_term_id_t execCtxTermID, const term_index_ctx &tctx)
+Trinity::Codecs::Decoder *Trinity::Codecs::Lucene::AccessProxy::new_decoder(const term_index_ctx &tctx)
 {
         auto d = std::make_unique<Trinity::Codecs::Lucene::Decoder>();
 
-        d->init(execCtxTermID, tctx, this);
+        d->init(tctx, this);
         return d.release();
 }
 
@@ -1061,12 +1061,12 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(PostingsListIterator 
 
         return idx;
 #else
-	// branchless binary search
-	// See: http://databasearchitects.blogspot.gr/2015/09/trying-to-speed-up-binary-search.html
-	// Need to verify this, but looks fine so far
-	//
-	// This compiles down to (modulo loading instructions for it->skipListIdx)
-	/*
+        // branchless binary search
+        // See: http://databasearchitects.blogspot.gr/2015/09/trying-to-speed-up-binary-search.html
+        // Need to verify this, but looks fine so far
+        //
+        // This compiles down to (modulo loading instructions for it->skipListIdx)
+        /*
  	 *
 	.L4:
 	  movl %esi, %edi
@@ -1079,7 +1079,7 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(PostingsListIterator 
 	  jne .L4
 	*
 	*/
-	// which is pretty good - no branches, and few instructions	
+        // which is pretty good - no branches, and few instructions
         const auto idx{it->skipListIdx};
         const auto *data = skiplist.data + idx;
         uint32_t n = skiplist.size - idx;
@@ -1092,7 +1092,7 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(PostingsListIterator 
                 n -= h;
         }
 
-	return target > data->lastDocID ? data - skiplist.data  : UINT32_MAX;
+        return target > data->lastDocID ? data - skiplist.data : UINT32_MAX;
 #endif
 }
 
@@ -1222,8 +1222,9 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(PostingsListIterator 
         }
 }
 
-void Trinity::Codecs::Lucene::Decoder::materialize_hits(PostingsListIterator *it, const exec_term_id_t termID, DocWordsSpace *const __restrict__ dws, term_hit *const __restrict__ out)
+void Trinity::Codecs::Lucene::Decoder::materialize_hits(PostingsListIterator *it, DocWordsSpace *const __restrict__ dws, term_hit *const __restrict__ out)
 {
+        const auto termID{execCtxTermID};
         auto freq = it->docFreqs[it->docsIndex];
         auto outPtr = out;
 
@@ -1352,7 +1353,7 @@ void Trinity::Codecs::Lucene::Decoder::init_skiplist(const uint16_t size)
         }
 }
 
-void Trinity::Codecs::Lucene::Decoder::init(const exec_term_id_t tid, const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access)
+void Trinity::Codecs::Lucene::Decoder::init(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access)
 {
         auto ap = static_cast<Trinity::Codecs::Lucene::AccessProxy *>(access);
         const auto indexPtr = ap->indexPtr;
@@ -1360,7 +1361,6 @@ void Trinity::Codecs::Lucene::Decoder::init(const exec_term_id_t tid, const term
         const auto chunkSize = tctx.indexChunk.size();
         auto p = ptr;
 
-        execCtxTermID = tid;
         indexTermCtx = tctx;
         postingListBase = ptr;
         chunkEnd = ptr + chunkSize;

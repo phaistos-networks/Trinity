@@ -91,7 +91,7 @@ namespace Trinity
 
 		// For performance reasons, if you are going to perform any kind of translation in your translate_docid()
 		// then you should also implement and override this method, and return true, so that the exec.engine
-		// will know if it need to invoke the virtual method or not. This is for performance reasons.
+		// will know if it needs to invoke the virtual method translate_docid() or not. This is for performance reasons.
 		// Also, if we know that no translation is required, we can use masked_documents_registry or some other
 		// datastructure that's optimised for in-order lookups, otherwise use e.g a SparseFixedBitSet which is
 		// optimised for random access
@@ -110,7 +110,7 @@ namespace Trinity
                 // factory method
 		// see RECIPES.md for when you should perhaps make use of the passed `term`
 		// See Codecs::Decoder::init() for execCtxTermID
-                virtual Trinity::Codecs::Decoder *new_postings_decoder(const exec_term_id_t execCtxTermID, const str8_t term, const term_index_ctx ctx) = 0;
+                virtual Trinity::Codecs::Decoder *new_postings_decoder(const str8_t term, const term_index_ctx ctx) = 0;
 
                 // Override if you have any masked documents
                 virtual updated_documents masked_documents()
@@ -170,7 +170,7 @@ namespace Trinity
                 }
 
                 // Currently, term is not really useful, but see RECIPES.md for how it could really help with some specific designs
-                Trinity::Codecs::Decoder *new_postings_decoder(const exec_term_id_t execCtxTermID, const str8_t term, const term_index_ctx) override final
+                Trinity::Codecs::Decoder *new_postings_decoder(const str8_t term, const term_index_ctx) override final
                 {
                         return nullptr;
                 }

@@ -28,3 +28,13 @@ void Trinity::Codecs::IndexSession::persist_terms(std::vector<std::pair<str8_t, 
         if (Utilities::to_file(index.data(), index.size(), Buffer{}.append(basePath, "/terms.idx"_s32).c_str()) == -1)
                 throw Switch::system_error("Failed to persist terms.idx");
 }
+
+double Trinity::Codecs::PostingsListIterator::score()
+{
+	[[maybe_unused]] auto *const rctx = dec->rctx; 
+	// whatever we need here
+	// e.g use rctx->similarityProxy etc
+	// we will initialize scorer to a subclass of Scorer or whatever we will call it
+	// e.g return rctx->scorer->score(curDocument.id, freq);
+	return 0;
+}

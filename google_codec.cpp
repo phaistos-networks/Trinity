@@ -593,9 +593,10 @@ void Trinity::Codecs::Google::Decoder::skip_block_doc(PostingsListIterator *cons
         // the document attributes with materialize_attributes()
 }
 
-void Trinity::Codecs::Google::Decoder::materialize_hits(PostingsListIterator *const it, const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out)
+void Trinity::Codecs::Google::Decoder::materialize_hits(PostingsListIterator *const it, DocWordsSpace *dwspace, term_hit *out)
 {
         static constexpr bool trace{false};
+	const auto termID{execCtxTermID};
         const auto freq = it->freqs[it->blockDocIdx];
         tokenpos_t pos{0};
         uint8_t curPayloadSize{0};
@@ -1046,7 +1047,7 @@ void Trinity::Codecs::Google::Decoder::advance(PostingsListIterator *const it, c
         it->blockDocIdx = blockDocIdx;
 }
 
-void Trinity::Codecs::Google::Decoder::init(const exec_term_id_t tid, const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *proxy)
+void Trinity::Codecs::Google::Decoder::init(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *proxy)
 {
         static constexpr bool trace{false};
         auto access = static_cast<Trinity::Codecs::Google::AccessProxy *>(proxy);
@@ -1054,7 +1055,6 @@ void Trinity::Codecs::Google::Decoder::init(const exec_term_id_t tid, const term
         auto ptr = indexPtr + tctx.indexChunk.offset;
         const auto chunkSize = tctx.indexChunk.size();
 
-        execCtxTermID = tid;
         indexTermCtx = tctx;
         chunkEnd = ptr + chunkSize;
         base = ptr;
@@ -1101,11 +1101,11 @@ void Trinity::Codecs::Google::Decoder::init(const exec_term_id_t tid, const term
         }
 }
 
-Trinity::Codecs::Decoder *Trinity::Codecs::Google::AccessProxy::new_decoder(const exec_term_id_t execCtxTermID, const term_index_ctx &tctx)
+Trinity::Codecs::Decoder *Trinity::Codecs::Google::AccessProxy::new_decoder(const term_index_ctx &tctx)
 {
         auto d = std::make_unique<Trinity::Codecs::Google::Decoder>();
 
-        d->init(execCtxTermID, tctx, this);
+        d->init(tctx, this);
         return d.release();
 }
 

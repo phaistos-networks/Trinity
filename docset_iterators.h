@@ -19,11 +19,6 @@ namespace Trinity
 
         namespace DocsSetIterators
         {
-
-#if 0
-                uint16_t reset_depth(Iterator *const it, const uint16_t d);
-#endif
-
                 uint64_t cost(const Iterator *);
 
                 // This is Lucene's MinShouldMatchSumScorer.java port
@@ -43,12 +38,12 @@ namespace Trinity
                 //
                 // Finding the next match comes down to first setting the desired docID to the
                 // least entry in head, and then advancing tail until there's a match
-		//
-		// This is suitable for when you need to match between 2 and the total number of iterators
-		//
-		// It's not that fast though -- over 35% of run-time is spent manipulating head and tail priority queues.
-		// push/pop is fairly expensive, and unless we can figure out a way for this to work with sentinels or some other scheme, it's going to
-		// be faster to use a much simpler design that doesn't take into account costs etc, as long as it doesn't need to hammer those queues.	
+                //
+                // This is suitable for when you need to match between 2 and the total number of iterators
+                //
+                // It's not that fast though -- over 35% of run-time is spent manipulating head and tail priority queues.
+                // push/pop is fairly expensive, and unless we can figure out a way for this to work with sentinels or some other scheme, it's going to
+                // be faster to use a much simpler design that doesn't take into account costs etc, as long as it doesn't need to hammer those queues.
                 class DisjunctionSome final
                     : public Iterator
                 {
@@ -63,7 +58,7 @@ namespace Trinity
                                 it_tracker *next;
                         } * lead{nullptr};
 
-			public:
+                      public:
                         const uint16_t matchThreshold;
 
                       private:
@@ -105,17 +100,15 @@ namespace Trinity
 
                         isrc_docid_t next_impl();
 
-#if 0
-			double score()
+			double score() override final
 			{
 				double sum{0};
 
 				update_matched_cnt();
-				for (auto it{lead}; it; it != it->next)
-					sum += it->score();
-				return sum;
+                                for (auto it{lead}; it; it = it->next)
+                                        sum += it->it->score();
+                                return sum;
 			}
-#endif
 
                         auto matched_cnt()
                         {
@@ -178,6 +171,11 @@ namespace Trinity
                         isrc_docid_t next() override final;
 
                         isrc_docid_t advance(const isrc_docid_t target) override final;
+
+			double score() override final
+			{
+				return req->score();
+			}
                 };
 
                 // This is how we can implement constrrue_expr()
@@ -200,59 +198,15 @@ namespace Trinity
 
                         inline isrc_docid_t next() override final
                         {
-                                const auto id = main->next();
-
-                                opt->advance(id); // It's OK if we drain it
-                                return curDocument.id = id;
+				return curDocument.id = main->next();
                         }
 
                         inline isrc_docid_t advance(const isrc_docid_t target) override final
                         {
-                                const auto id = main->advance(target);
-
-                                opt->advance(id);
-                                return curDocument.id = id;
-                        }
-                };
-
-                struct OptionalOptPLI final
-                    : public Iterator
-                {
-                        friend uint16_t reset_depth(Iterator *, const uint16_t);
-
-                      public:
-                        Iterator *const main;
-                        Codecs::PostingsListIterator *const opt;
-
-                      public:
-                        OptionalOptPLI(Iterator *const m, Iterator *const o)
-                            : Iterator{Type::OptionalOptPLI}, main{m}, opt{(Codecs::PostingsListIterator *)o}
-                        {
+				return curDocument.id = main->advance(target);
                         }
 
-                        isrc_docid_t next() override final;
-
-                        isrc_docid_t advance(const isrc_docid_t) override final;
-                };
-
-                struct OptionalAllPLI final
-                    : public Iterator
-                {
-                        friend uint16_t reset_depth(Iterator *, const uint16_t);
-
-                      public:
-                        Codecs::PostingsListIterator *const main;
-                        Codecs::PostingsListIterator *const opt;
-
-                      public:
-                        OptionalAllPLI(Iterator *const m, Iterator *const o)
-                            : Iterator{Type::OptionalAllPLI}, main{(Codecs::PostingsListIterator *)m}, opt{(Codecs::PostingsListIterator *)o}
-                        {
-                        }
-
-                        isrc_docid_t next() override final;
-
-                        isrc_docid_t advance(const isrc_docid_t) override final;
+			double score() override final;
                 };
 
                 struct idx_stack final
@@ -302,6 +256,17 @@ namespace Trinity
                         isrc_docid_t next() override final;
 
                         isrc_docid_t advance(const isrc_docid_t target) override final;
+
+			double score() override final
+			{
+				double sum{0};
+
+                                pq.for_each_top([&sum](const auto it) { sum += it->score(); },
+                                                [](const auto a, const auto b) noexcept {
+                                                        return a->current() == b->current();
+                                                });
+                                return sum;
+                        }
                 };
 
                 // Will only match one, and will ignore the rest
@@ -340,6 +305,17 @@ namespace Trinity
                         isrc_docid_t next() override final;
 
                         isrc_docid_t advance(const isrc_docid_t target) override final;
+
+			double score() override final
+			{
+				double sum{0};
+
+                                pq.for_each_top([&sum](const auto it) { sum += it->score(); },
+                                                [](const auto a, const auto b) noexcept {
+                                                        return a->current() == b->current();
+                                                });
+                                return sum;
+                        }
                 };
 
                 struct ConjuctionAllPLI final
@@ -370,6 +346,19 @@ namespace Trinity
                         isrc_docid_t advance(const isrc_docid_t target) override final;
 
                         isrc_docid_t next() override final;
+
+			double score() override final
+			{
+#if  0 // TODO:
+				double res{0};
+
+				for (uint16_t i{0}; i != size; ++i)
+					res += its[i]->score();
+				return res;
+#else
+				return 0;
+#endif
+			}
                 };
 
                 // If we can, and we can, identify the set of leaders that are required like we do now for leadersAndSet
@@ -404,6 +393,15 @@ namespace Trinity
                         isrc_docid_t advance(const isrc_docid_t target) override final;
 
                         isrc_docid_t next() override final;
+
+			double score() override final
+			{
+				double res{0};
+
+				for (uint16_t i{0}; i != size; ++i)
+					res += its[i]->score();
+				return res;
+			}
                 };
 
                 // No longer inherring from Conjuction; some optimization opportunities open up when not doing so
@@ -419,7 +417,9 @@ namespace Trinity
                       public:
                         Codecs::PostingsListIterator **const its;
                         uint16_t size;
+			const uint16_t maxMatchCnt;
                         candidate_document *boundDocument{nullptr};
+			uint16_t matchCnt{0};
 
                       private:
                         runtime_ctx *const rctxRef;
@@ -429,8 +429,8 @@ namespace Trinity
                         isrc_docid_t lastUncofirmedDID{DocIDsEND};
 
                       public:
-                        Phrase(runtime_ctx *r, Codecs::PostingsListIterator **iterators, const uint16_t cnt)
-                            : Iterator{Type::Phrase}, its((Codecs::PostingsListIterator **)malloc(sizeof(Codecs::PostingsListIterator *) * cnt)), size{cnt}, rctxRef{r}
+                        Phrase(runtime_ctx *r, Codecs::PostingsListIterator **iterators, const uint16_t cnt, const bool trackCnt)
+                            : Iterator{Type::Phrase}, its((Codecs::PostingsListIterator **)malloc(sizeof(Codecs::PostingsListIterator *) * cnt)), size{cnt}, maxMatchCnt{ uint16_t(trackCnt ? std::numeric_limits<uint16_t>::max() : 1) }, rctxRef{r}
                         {
                                 require(cnt);
                                 memcpy(its, iterators, sizeof(iterators[0]) * cnt);
@@ -444,47 +444,14 @@ namespace Trinity
                         isrc_docid_t advance(const isrc_docid_t target) override final;
 
                         isrc_docid_t next() override final;
+
+			double score() override final
+			{
+				// See ExactPhraseScorer.java
+				return 0;
+			}
                 };
 
-#if 0
-// This is iportant, so that we can wrap a Phrase into a TwoPhaiseIterator and
-// when next() returns, we 'll get to check the phrasee itself 
-// e.g a phrase being a subclass of a Conjuction, holding Codecs::Decoder 
-struct TwoPhaseIterator final
-	: public Iterator
-{
-      private:
-        Iterator *const approx;
-
-      private:
-        isrc_docid_t next_impl(isrc_docid_t id)
-        {
-		for (;;id = approx->next())
-                {
-                        if (id == DocIDsEND)
-                                return curDocument.id = DocIDsEND;
-                        else if (iterator->matches())
-                                return curDocument.id = id;
-                }
-        }
-
-      public:
-        TwoPhaseIterator(Iterator *const a)
-            : approx{a}
-        {
-        }
-
-        isrc_docid_t advance(const isrc_docid_t id) override final
-        {
-                return next_impl(approx->advance(id));
-        }
-
-        isrc_docid_t next() override final
-        {
-                return next_impl(approx->next());
-        }
-};
-#endif
 
                 struct VectorIDs final
                     : public Iterator

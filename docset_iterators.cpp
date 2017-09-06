@@ -3,6 +3,11 @@
 #include "runtime_ctx.h"
 
 // see reorder_execnode_impl()
+uint64_t Trinity::DocsSetIterators::Iterator::cost()
+{
+	return Trinity::DocsSetIterators::cost(this);
+}
+
 uint64_t Trinity::DocsSetIterators::cost(const Iterator *it)
 {
         switch (it->type)
@@ -14,47 +19,21 @@ uint64_t Trinity::DocsSetIterators::cost(const Iterator *it)
                         return static_cast<const DisjunctionSome *>(it)->cost_;
 
                 case Type::Filter:
-                {
-                        const auto self = static_cast<const Filter *>(it);
-
-                        return cost(self->req);
-                }
-                break;
+                        return cost(static_cast<const Filter *>(it)->req);
 
                 case Type::VectorIDs:
                         return static_cast<const VectorIDs *>(it)->ids.size();
 
                 case Type::Optional:
-                {
-                        [[maybe_unused]] const auto self = static_cast<const Optional *>(it);
-
-                        return UINT64_MAX - 1;
-                }
-                break;
-
-                case Type::OptionalOptPLI:
-                {
-                        [[maybe_unused]] const auto self = static_cast<const OptionalOptPLI *>(it);
-
-                        return UINT64_MAX - 1;
-                }
-                break;
-
-                case Type::OptionalAllPLI:
-                {
-                        [[maybe_unused]] const auto self = static_cast<const OptionalOptPLI *>(it);
-
-                        return UINT64_MAX - 1;
-                }
-                break;
+			return cost(static_cast<const Optional *>(it)->main);
 
                 case Type::Disjunction:
                 {
                         const auto self = static_cast<const Disjunction *>(it);
                         uint64_t sum{0};
 
-                        for (uint32_t i{0}; i != self->pq.size(); ++i)
-                                sum += cost(self->pq.data()[i]);
+			for (const auto it : self->pq)
+                                sum += cost(it);
                         return sum;
                 }
                 break;
@@ -64,20 +43,17 @@ uint64_t Trinity::DocsSetIterators::cost(const Iterator *it)
                         const auto self = static_cast<const DisjunctionAllPLI *>(it);
                         uint64_t sum{0};
 
-                        for (uint32_t i{0}; i != self->pq.size(); ++i)
-                                sum += cost(self->pq.data()[i]);
+			for (const auto it : self->pq)
+                                sum += cost(it);
                         return sum;
                 }
                 break;
 
                 case Type::Conjuction:
-                case Type::ConjuctionAllPLI:
-                {
-                        const auto self = static_cast<const Conjuction *>(it);
+                        return cost(static_cast<const Conjuction *>(it)->its[0]);
 
-                        return cost(self->its[0]);
-                }
-                break;
+                case Type::ConjuctionAllPLI:
+                        return cost(static_cast<const ConjuctionAllPLI *>(it)->its[0]);
 
                 case Type::Phrase:
                 {
@@ -89,81 +65,12 @@ uint64_t Trinity::DocsSetIterators::cost(const Iterator *it)
                 break;
 
                 case Type::PostingsListIterator:
-                {
-                        const auto self = static_cast<const Codecs::PostingsListIterator *>(it);
-                        const auto dec = self->decoder();
-
-                        return dec->indexTermCtx.documents;
-                }
-                break;
+                        return static_cast<const Codecs::PostingsListIterator *>(it)->decoder()->indexTermCtx.documents;
 
                 case Type::Dummy:
                         return 0;
         }
 }
-
-#if 0
-uint16_t Trinity::DocsSetIterators::reset_depth(Iterator *const it, const uint16_t d)
-{
-        switch (it->type)
-        {
-                case Type::Filter:
-                {
-                        auto self = static_cast<Filter *>(it);
-
-                        self->depth = d;
-                        reset_depth(self->filter, std::numeric_limits<uint16_t>::max() / 2);
-                        return reset_depth(self->req, d + 1);
-                }
-
-                case Type::Optional:
-                {
-                        auto self = static_cast<Optional *>(it);
-
-                        self->depth = d;
-                        reset_depth(self->opt, std::numeric_limits<uint16_t>::max() / 2);
-                        return reset_depth(self->main, d + 1);
-                }
-
-                case Type::Disjunction:
-                case Type::DisjunctionAllPLI:
-                {
-                        auto self = static_cast<Disjunction *>(it);
-                        uint16_t max{0};
-
-                        self->depth = d;
-                        for (uint32_t i{0}; i != self->pq.size(); ++i)
-                                max = std::max(max, reset_depth(self->pq.data()[i], d + 1));
-                        return max;
-                }
-
-                case Type::Conjuction:
-                {
-                        auto self = static_cast<Conjuction *>(it);
-                        uint16_t max{0};
-
-                        self->depth = d;
-                        for (uint32_t i{0}; i != self->size; ++i)
-                                max = std::max(max, reset_depth(self->its[i], d + 1));
-                        return max;
-                }
-
-                case Type::ConjuctionAllPLI:
-                {
-                        auto self = static_cast<ConjuctionAllPLI *>(it);
-                        uint16_t max{0};
-
-                        self->depth = d;
-                        for (uint32_t i{0}; i != self->size; ++i)
-                                max = std::max(max, reset_depth(self->its[i], d + 1));
-                        return max;
-                }
-
-                default:
-                        return it->depth = d;
-        }
-}
-#endif
 
 bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
 {
@@ -179,8 +86,6 @@ bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
         const auto firstTermFreq = th->freq;
         const auto firstTermHits = th->all;
 
-        //require(did == static_cast<const Codecs::PostingsListIterator *>(its[0])->current());
-
         // On one hand, we care for documents where we have CAPTURED terms, and so we only need to bind
         // this phrase to a document if all terms match.
         // On the other hand though, we don't want to materialize a term's hits more than once.
@@ -191,6 +96,7 @@ bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
         // materialized hits for those terms? Because this phrase is no longer bound to document 10 (assuming no other iterators are bound to it either), and
         // another iterator advances to document 10 and needs to access the same terms, it means we 'll need to dematerialize them again.
         // Maybe this is not a big deal though?
+        matchCnt = 0;
         for (uint16_t i{1}; i != n; ++i)
         {
                 auto it = its[i];
@@ -217,8 +123,13 @@ bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
                                         if (trace)
                                                 SLog("MATCHED\n");
 
-                                        rctx.cds_release(doc);
-                                        return true;
+                                        if (++matchCnt == maxMatchCnt)
+                                        {
+                                                rctx.cds_release(doc);
+                                                return true;
+                                        }
+                                        else
+                                                break;
                                 }
 
                                 const auto termID = static_cast<const Codecs::PostingsListIterator *>(its[k])->decoder()->exec_ctx_termid();
@@ -233,7 +144,7 @@ bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
         }
 
         rctx.cds_release(doc);
-        return false;
+        return matchCnt;
 }
 
 Trinity::isrc_docid_t Trinity::DocsSetIterators::Phrase::next_impl(isrc_docid_t id)
@@ -872,37 +783,6 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Filter::advance(const isrc_doci
         }
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::OptionalOptPLI::next()
-{
-        const auto id = main->next();
-
-        opt->advance(id); // It's OK if we drain it
-        return curDocument.id = id;
-}
-
-Trinity::isrc_docid_t Trinity::DocsSetIterators::OptionalOptPLI::advance(const isrc_docid_t target)
-{
-        const auto id = main->advance(target);
-
-        opt->advance(id);
-        return curDocument.id = id;
-}
-
-Trinity::isrc_docid_t Trinity::DocsSetIterators::OptionalAllPLI::next()
-{
-        const auto id = main->next();
-
-        opt->advance(id); // It's OK if we drain it
-        return curDocument.id = id;
-}
-
-Trinity::isrc_docid_t Trinity::DocsSetIterators::OptionalAllPLI::advance(const isrc_docid_t target)
-{
-        const auto id = main->advance(target);
-
-        opt->advance(id);
-        return curDocument.id = id;
-}
 
 void Trinity::DocsSetIterators::DisjunctionSome::update_current()
 {
@@ -946,27 +826,18 @@ Trinity::DocsSetIterators::DisjunctionSome::DisjunctionSome(Trinity::DocsSetIter
         expect(minMatch <= cnt);
         expect(minMatch);
 
-        trackersStorage = (it_tracker *)malloc(sizeof(it_tracker) * cnt);
+        trackersStorage = (it_tracker *)malloc(sizeof(it_tracker) * (cnt + 1));
 
         for (uint32_t i{0}; i != cnt; ++i)
         {
                 auto t = trackersStorage + i;
 
                 t->it = iterators[i];
-                t->cost = cost(t->it);
+                t->cost = t->it->cost();
                 add_lead(t);
         }
 
         {
-                // Idea: a query c1,c2,..cn with minMatch = m
-                // can be rewritten to:
-                // (c1 AND (c2 ..cn | msm = n -1)) OR (!c1 AND (c2 .. cn|msm = m))
-                // if we assume the iterators are provided in ascending cost, then the cost
-                // for the first part is the cost of c1 (because the cost of a conjuction is the cost of the least costly clause)
-                // the cost of the second part is the cost of finding m matches among the c2 .. cn remaining queries
-                // if we recurse infinitely, we find out what the cost of a msm query is the sum of the costs of all (cnt - minMatch + 1)
-                //
-                // we can just sort that and be done with it anyway, no need to use a pq, but let's use it anyway
                 Switch::priority_queue<uint64_t, std::greater<uint64_t>> pq{uint32_t(cnt - minMatch + 1)};
                 uint64_t evicted;
 
@@ -974,8 +845,8 @@ Trinity::DocsSetIterators::DisjunctionSome::DisjunctionSome(Trinity::DocsSetIter
                         pq.try_push(it->cost, evicted);
 
                 cost_ = 0;
-                for (uint32_t i{0}; i != pq.size(); ++i)
-                        cost_ += pq.data()[i];
+		for (const auto it : pq)
+                        cost_ += it;
         }
 }
 
@@ -1050,3 +921,18 @@ void Trinity::DocsSetIterators::DisjunctionSome::update_matched_cnt()
 		advance_tail(tail.data()[i]);
 	tail.clear();
 }
+
+double Trinity::DocsSetIterators::Optional::score()
+{
+        auto score = main->score();
+        const auto id = main->current();
+        auto optId = opt->current();
+
+        if (optId < id)
+                optId = opt->advance(id);
+        if (optId == id)
+                score += opt->score();
+
+        return score;
+}
+

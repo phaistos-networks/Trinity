@@ -149,15 +149,29 @@ namespace Trinity
         {
                 const query_index_terms **queryIndicesTerms;
 
-                // You are no longer expected to return a value indicating wether you want to continue or abort
-                // instead, you can just throw an aborted_search_exception exception. The execution engine will handle it.
-                //
-                // e.g throw Trinity::aborted_search_exception{};
-                //
-                // This is for performance and simplicity reasons; the execution engine no longer needs to check for consider() return value in a loop
+
+		// There are 3 different consider() implementations, and which is invoked depends on the
+		// ExecFlags passed to Trinity::exec_query().
+		//
+		// The default execution mode will invoke this method
+		// Your subclass should override whichever method(s) of those 3 are required based on which flags you use.
                 [[gnu::always_inline]] virtual void consider(const matched_document &match)
                 {
                 }
+
+		// If the Documents Only mode is selected, this will be invoked, passed
+		// the global document ID
+		virtual void consider(const docid_t id)
+		{
+		}
+
+
+		// If the Accumulated Score Scheme mode is selected instead, this
+		// will be invoked; the global document ID and its scaore will passed to the call
+		virtual void consider(const docid_t id, const double score)
+		{
+
+		}
 
                 // Invoked before the query execution begins
                 virtual void prepare(const query_index_terms **queryIndicesTerms_)

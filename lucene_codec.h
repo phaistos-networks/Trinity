@@ -144,7 +144,7 @@ namespace Trinity
                                         return "LUCENE"_s8;
                                 }
 
-                                Trinity::Codecs::Decoder *new_decoder(const exec_term_id_t execCtxTermID, const term_index_ctx &tctx) override final;
+                                Trinity::Codecs::Decoder *new_decoder(const term_index_ctx &tctx) override final;
                         };
 
                         class Decoder;
@@ -173,7 +173,7 @@ namespace Trinity
 
                                 inline isrc_docid_t advance(const isrc_docid_t) override final;
 
-                                inline void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) override final;
+                                inline void materialize_hits(DocWordsSpace *dwspace, term_hit *out) override final;
 
                                 PostingsListIterator(Decoder *const d)
                                     : Trinity::Codecs::PostingsListIterator{reinterpret_cast<Trinity::Codecs::Decoder *>(d)}
@@ -204,7 +204,7 @@ namespace Trinity
 
                                 void advance(PostingsListIterator *, const isrc_docid_t);
 
-                                void materialize_hits(PostingsListIterator *, const exec_term_id_t, DocWordsSpace *, term_hit *);
+                                void materialize_hits(PostingsListIterator *, DocWordsSpace *, term_hit *);
 
                               private:
                                 const uint8_t *chunkEnd;
@@ -255,7 +255,7 @@ namespace Trinity
                                 void skip_hits(PostingsListIterator *, const uint32_t);
 
                               public:
-                                void init(const exec_term_id_t, const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access) override final;
+                                void init(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access) override final;
 
                                 Trinity::Codecs::PostingsListIterator *new_iterator() override final;
                         };
@@ -272,9 +272,9 @@ namespace Trinity
                                 return curDocument.id;
                         }
 
-                        void PostingsListIterator::materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out)
+                        void PostingsListIterator::materialize_hits(DocWordsSpace *dwspace, term_hit *out)
                         {
-                                static_cast<Codecs::Lucene::Decoder *>(dec)->materialize_hits(this, termID, dwspace, out);
+                                static_cast<Codecs::Lucene::Decoder *>(dec)->materialize_hits(this, dwspace, out);
                         }
                 }
         }

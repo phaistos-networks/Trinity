@@ -166,7 +166,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                 }
                                 else
                                 {
-                                        std::unique_ptr<Trinity::Codecs::Decoder> dec(c.ap->new_decoder(0 /* dummy */, selected.second));
+                                        std::unique_ptr<Trinity::Codecs::Decoder> dec(c.ap->new_decoder(selected.second));
 					std::unique_ptr<Trinity::Codecs::PostingsListIterator> it(dec->new_iterator());
 
 					it->next();
@@ -194,7 +194,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                         }
 
                                                         enc->begin_document(docID);
-                                                        it->materialize_hits(1 /* dummy */, &dws /* dummy */, termHitsStorage);
+                                                        it->materialize_hits(&dws /* dummy */, termHitsStorage);
 
                                                         for (uint32_t i{0}; i != freq; ++i)
                                                         {
@@ -272,7 +272,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                         {
                                                 // see earlier comments for why this is possible
                                                 auto ap = all[idx].candidate.ap;
-                                                auto dec = ap->new_decoder(0 /* dummy */, all[idx].candidate.terms->cur().second);
+                                                auto dec = ap->new_decoder(all[idx].candidate.terms->cur().second);
 						auto it = dec->new_iterator();
                                                 auto reg = scanner_registry_for(all[idx].idx).release();
 
@@ -333,7 +333,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                         }
 
                                                         enc->begin_document(lowestDID);
-                                                        it->materialize_hits(1 /* dummy */, &dws /* dummy */, termHitsStorage);
+                                                        it->materialize_hits(&dws /* dummy */, termHitsStorage);
 
                                                         for (uint32_t i{0}; i != freq; ++i)
                                                         {

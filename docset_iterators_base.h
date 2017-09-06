@@ -2,7 +2,7 @@
 // include just this file, and not docset_iterators.h, which "pollutes" Trinity namespace with a forward decl of runtime_ctx
 // in case some application needs it and would result in amiguous reference errors
 #pragma once
-#include "common.h"
+#include "relevant_documents.h"
 #include <switch.h>
 
 namespace Trinity
@@ -15,8 +15,6 @@ namespace Trinity
 			DisjunctionSome,
                         Filter,
                         Optional,
-                        OptionalOptPLI,
-                        OptionalAllPLI,
                         Disjunction,
                         DisjunctionAllPLI,
                         Phrase,
@@ -27,7 +25,17 @@ namespace Trinity
                         Dummy,
                 };
 
+		// An iterator provides access to a set of documents ordered by increasing ID
+		// the two main methods, next() and advance(), are used to access the documents.
+		// It subclasses relevant_document_provider, which means it may also provide a score
+		// if any Iterator subclass implements score() -- which is useful/required for support
+		// of "Accumulated Score Scheme" execution mode.
+		// 
+		// 
+		// subclassing relevant_document_provider is somewhat expensive, but we need it to
+		// support the semantics described in relevant_documents.h
                 struct Iterator
+			: public relevant_document_provider
                 {
                       public:
                         // This is here so that we can directly access it without having to go through the vtable
@@ -38,18 +46,8 @@ namespace Trinity
                                 isrc_docid_t id{0};
                         } curDocument;
 
-#if 0 // we no longer make use of this
-                        // Distance from the root
-                        // depths >= std::numeric_limits<uint16_t>::max() / 2 are treated specially; they are used
-                        // by Filter and Optional iterators, and they in turn set their own iterators's depth to be
-                        // >= that magic value.
-                        // We may end up using depth for other optimizations later
-			//
-                        uint16_t depth;
-#endif
-
-                        // This is handy, and beats bloating the vtable with e.g a virtual reset_depth(), a virtual ~Iterator() etc, that are only used during engine bootstrap, not runtime execution
-                        // All told, depth and type only come down to a 4bytes overhead to Iterator, so that's not that much anyway
+                        // This is handy, and beats bloating the vtable with e.g a virtual reset_depth(), a virtual ~Iterator() etc, 
+			// that are only used during engine bootstrap, not runtime execution
                         const Type type;
 
                       public:
@@ -63,6 +61,12 @@ namespace Trinity
                                 return curDocument.id;
                         }
 
+			inline isrc_docid_t document() const noexcept override final 	// relevant_document_provider::document() override
+			{
+				return curDocument.id;
+			}
+
+
                         // Advances to the first beyond the current whose document id that is >= target, and returns that document ID
                         // Example:
                         // isrc_docid_t advance(const isrc_docid_t target) { isrc_docid_t id; while ((id = next()) < target) {} return id; }
@@ -75,15 +79,9 @@ namespace Trinity
                         // If at the end of the set, returns DocIDsEND otherwise advances to the next document and returns the current document
                         virtual isrc_docid_t next() = 0;
 
-                        // If we wanted to support [min, max] range semantics, i.e only accept a documents within tha range min inclusive, max inclusive
-                        // it could work like so:
-                        // for (;;
-                        // {
-                        // 	auto id = next();
-                        //
-                        //	if (id < min) id = advance(min);
-                        // 	while (id < max) { consider(id); id = next(); }
-                        // }
+			// This is not virtual so that we won't bloat the vtable
+			// instead, it just invokes DocsSetIterators::cost(Iterator *) passing this
+			uint64_t cost();
                 };
 
 

@@ -144,7 +144,7 @@ namespace Trinity
         // and used by the VM
         struct runtime_ctx final
         {
-                const bool documentsOnly;
+                const bool documentsOnly, accumScoreMode;
                 IndexSource *const idxsrc;
                 iterators_collector collectedIts;
 
@@ -221,8 +221,8 @@ namespace Trinity
                         phrase *phrases[0];
                 };
 
-                runtime_ctx(IndexSource *src, const bool documentsOnly_)
-                    : documentsOnly{documentsOnly_}, idxsrc{src}
+                runtime_ctx(IndexSource *src, const bool documentsOnly_, const bool accumScoreMode_)
+                    : documentsOnly{documentsOnly_}, accumScoreMode{accumScoreMode_}, idxsrc{src}
                 {
                 }
 

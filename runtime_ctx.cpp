@@ -218,14 +218,6 @@ runtime_ctx::~runtime_ctx()
                                 delete static_cast<DocsSetIterators::Optional *>(ptr);
                                 break;
 
-                        case DocsSetIterators::Type::OptionalOptPLI:
-                                delete static_cast<DocsSetIterators::OptionalOptPLI *>(ptr);
-                                break;
-
-                        case DocsSetIterators::Type::OptionalAllPLI:
-                                delete static_cast<DocsSetIterators::OptionalAllPLI *>(ptr);
-                                break;
-
                         case DocsSetIterators::Type::Disjunction:
                                 delete static_cast<DocsSetIterators::Disjunction *>(ptr);
                                 break;
@@ -274,8 +266,9 @@ void runtime_ctx::prepare_decoder(exec_term_id_t termID)
         if (!decode_ctx.decoders[termID])
         {
                 const auto p = tctxMap[termID];
+                auto dec = decode_ctx.decoders[termID] = idxsrc->new_postings_decoder(p.second, p.first);
 
-                decode_ctx.decoders[termID] = idxsrc->new_postings_decoder(termID, p.second, p.first);
+                dec->set_exec(termID, this);
         }
 
         require(decode_ctx.decoders[termID]);
@@ -370,7 +363,7 @@ Trinity::term_hits *candidate_document::materialize_term_hits(runtime_ctx *rctx,
                         dwsInUse = true;
                 }
 
-                it->materialize_hits(termID, matchedDocument.dws, th->all);
+                it->materialize_hits(matchedDocument.dws, th->all);
         }
 
         return th;
@@ -406,7 +399,7 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
         {
                 case DocsSetIterators::Type::Phrase:
                 {
-                        const auto I = static_cast<DocsSetIterators::Phrase *>(it);
+                        const auto I = static_cast<const DocsSetIterators::Phrase *>(it);
                         const auto n = I->size;
                         auto its = I->its;
 
@@ -430,16 +423,18 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
                         break;
 
                 case DocsSetIterators::Type::Optional:
-                        collect_doc_matching_terms(reinterpret_cast<DocsSetIterators::Optional *>(it)->main, docID, out);
-                        break;
+                {
+                        auto *const opt = reinterpret_cast<DocsSetIterators::Optional *>(it);
+                        auto optCur = opt->opt->current();
 
-                case DocsSetIterators::Type::OptionalOptPLI:
-                        collect_doc_matching_terms(reinterpret_cast<DocsSetIterators::OptionalOptPLI *>(it)->main, docID, out);
-                        break;
+                        collect_doc_matching_terms(opt->main, docID, out);
 
-                case DocsSetIterators::Type::OptionalAllPLI:
-                        out->data[out->cnt++] = reinterpret_cast<DocsSetIterators::OptionalAllPLI *>(it)->main;
-                        break;
+                        if (optCur < docID)
+                                optCur = opt->opt->advance(docID);
+                        if (optCur == docID)
+                                collect_doc_matching_terms(opt->opt, docID, out);
+                }
+                break;
 
                 case DocsSetIterators::Type::Filter:
                         collect_doc_matching_terms(reinterpret_cast<DocsSetIterators::Filter *>(it)->req, docID, out);
@@ -469,7 +464,8 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
 
                 case DocsSetIterators::Type::DisjunctionAllPLI:
                 {
-                        const auto I = static_cast<DocsSetIterators::Disjunction *>(it);
+                        // See Switch::priority_queue<>::for_each_top()
+                        const auto I = static_cast<DocsSetIterators::DisjunctionAllPLI *>(it);
                         const auto &pq = I->pq;
                         const auto size = pq.size();
                         const auto heap = pq.data();
@@ -515,6 +511,7 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
 
                 case DocsSetIterators::Type::Disjunction:
                 {
+                        // See Switch::priority_queue<>::for_each_top()
                         const auto I = static_cast<DocsSetIterators::Disjunction *>(it);
                         const auto &pq = I->pq;
                         const auto size = pq.size();
@@ -611,7 +608,7 @@ void Trinity::runtime_ctx::prepare_match(Trinity::candidate_document *const doc)
 
                                         th->docID = did;
                                         th->set_freq(docHits);
-                                        it->materialize_hits(tid, dws, th->all);
+                                        it->materialize_hits(dws, th->all);
                                 }
                         }
                 }

@@ -55,9 +55,9 @@ namespace Trinity
 			return terms.get();
 		}
 
-                Trinity::Codecs::Decoder *new_postings_decoder(const exec_term_id_t execCtxTermID, strwlen8_t, const term_index_ctx ctx) override final
+                Trinity::Codecs::Decoder *new_postings_decoder(strwlen8_t, const term_index_ctx ctx) override final
                 {
-                        return accessProxy->new_decoder(execCtxTermID, ctx);
+                        return accessProxy->new_decoder(ctx);
                 }
 
                 updated_documents masked_documents() override final

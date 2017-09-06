@@ -29,7 +29,7 @@ void Trinity::intersect_impl(const uint64_t stopwordsMask,
                 {
                         if (const auto tctx = src->term_ctx(token); tctx.documents)
                         {
-                                auto dec = src->new_postings_decoder(0 /* dummy */, token, tctx);
+                                auto dec = src->new_postings_decoder(token, tctx);
 				auto it = dec->new_iterator();
 
 				it->next();	// seek to the first document

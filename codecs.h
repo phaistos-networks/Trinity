@@ -9,6 +9,7 @@
 namespace Trinity
 {
 	struct candidate_document;
+	struct runtime_ctx;
 
         // Information about a term's posting list and number of documents it matches.
         // We track the number of documents because it may be useful(and it is) to some codecs, and also
@@ -230,7 +231,7 @@ namespace Trinity
                         //
                         // XXX: if you materialize, it's likely that curDocument.freq will be reset to 0
                         // so you should not materialize if have already done so.
-                        virtual void materialize_hits(const exec_term_id_t termID, DocWordsSpace *dwspace, term_hit *out) = 0;
+                        virtual void materialize_hits(DocWordsSpace *dwspace, term_hit *out) = 0;
 
                         inline auto decoder() noexcept
                         {
@@ -241,6 +242,8 @@ namespace Trinity
 			{
 				return dec;
 			}
+
+			double score() override final;
                 };
 
                 // Decoder interface for decoding a single term's posting list.
@@ -251,10 +254,11 @@ namespace Trinity
 		// should just contain iterator-specific state and logic working in conjuction with the Decoder that created/provided it.
                 struct Decoder
                 {
-                        // Those can be useful during execution.
-                        // init() should, optionally set those- or reset to some dummy values (e.g 0 for execCtxTermID if you don't need them)
                         term_index_ctx indexTermCtx;
-                        exec_term_id_t execCtxTermID;
+
+			// use set_exec() to set those
+                        exec_term_id_t execCtxTermID{0};
+			runtime_ctx *rctx{nullptr};
 
                         constexpr auto exec_ctx_termid() const noexcept
                         {
@@ -265,7 +269,7 @@ namespace Trinity
                         //
                         // Not going to rely on a constructor for initialization because
                         // we want to force subclasses to define a method with this signature
-                        virtual void init(const exec_term_id_t execCtxTermID, const term_index_ctx &, AccessProxy *) = 0;
+                        virtual void init(const term_index_ctx &, AccessProxy *) = 0;
 
 			// This is how you are going to access the postings list
 			virtual PostingsListIterator *new_iterator() = 0;
@@ -277,6 +281,12 @@ namespace Trinity
                         virtual ~Decoder()
                         {
                         }
+
+			void set_exec(exec_term_id_t tid, runtime_ctx *const r)
+			{
+				execCtxTermID = tid;
+				rctx = r;
+			}
                 };
 
                 // Responsible for initializing segment/codec specific state and for generating(factory) decoders for terms
@@ -297,7 +307,7 @@ namespace Trinity
                         // see e.g Google::AccessProxy::new_decoder()
                         //
                         // See Codecs::Decoder for execCtxTermID
-                        virtual Decoder *new_decoder(const exec_term_id_t execCtxTermID, const term_index_ctx &tctx) = 0;
+                        virtual Decoder *new_decoder(const term_index_ctx &tctx) = 0;
 
                         AccessProxy(const char *bp, const uint8_t *index_ptr)
                             : basePath{bp}, indexPtr{index_ptr}
