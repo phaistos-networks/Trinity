@@ -257,6 +257,8 @@ runtime_ctx::~runtime_ctx()
 
         if (reusableCDS.data)
                 std::free(reusableCDS.data);
+	
+	delete scorer;
 }
 
 void runtime_ctx::prepare_decoder(exec_term_id_t termID)
@@ -414,7 +416,14 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
 
                         d->update_matched_cnt();
                         for (auto i{d->lead}; i; i = i->next)
-                                collect_doc_matching_terms(i->it, docID, out);
+			{
+				// TODO: in constructor set allPLI = true if all its are postilings lists
+				// so that we can avoid if in the loop
+				if (i->it->type == DocsSetIterators::Type::PostingsListIterator)
+					out->data[out->cnt++] = reinterpret_cast<Codecs::PostingsListIterator *>(i->it);
+				else
+	                                collect_doc_matching_terms(i->it, docID, out);
+			}
                 }
                 break;
 
@@ -605,7 +614,7 @@ void Trinity::runtime_ctx::prepare_match(Trinity::candidate_document *const doc)
                                 {
                                         // could have been materialized earlier for a phrase check
                                         const auto docHits = it->freq;
-
+					
                                         th->docID = did;
                                         th->set_freq(docHits);
                                         it->materialize_hits(dws, th->all);

@@ -1,6 +1,7 @@
 #include "codecs.h"
 #include "terms.h"
 #include "utils.h"
+#include "runtime_ctx.h"
 
 void Trinity::Codecs::IndexSession::flush_index(int fd)
 {
@@ -31,10 +32,5 @@ void Trinity::Codecs::IndexSession::persist_terms(std::vector<std::pair<str8_t, 
 
 double Trinity::Codecs::PostingsListIterator::score()
 {
-	[[maybe_unused]] auto *const rctx = dec->rctx; 
-	// whatever we need here
-	// e.g use rctx->similarityProxy etc
-	// we will initialize scorer to a subclass of Scorer or whatever we will call it
-	// e.g return rctx->scorer->score(curDocument.id, freq);
-	return 0;
+	return dec->rctx->scorer->score(curDocument.id, freq);
 }

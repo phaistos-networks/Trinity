@@ -2,6 +2,7 @@
 #include "docwordspace.h"
 #include "exec.h"
 #include "matches.h"
+#include "scores.h"
 
 namespace Trinity
 {
@@ -147,6 +148,7 @@ namespace Trinity
                 const bool documentsOnly, accumScoreMode;
                 IndexSource *const idxsrc;
                 iterators_collector collectedIts;
+		Similarity::Scorer *scorer{nullptr};
 
                 struct binop_ctx final
                 {

@@ -15,13 +15,6 @@ namespace Trinity
         //
         // This is built by exec_query() and passed to MatchedIndexDocumentsFilter::prepare()
         // It is useful for proximity checks in conjuction with DocWordsSpace
-        //
-        // UPDATE: we should consider extend this from unique (termID, toNextSpan) to unique (termID, toNextSpan, flags)
-        // so that, for example, we can consider flags when we are attempting to form a sequence, where we may want to
-        // ignore a query_index_term if the flags indicate the token was produced by a rewrite process, i.e term aliasing
-        //
-        // UPDATE: doing this now
-        // UPDATE: check ExecFlags::DisregardTokenFlagsForQueryIndicesTerms
         struct query_index_term final
         {
                 exec_term_id_t termID;
@@ -150,17 +143,18 @@ namespace Trinity
                 const query_index_terms **queryIndicesTerms;
 
 
-		// There are 3 different consider() implementations, and which is invoked depends on the
+		// There are 3 different consider() implementations, and which is invoked by the exec. enginedepends on the
 		// ExecFlags passed to Trinity::exec_query().
 		//
-		// The default execution mode will invoke this method
 		// Your subclass should override whichever method(s) of those 3 are required based on which flags you use.
+		//
+		// When the default execution mode is seleted, this method will be invoked
                 [[gnu::always_inline]] virtual void consider(const matched_document &match)
                 {
                 }
 
 		// If the Documents Only mode is selected, this will be invoked, passed
-		// the global document ID
+		// the global document ID. Given that you only really want the 
 		virtual void consider(const docid_t id)
 		{
 		}
@@ -173,7 +167,9 @@ namespace Trinity
 
 		}
 
-                // Invoked before the query execution begins
+                // Invoked before the query execution begins by the exec.engine
+		// You may want to override this if you want to be notified and get a chance to do anything before
+		// the engine executes the query in the index source
                 virtual void prepare(const query_index_terms **queryIndicesTerms_)
                 {
                         queryIndicesTerms = queryIndicesTerms_;

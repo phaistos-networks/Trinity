@@ -214,6 +214,7 @@ namespace Trinity
                 };
 
               private:
+		const bool needScores;
                 const uint16_t matchThreshold;
                 uint64_t *const matching;
                 std::pair<double, uint32_t> *const tracker;
@@ -221,8 +222,8 @@ namespace Trinity
                 DocsSetIterators::Iterator **const collected;
 
               public:
-                DocsSetSpanForDisjunctionsWithThreshold(const uint16_t min, std::vector<Trinity::DocsSetIterators::Iterator *> &its, const bool root = false)
-                    : DocsSetSpan{root}, matchThreshold{min}, matching((uint64_t *)calloc(SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1))), tracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>)))
+                DocsSetSpanForDisjunctionsWithThreshold(const uint16_t min, std::vector<Trinity::DocsSetIterators::Iterator *> &its, const bool ns, const bool root = false)
+                    : DocsSetSpan{root}, needScores{ns}, matchThreshold{min}, matching((uint64_t *)calloc(SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1))), tracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>)))
                 {
                         expect(min && min <= its.size());
                         expect(its.size() > 1);
@@ -528,6 +529,7 @@ namespace Trinity
                 it_ctx **const leads;
                 Switch::priority_queue<it_ctx *, it_ctx::CompareByNext> head;
                 Switch::priority_queue<it_ctx *, it_ctx::CompareByCost> tail;
+		const bool needScores;
                 const uint16_t matchThreshold;
                 it_ctx *const storage;
                 uint64_t cost_;
@@ -542,7 +544,7 @@ namespace Trinity
                 void score_window_many(MatchesProxy *const mp, const isrc_docid_t windowBase, const isrc_docid_t windowMin, const isrc_docid_t windowMax, uint16_t leadsCnt);
 
               public:
-                DocsSetSpanForDisjunctionsWithThresholdAndCost(const uint16_t min, std::vector<DocsSetIterators::Iterator *> &its, const bool root = false);
+                DocsSetSpanForDisjunctionsWithThresholdAndCost(const uint16_t min, std::vector<DocsSetIterators::Iterator *> &its, const bool needScores, const bool root = false);
 
                 ~DocsSetSpanForDisjunctionsWithThresholdAndCost()
                 {

@@ -2153,7 +2153,7 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
 
 static std::unique_ptr<DocsSetSpan> build_span(DocsSetIterators::Iterator *root, runtime_ctx *const rctx, const bool asRoot)
 {
-        if (root->type == DocsSetIterators::Type::DisjunctionSome)
+        if (root->type == DocsSetIterators::Type::DisjunctionSome && (rctx->documentsOnly || rctx->accumScoreMode))
         {
                 auto d = static_cast<DocsSetIterators::DisjunctionSome *>(root);
                 std::vector<Trinity::DocsSetIterators::Iterator *> its;
@@ -2161,17 +2161,12 @@ static std::unique_ptr<DocsSetSpan> build_span(DocsSetIterators::Iterator *root,
                 for (auto it{d->lead}; it; it = it->next)
                         its.push_back(it->it);
 
-		if (rctx->documentsOnly || rctx->accumScoreMode)
-		{
-			// Either DocsSetSpanForDisjunctionsWithThresholdAndCost or DocsSetSpanForDisjunctionsWithThreshold
-			// take the same time if we are dealing with iterators that are just PostingsListIterator
-			// though if we have phrases and other complex binary ops, cost makes more sense, so we 'll settle for
-			// DocsSetSpanForDisjunctionsWithThresholdAndCost
-                        return std::make_unique<DocsSetSpanForDisjunctionsWithThresholdAndCost>(d->matchThreshold, its, asRoot);
-                        //return std::make_unique<DocsSetSpanForDisjunctionsWithThreshold>(d->matchThreshold, its, asRoot);
-                }
-		else
-	                return std::make_unique<DocsSetSpanForPartialMatch>(its, d->matchThreshold, asRoot);
+                // Either DocsSetSpanForDisjunctionsWithThresholdAndCost or DocsSetSpanForDisjunctionsWithThreshold
+                // take the same time if we are dealing with iterators that are just PostingsListIterator
+                // though if we have phrases and other complex binary ops, cost makes more sense, so we 'll settle for
+                // DocsSetSpanForDisjunctionsWithThresholdAndCost
+                //SLog("HERE\n");return std::make_unique<DocsSetSpanForDisjunctionsWithThresholdAndCost>(d->matchThreshold, its, rctx->accumScoreMode, asRoot);
+                return std::make_unique<DocsSetSpanForDisjunctionsWithThreshold>(d->matchThreshold, its, rctx->accumScoreMode, asRoot);
         }
         else if ((rctx->documentsOnly  || rctx->accumScoreMode) && (root->type == DocsSetIterators::Type::Disjunction || root->type == DocsSetIterators::Type::DisjunctionAllPLI))
         {
@@ -2270,7 +2265,7 @@ void Trinity::exec_query(const query &in,
         // the optimization passes will not capture the original, input query tokens instances information.
         std::vector<query_term_instance> originalQueryTokenInstances;
         const bool documentsOnly = execFlags & uint32_t(ExecFlags::DocumentsOnly);
-        const bool accumScoreMode = execFlags & uint32_t(ExecFlags::DocumentsOnly);
+        const bool accumScoreMode = execFlags & uint32_t(ExecFlags::AccumulatedScoreScheme);
 
         {
                 std::vector<ast_node *> stack{q.root}; // use a stack because we don't care about the evaluation order
@@ -2343,6 +2338,12 @@ void Trinity::exec_query(const query &in,
         runtime_ctx rctx(idxsrc, execFlags & unsigned(ExecFlags::DocumentsOnly), execFlags & unsigned(ExecFlags::AccumulatedScoreScheme));
         const auto before = Timings::Microseconds::Tick();
         auto rootExecNode = compile_query(q.root, rctx, execFlags);
+
+        if (accumScoreMode)
+        {
+		// TODO: should be able to configure this somehow
+                rctx.scorer = new Similarity::TrivialScorer();
+        }
 
         curRCTX = &rctx;
 
@@ -2974,6 +2975,7 @@ void Trinity::exec_query(const query &in,
                                                 Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
                                                     : idxsrc{src}, ctx{c}, requireDocIDTranslation{src->require_docid_translation()}, matchesFilter{mf}
                                                 {
+
                                                 }
 
                                         } handler(&rctx, idxsrc, matchesFilter);
@@ -3167,6 +3169,6 @@ void Trinity::exec_query(const query &in,
         const auto duration = Timings::Microseconds::Since(start);
         const auto durationAll = Timings::Microseconds::Since(_start);
 
-        if (traceCompile || traceExec)
+        if (traceCompile || traceExec || true)
                 SLog(ansifmt::bold, ansifmt::color_red, dotnotation_repr(matchedDocuments), " matched in ", duration_repr(duration), ansifmt::reset, " (", Timings::Microseconds::ToMillis(duration), " ms) ", duration_repr(durationAll), " all\n");
 }

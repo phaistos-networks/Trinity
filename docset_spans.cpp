@@ -20,7 +20,7 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForPartialMatch::process(MatchesProxy 
                         break;
 
                 const isrc_docid_t windowBase = id & ~MASK;
-                [[maybe_unused]] const auto windowMin = std::max<isrc_docid_t>(min, windowBase);
+                //[[maybe_unused]] const auto windowMin = std::max<isrc_docid_t>(min, windowBase);
                 const auto windowMax = std::min<isrc_docid_t>(max, windowBase + SIZE);
                 uint16_t collectedCnt{1};
 
@@ -70,14 +70,12 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForPartialMatch::process(MatchesProxy 
                                         const auto bidx = SwitchBitOps::TrailingZeros(b);
                                         const auto translated = _b + bidx;
                                         const auto id = windowBase + translated;
-                                        auto &trackInfo = tracker[translated]; //require(translated == (id & MASK));
+                                        auto &trackInfo = tracker[translated]; 
 
                                         b ^= uint64_t(1) << bidx;
 
                                         if (trackInfo.second >= matchThreshold)
                                         {
-                                                // TODO: for a future ExecFlags specified op.mode where
-                                                // we simply aggregate scores(see Lucene), we 'd just use trackInfo.first as the aggregated score
                                                 relDoc.id = id;
                                                 mp->process(&relDoc);
                                         }
@@ -210,8 +208,6 @@ Trinity::DocsSetSpanForDisjunctionsWithSpans::span_ctx Trinity::DocsSetSpanForDi
         return *top;
 }
 
-// both mp->process() and Tracker::process() are expected to rctx.cds_drain_STM() so
-// we won't be doing it manually here
 Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithSpans::process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max)
 {
         isrc_docid_t id;
@@ -374,7 +370,7 @@ Trinity::DocsSetSpanForDisjunctionsWithSpansAndCost::DocsSetSpanForDisjunctionsW
                 }
 
                 cost_ = 0;
-		for (const auto it : pq)
+                for (const auto it : pq)
                         cost_ += it;
         }
 }
@@ -411,8 +407,6 @@ Trinity::DocsSetSpanForDisjunctionsWithSpansAndCost::span_ctx *Trinity::DocsSetS
 
 void Trinity::DocsSetSpanForDisjunctionsWithSpansAndCost::score_window_many(MatchesProxy *const mp, const isrc_docid_t windowBase, const isrc_docid_t windowMin, const isrc_docid_t windowMax, uint16_t leadsCnt)
 {
-	SLog("Scoring many ", leadsCnt, " ", matchThreshold, "\n");
-
         while (leadsCnt < matchThreshold && leadsCnt + tail.size() >= matchThreshold)
         {
                 auto candidate = tail.pop();
@@ -500,7 +494,6 @@ Trinity::DocsSetSpanForDisjunctionsWithSpansAndCost::span_ctx *Trinity::DocsSetS
         uint16_t leadsCnt{1};
 
         leads[0] = head.pop();
-
         while (head.size() && head.top()->next < windowMax)
                 leads[leadsCnt++] = head.pop();
 
@@ -542,8 +535,8 @@ void Trinity::DocsSetSpanForDisjunctionsWithSpansAndCost::Tracker::process(relev
 }
 
 #pragma mark DocsSetSpanForDisjunctionsWithThresholdAndCost
-Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::DocsSetSpanForDisjunctionsWithThresholdAndCost(const uint16_t min, std::vector<DocsSetIterators::Iterator *> &its, const bool root)
-    : DocsSetSpan{root}, matchesTracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>))), leads((it_ctx **)malloc(sizeof(it_ctx *) * (its.size() + 1))), head(its.size() - min + 1), tail(min - 1), matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), matchThreshold{min}, storage((it_ctx *)malloc(sizeof(it_ctx) * (its.size() + 1)))
+Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::DocsSetSpanForDisjunctionsWithThresholdAndCost(const uint16_t min, std::vector<DocsSetIterators::Iterator *> &its, const bool ns, const bool root)
+    : DocsSetSpan{root}, matchesTracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>))), leads((it_ctx **)malloc(sizeof(it_ctx *) * (its.size() + 1))), head(its.size() - min + 1), tail(min - 1), matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), needScores{ns}, matchThreshold{min}, storage((it_ctx *)malloc(sizeof(it_ctx) * (its.size() + 1)))
 {
         expect(min && min <= its.size());
         expect(its.size() > 1);
@@ -554,20 +547,19 @@ Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::DocsSetSpanForDisjuncti
 
                 t->it = its[i];
                 t->cost = t->it->cost();
-		// we 'll not set next to 0, instead we 'll set it to t->it->next()
-		// so that we won't need to use:
-		// auto top = advance(min ?: 1); 
-		// in process()
-		// we 'll just use:
-		// auto top = advance(min); 
-		//
-		// We won't use this tick in DocsSetSpanForDisjunctionsWithSpansAndCost
+                // we 'll not set next to 0, instead we 'll set it to t->it->next()
+                // so that we won't need to use:
+                // auto top = advance(min ?: 1);
+                // in process()
+                // we 'll just use:
+                // auto top = advance(min);
+                //
+                // We won't use this tick in DocsSetSpanForDisjunctionsWithSpansAndCost
                 t->next = t->it->next();
 
                 if (it_ctx * evicted; !tail.try_push(t, evicted))
                         head.push(evicted);
         }
-
 
         {
                 Switch::priority_queue<uint64_t, std::greater<uint64_t>> pq(its.size() - matchThreshold + 1);
@@ -581,7 +573,7 @@ Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::DocsSetSpanForDisjuncti
                 }
 
                 cost_ = 0;
-		for (const auto it : pq)
+                for (const auto it : pq)
                         cost_ += it;
         }
 }
@@ -642,24 +634,50 @@ void Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::score_window_many(
 
                 tail.clear();
 
-                for (uint16_t i{0}; i != leadsCnt; ++i)
+                if (needScores)
                 {
-                        auto *const it = leads[i]->it;
-
-                        if (it->current() < min)
-                                it->advance(min);
-
-                        for (auto id = it->current(); id < max; id = it->next())
+                        for (uint16_t i{0}; i != leadsCnt; ++i)
                         {
-                                const auto i = id - windowBase;
-                                const auto mi = i >> 6;
+                                auto *const it = leads[i]->it;
 
-                                m = std::max<uint32_t>(m, mi);
-                                matching[mi] |= uint64_t(1) << (i & 63);
+                                if (it->current() < min)
+                                        it->advance(min);
 
-                                matchesTracker[i].second++;
+                                for (auto id = it->current(); id < max; id = it->next())
+                                {
+                                        const auto i = id - windowBase;
+                                        const auto mi = i >> 6;
+
+                                        m = std::max<uint32_t>(m, mi);
+                                        matching[mi] |= uint64_t(1) << (i & 63);
+
+                                        matchesTracker[i].second++;
+                                        matchesTracker[i].first += it->score();
+                                }
+                                leads[i]->next = it->current();
                         }
-			leads[i]->next = it->current();
+                }
+                else
+                {
+                        for (uint16_t i{0}; i != leadsCnt; ++i)
+                        {
+                                auto *const it = leads[i]->it;
+
+                                if (it->current() < min)
+                                        it->advance(min);
+
+                                for (auto id = it->current(); id < max; id = it->next())
+                                {
+                                        const auto i = id - windowBase;
+                                        const auto mi = i >> 6;
+
+                                        m = std::max<uint32_t>(m, mi);
+                                        matching[mi] |= uint64_t(1) << (i & 63);
+
+                                        matchesTracker[i].second++;
+                                }
+                                leads[i]->next = it->current();
+                        }
                 }
 
                 for (uint32_t idx{0}; idx <= m; ++idx)
@@ -678,6 +696,7 @@ void Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::score_window_many(
                                 if (trackInfo.second >= matchThreshold)
                                 {
                                         relDoc.id = id;
+                                        relDoc.score_ = trackInfo.first;
                                         mp->process(&relDoc);
                                 }
 
@@ -701,7 +720,6 @@ void Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::score_window_singl
         const auto nextWindowBase = head.top()->next & ~MASK;
         const auto end = std::max<isrc_docid_t>(windowMax, std::min<isrc_docid_t>(max, nextWindowBase));
         auto it = ictx->it;
-        relevant_document relDoc;
 
         require(tail.empty());
 
@@ -709,10 +727,10 @@ void Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::score_window_singl
                 it->advance(windowMin);
         for (auto id = it->current(); id < end; id = it->next())
         {
-                relDoc.id = id;
-                mp->process(&relDoc);
+                mp->process(it);
         }
-	ictx->next = it->current();
+
+        ictx->next = it->current();
 }
 
 Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::it_ctx *Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::score_window(it_ctx *const sctx, MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max)
@@ -726,7 +744,7 @@ Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::it_ctx *Trinity::DocsSe
         leads[0] = head.pop();
         while (head.size() && head.top()->next < windowMax)
                 leads[leadsCnt++] = head.pop();
-	
+
         if (matchThreshold == 1 && leadsCnt == 1)
         {
                 auto *const it = leads[0];
@@ -752,16 +770,6 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::p
         return top->next;
 }
 
-
-
-
-
-
-
-
-
-
-
 #pragma mark DocsSetSpanForDisjunctionsWithThreshold
 Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThreshold::process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max)
 {
@@ -777,7 +785,7 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThreshold::process(
                         break;
 
                 const isrc_docid_t windowBase = id & ~MASK;
-                [[maybe_unused]] const auto windowMin = std::max<isrc_docid_t>(min, windowBase);
+                //[[maybe_unused]] const auto windowMin = std::max<isrc_docid_t>(min, windowBase);
                 const auto windowMax = std::min<isrc_docid_t>(max, windowBase + SIZE);
                 uint16_t collectedCnt{1};
 
@@ -787,20 +795,12 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThreshold::process(
                         collected[collectedCnt++] = it;
                 }
 
-                if (collectedCnt == 1)
+                if (collectedCnt == 1 && matchThreshold == 1)
                 {
                         auto *const it = collected[0];
 
-                        if (matchThreshold == 1)
-			{
-				for (auto id = it->current(); id < windowMax; id = it->next())
-					mp->process(it);
-			}
-			else 
-			{
-				// XXX: make sure this makes sense
-				it->next();
-			}
+                        for (auto id = it->current(); id < windowMax; id = it->next())
+                                mp->process(it);
 
                         pq.push(it);
                 }
@@ -808,22 +808,46 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThreshold::process(
                 {
                         uint32_t m{0};
 
-                        for (uint32_t i_{0}; i_ != collectedCnt; ++i_)
+                        if (needScores)
                         {
-                                auto *const it = collected[i_];
-
-                                for (auto id = it->current(); id < windowMax; id = it->next())
+                                for (uint32_t i_{0}; i_ != collectedCnt; ++i_)
                                 {
-                                        const auto i = id - windowBase;
-                                        const auto mi = i >> 6;
+                                        auto *const it = collected[i_];
 
-                                        m = std::max<uint32_t>(m, mi);
-                                        matching[mi] |= uint64_t(1) << (i & 63);
+                                        for (auto id = it->current(); id < windowMax; id = it->next())
+                                        {
+                                                const auto i = id - windowBase;
+                                                const auto mi = i >> 6;
 
-					tracker[i].second++;
+                                                m = std::max<uint32_t>(m, mi);
+                                                matching[mi] |= uint64_t(1) << (i & 63);
+
+                                                tracker[i].first += it->score();
+                                                tracker[i].second++;
+                                        }
+
+                                        pq.push(it);
                                 }
+                        }
+                        else
+                        {
+                                for (uint32_t i_{0}; i_ != collectedCnt; ++i_)
+                                {
+                                        auto *const it = collected[i_];
 
-                                pq.push(it);
+                                        for (auto id = it->current(); id < windowMax; id = it->next())
+                                        {
+                                                const auto i = id - windowBase;
+                                                const auto mi = i >> 6;
+
+                                                m = std::max<uint32_t>(m, mi);
+                                                matching[mi] |= uint64_t(1) << (i & 63);
+
+                                                tracker[i].second++;
+                                        }
+
+                                        pq.push(it);
+                                }
                         }
 
                         for (uint32_t idx{0}; idx <= m; ++idx)
@@ -842,6 +866,7 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThreshold::process(
                                         if (trackInfo.second >= matchThreshold)
                                         {
                                                 relDoc.id = id;
+                                                relDoc.score_ = trackInfo.first;
                                                 mp->process(&relDoc);
                                         }
 
@@ -850,7 +875,7 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThreshold::process(
                                 }
                         }
 
-                        memset(matching, 0, (m + 1) * sizeof(matching[0])); // yes, we can
+                        memset(matching, 0, (m + 1) * sizeof(matching[0])); 
                 }
         }
 

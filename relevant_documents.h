@@ -16,21 +16,24 @@ namespace Trinity
         {
                 virtual isrc_docid_t document() const noexcept = 0;
 
-                virtual double score()
-                {
-                        return 0;
-                }
+                virtual double score() = 0;
         };
 
         struct relevant_document final
             : public relevant_document_provider
         {
                 isrc_docid_t id;
+		double score_;
 
                 inline isrc_docid_t document() const noexcept override final
                 {
                         return id;
                 }
+
+		inline double score() override final
+		{
+			return score_;
+		}
         };
 
 	// Lucene's Scorer creates/owns an iterator and provides a score()

@@ -147,8 +147,6 @@ namespace Trinity
                 // so if you want to model e.g
                 // (a NOT b)
                 // you can use Filter(Iterator(a), Iterator(b))
-                //
-                // XXX: See Optional comments
                 struct Filter final
                     : public Iterator
                 {
@@ -179,8 +177,8 @@ namespace Trinity
                 };
 
                 // This is how we can implement constrrue_expr()
-                // we 'll operate on the main iterator and attempt to match an optional iterator, but we will silently ignore
-                // its next()/advance() res.
+                // we 'll operate on the main iterator and will only attempt to advance
+		// the optional iterator in score() or and collect_doc_matching_terms()
                 // e.g [a AND <b>] => Optional(Decoder(a), Decoder(b))
                 struct Optional final
                     : public Iterator
@@ -347,18 +345,7 @@ namespace Trinity
 
                         isrc_docid_t next() override final;
 
-			double score() override final
-			{
-#if  0 // TODO:
-				double res{0};
-
-				for (uint16_t i{0}; i != size; ++i)
-					res += its[i]->score();
-				return res;
-#else
-				return 0;
-#endif
-			}
+			double score() override final;
                 };
 
                 // If we can, and we can, identify the set of leaders that are required like we do now for leadersAndSet
@@ -445,11 +432,7 @@ namespace Trinity
 
                         isrc_docid_t next() override final;
 
-			double score() override final
-			{
-				// See ExactPhraseScorer.java
-				return 0;
-			}
+                        double score() override final;
                 };
 
 
@@ -488,6 +471,11 @@ namespace Trinity
 
                                 return id;
                         }
+
+			double score() override final
+			{
+				return 1;
+			}
                 };
         }
 }

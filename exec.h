@@ -9,8 +9,9 @@ namespace Trinity
 {
         enum class ExecFlags : uint32_t
         {
-                // If this set, then only matching documents will be provided in MatchedIndexDocumentsFilter subclass's consider()
-                // That is, no matching terms or their hits will be provided in the passed matched_document&
+                // If this set, then only the matchign document IDs will be provided in MatchedIndexDocumentsFilter's subclass consider(const docid_t) call
+		// as opposed to when the default execution mode is selected where consider(matched_document &) is invoked instead, with rich information
+		// about any and all matched tokens etc.
                 //
                 // This is very helpful if you want to e.g just count or collect documents matching a query,
                 // or otherwise don't care for which of the terms (in case of ORs) matched the document, only for
@@ -18,25 +19,25 @@ namespace Trinity
                 //
                 // It is also helpful if you want to e.g build a prefix-search people search system(like LinkedIn's) where you want 
 		// to match all users matching the query, and you really don't care
-                // for which of the terms (or their hits) to do so. If you expand the last token (prefix-expansion), which couild lead 
-		// to e.g 100s of new terms, you should consider this option(over x2 perfomrance boost).
+                // for which of the terms (or their hits) to do so. 
                 DocumentsOnly = 1,
+
+		// This flag selects a query execution mode that matches Lucene's, and can be useful for
+		// very specific use cases, like visual search, and in other cases where you prioritize faster execution over
+		// higher relevancy, which would be computed by having access to rich information Trinity tracks and provides in matched_document
+		// in the default execution mode.
+		//
+		// If this mode is selected, it will instead accumulate the scores of various iterators together into a "score" and invoke
+		// MatchedIndexDocumentsFilter's subclass consider(const docid_t, const double score)
+		AccumulatedScoreScheme = 2,
 
 		// If set, this doesn't track unique (termID, toNextSpan, flags) for MatchedIndexDocumentsFilter::queryIndicesTerms
 		// instead it tracks unique (termID, toNextSpan) -- that is, respects the older semantics.
 		// If you are not interested for that unique tripplet, but instead of the unique (termID, toNextSpan), you should use
-		// this flag. If set, query_index_term::flags will be set to 0
-		DisregardTokenFlagsForQueryIndicesTerms = 2,
-
-
-		// This new flag selects a query execution mode that matches Lucene's, and can be useful for
-		// very specific use cases, like Visual search, and in other cases where you prioritize faster execution over
-		// higher relevancy which would be computed by having access to rich information Trinity tracks and provides in matched_document
-		// in the default execution mode.
-		// If this is selected, it will instead accumulate the scores of various iterators together into a "score" and will set
-		// matched_document::score.
-		// See matched_document comments
-		AccumulatedScoreScheme = 4
+		// this flag. If set, query_index_term::flags will be set to 0.
+		// This is really only relevant if the default exec. mode is selected
+		// i.e neither DocumentsOnly nor AccumulatedScoreScheme are set in the passed flags to exec_query()
+		DisregardTokenFlagsForQueryIndicesTerms = 4
         };
 
         void exec_query(const query &in, IndexSource *, masked_documents_registry *const maskedDocumentsRegistry, MatchedIndexDocumentsFilter *, IndexDocumentsFilter *const f = nullptr, const uint32_t flags = 0);

@@ -72,6 +72,11 @@ uint64_t Trinity::DocsSetIterators::cost(const Iterator *it)
         }
 }
 
+double Trinity::DocsSetIterators::Phrase::score()
+{
+        return rctxRef->scorer->score(curDocument.id, matchCnt);
+}
+
 bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
 {
         [[maybe_unused]] static constexpr bool trace{false};
@@ -913,12 +918,16 @@ void Trinity::DocsSetIterators::DisjunctionSome::update_matched_cnt()
 {
 	// We return the next document when there are matchThreshold matching iterators
 	// but some of the iterators in tail might match as well.
+	//
 	// In general, we want to advance least-costly iterators first in order to skip over non-matching
 	// documents as fast as possible.
+	//
 	// Here however we are advancing every iterator anyway, so iterating ovedr iterators in (roughly) cost-descending
 	// order might help avoid some permutations in the head heap.
+	auto data{tail.data()};
+
 	for (int32_t i = int32_t(tail.size())  - 1; i >= 0; --i)
-		advance_tail(tail.data()[i]);
+		advance_tail(data[i]);
 	tail.clear();
 }
 
@@ -936,3 +945,11 @@ double Trinity::DocsSetIterators::Optional::score()
         return score;
 }
 
+double Trinity::DocsSetIterators::ConjuctionAllPLI::score() 
+{
+	double res{0};
+
+	for (uint16_t i{0}; i != size; ++i)
+		res += its[i]->score();
+	return res;
+}
