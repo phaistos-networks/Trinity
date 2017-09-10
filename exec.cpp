@@ -2152,7 +2152,7 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
         }
 }
 
-static std::unique_ptr<DocsSetSpan> build_span(DocsSetIterators::Iterator *root, runtime_ctx *const rctx, const bool asRoot)
+static std::unique_ptr<DocsSetSpan> build_span(DocsSetIterators::Iterator *root, runtime_ctx *const rctx)
 {
         if (root->type == DocsSetIterators::Type::DisjunctionSome && (rctx->documentsOnly || rctx->accumScoreMode))
         {
@@ -2166,8 +2166,8 @@ static std::unique_ptr<DocsSetSpan> build_span(DocsSetIterators::Iterator *root,
                 // take the same time if we are dealing with iterators that are just PostingsListIterator
                 // though if we have phrases and other complex binary ops, cost makes more sense, so we 'll settle for
                 // DocsSetSpanForDisjunctionsWithThresholdAndCost
-                return std::make_unique<DocsSetSpanForDisjunctionsWithThresholdAndCost>(d->matchThreshold, its, rctx->accumScoreMode, asRoot);
-                //return std::make_unique<DocsSetSpanForDisjunctionsWithThreshold>(d->matchThreshold, its, rctx->accumScoreMode, asRoot);
+                return std::make_unique<DocsSetSpanForDisjunctionsWithThresholdAndCost>(d->matchThreshold, its, rctx->accumScoreMode);
+                //return std::make_unique<DocsSetSpanForDisjunctionsWithThreshold>(d->matchThreshold, its, rctx->accumScoreMode);
         }
         else if ((rctx->documentsOnly  || rctx->accumScoreMode) && (root->type == DocsSetIterators::Type::Disjunction || root->type == DocsSetIterators::Type::DisjunctionAllPLI))
         {
@@ -2190,9 +2190,9 @@ static std::unique_ptr<DocsSetSpan> build_span(DocsSetIterators::Iterator *root,
                 }
 
 		if (rctx->accumScoreMode)
-			return std::make_unique<DocsSetSpanForDisjunctionsWithThreshold>(1, its, asRoot);
+			return std::make_unique<DocsSetSpanForDisjunctionsWithThreshold>(1, its, true);
 		else
-			return std::unique_ptr<DocsSetSpanForDisjunctions>(new DocsSetSpanForDisjunctions(its, asRoot));
+			return std::unique_ptr<DocsSetSpanForDisjunctions>(new DocsSetSpanForDisjunctions(its));
         }
         else if (root->type == DocsSetIterators::Type::Filter)
         {
@@ -2205,16 +2205,16 @@ static std::unique_ptr<DocsSetSpan> build_span(DocsSetIterators::Iterator *root,
 
                 if (filterCost <= reqCost)
                 {
-                        auto req = build_span(f->req, rctx, false);
+                        auto req = build_span(f->req, rctx);
 
-                        return std::unique_ptr<FilteredDocsSetSpan>(new FilteredDocsSetSpan(req.release(), f->filter, asRoot));
+                        return std::unique_ptr<FilteredDocsSetSpan>(new FilteredDocsSetSpan(req.release(), f->filter));
                 }
                 else
-                        return std::unique_ptr<GenericDocsSetSpan>(new GenericDocsSetSpan(root, asRoot));
+                        return std::unique_ptr<GenericDocsSetSpan>(new GenericDocsSetSpan(root));
         }
         else
         {
-                return std::unique_ptr<GenericDocsSetSpan>(new GenericDocsSetSpan(root, asRoot));
+                return std::unique_ptr<GenericDocsSetSpan>(new GenericDocsSetSpan(root));
         }
 }
 
@@ -2693,7 +2693,7 @@ void Trinity::exec_query(const query &in,
                         auto *const sit = rctx.build_iterator(rootExecNode, execFlags);
                         // Over-estimate capacity, make sure we won't overrun any buffers
                         const std::size_t capacity = rctx.tctxMap.size() + rctx.allIterators.size() + rctx.docsetsIterators.size() + 16;
-                        auto span = build_span(sit, &rctx, true);
+                        auto span = build_span(sit, &rctx);
 
                         rctx.collectedIts.init(capacity);
                         rctx.reusableCDS.capacity = std::max<uint16_t>(512, capacity);
@@ -2847,12 +2847,6 @@ void Trinity::exec_query(const query &in,
 							void process(const isrc_docid_t id) override final
 							{
 								matchesFilter->consider(id);
-								++n;
-							}
-
-							void process(relevant_document_provider *rdp) override final
-							{
-								matchesFilter->consider(rdp->document());
 								++n;
 							}
 

@@ -86,15 +86,7 @@ namespace Trinity
                 static constexpr std::size_t MASK{SIZE - 1};
                 static constexpr std::size_t SET_SIZE{SIZE / sizeof(uint64_t)};
 
-              protected:
-                const bool isRoot;
-
               public:
-                DocsSetSpan(const bool root = false)
-                    : isRoot{root}
-                {
-                }
-
                 // process the span/range [min, max)
                 // i.e from min inclusive to max exclusive
                 //
@@ -114,8 +106,8 @@ namespace Trinity
                 Trinity::DocsSetIterators::Iterator *const it;
 
               public:
-                GenericDocsSetSpan(Trinity::DocsSetIterators::Iterator *const i, const bool root = false)
-                    : DocsSetSpan{root}, it{i}
+                GenericDocsSetSpan(Trinity::DocsSetIterators::Iterator *const i)
+                    : it{i}
                 {
                 }
 
@@ -142,8 +134,8 @@ namespace Trinity
                 Trinity::DocsSetIterators::Iterator *const exclIt;
 
               public:
-                FilteredDocsSetSpan(DocsSetSpan *const r, Trinity::DocsSetIterators::Iterator *const i, const bool root = false)
-                    : DocsSetSpan{root}, req{r}, exclIt{i}
+                FilteredDocsSetSpan(DocsSetSpan *const r, Trinity::DocsSetIterators::Iterator *const i)
+                    : req{r}, exclIt{i}
                 {
                 }
 
@@ -180,8 +172,8 @@ namespace Trinity
                 DocsSetIterators::Iterator **const collected;
 
               public:
-                DocsSetSpanForDisjunctions(std::vector<Trinity::DocsSetIterators::Iterator *> &its, const bool root = false)
-                    : DocsSetSpan{root}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1)))
+                DocsSetSpanForDisjunctions(std::vector<Trinity::DocsSetIterators::Iterator *> &its)
+                    : matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1)))
                 {
 
                         for (auto it : its)
@@ -236,8 +228,8 @@ namespace Trinity
                 DocsSetIterators::Iterator **const collected;
 
               public:
-                DocsSetSpanForDisjunctionsWithThreshold(const uint16_t min, std::vector<Trinity::DocsSetIterators::Iterator *> &its, const bool ns, const bool root = false)
-                    : DocsSetSpan{root}, needScores{ns}, matchThreshold{min}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1))), tracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>)))
+                DocsSetSpanForDisjunctionsWithThreshold(const uint16_t min, std::vector<Trinity::DocsSetIterators::Iterator *> &its, const bool ns)
+                    : needScores{ns}, matchThreshold{min}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1))), tracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>)))
                 {
                         expect(min && min <= its.size());
                         expect(its.size() > 1);
@@ -292,8 +284,8 @@ namespace Trinity
                 DocsSetIterators::Iterator **const collected;
 
               public:
-                DocsSetSpanForPartialMatch(std::vector<Trinity::DocsSetIterators::Iterator *> &its, const uint16_t min, const bool root = false)
-                    : DocsSetSpan{root}, matchThreshold{min}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), tracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>))), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1)))
+                DocsSetSpanForPartialMatch(std::vector<Trinity::DocsSetIterators::Iterator *> &its, const uint16_t min)
+                    : matchThreshold{min}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), tracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>))), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1)))
                 {
                         for (auto it : its)
 			{
@@ -389,7 +381,7 @@ namespace Trinity
                 span_ctx advance(const isrc_docid_t);
 
               public:
-                DocsSetSpanForDisjunctionsWithSpans(std::vector<DocsSetSpan *> &its, const bool root = false);
+                DocsSetSpanForDisjunctionsWithSpans(std::vector<DocsSetSpan *> &its);
 
                 ~DocsSetSpanForDisjunctionsWithSpans()
                 {
@@ -493,7 +485,7 @@ namespace Trinity
                 void score_window_many(MatchesProxy *const mp, const isrc_docid_t windowBase, const isrc_docid_t windowMin, const isrc_docid_t windowMax, uint16_t leadsCnt);
 
               public:
-                DocsSetSpanForDisjunctionsWithSpansAndCost(const uint16_t min, std::vector<DocsSetSpan *> &its, const bool root = false);
+                DocsSetSpanForDisjunctionsWithSpansAndCost(const uint16_t min, std::vector<DocsSetSpan *> &its);
 
                 ~DocsSetSpanForDisjunctionsWithSpansAndCost()
                 {
@@ -564,7 +556,7 @@ namespace Trinity
                 void score_window_many(MatchesProxy *const mp, const isrc_docid_t windowBase, const isrc_docid_t windowMin, const isrc_docid_t windowMax, uint16_t leadsCnt);
 
               public:
-                DocsSetSpanForDisjunctionsWithThresholdAndCost(const uint16_t min, std::vector<DocsSetIterators::Iterator *> &its, const bool needScores, const bool root = false);
+                DocsSetSpanForDisjunctionsWithThresholdAndCost(const uint16_t min, std::vector<DocsSetIterators::Iterator *> &its, const bool needScores);
 
                 ~DocsSetSpanForDisjunctionsWithThresholdAndCost()
                 {

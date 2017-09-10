@@ -8,16 +8,17 @@
 
 namespace Trinity
 {
-	// We need to support an execution mode which matches Lucene's, which
-	// can be useful in specific applications, like Visual Search, where you
-	// care a lot about performance because you may be dealing with 'queries' made up of
-	// 1000s of "terms"(for this example, those would be image features extracted by e.g OpenCV),
-	// but you also want some sort of score based on a statistical model.
+	// Currently, we don't really need to query for total matches in the current document
+	// but if we do, or you need it in your handler for whatever reason, comment out RDP_NEED_TOTAL_MATCHES
+	// and rebuild. This is not enabled because inflating the vtables is not worth it for a call that
+	// you may not use.
+	// 
+	// This, along with moving score() out of relevant_document_provider is done so that we
+	// reduce the vtable size of Iterator and thereby reduce cache-misses.
 	//
-	// We need to inflate Iterator by making it a subclass of relevant_document_provider and also
-	// make MatchesProxy::process() accept a relevant_document_provider* as opposed to a simple isrc_docid_t
-	// which does have a slight impact on runtime perf., but it's worth it to support the semantics we need.
-
+	// We could probably move Iterator::curDocument into relevant_document_provider thereby not having
+	// to make document() virtual, though I am not sure how we'd go about making IteratorWrapper subclasses of
+	// relevant_document_provider do the right thing.
 //#define RDP_NEED_TOTAL_MATCHES 1
 	struct relevant_document_provider
 	{
@@ -26,6 +27,18 @@ namespace Trinity
 #ifdef RDP_NEED_TOTAL_MATCHES
 		virtual uint32_t total_matches() = 0;
 #endif
+
+		// In the past, relevant_document_provider() had a virtual double score() decl.
+		// but that meant we 'd inflate the vtable of Iterators, which are also relevant_document_provider
+		// for no reason -- they do not provide scores.
+		//
+		// Instead, considering that if you invoke score() it must be because the relevant_document_provider you are
+		// invoking it on is an IteratorWrapper(), we just do what score() impl. does and thereby
+		// no longer need to make score() virtual.
+		// 
+		// The only downside is that relevant_document is somewhat ugly now . It contains a dummy iterator which is
+		// used just for setting the current document. It's a fair tradeoff though, and consdidering we only
+		// make use of it for ExecFlags::DocumentsOnly, it's OK.
 		inline double score();
 	};
 
@@ -35,7 +48,8 @@ namespace Trinity
 		struct Iterator;
 	}
 
-	struct IteratorWrapper
+        // This simply wraps an iterator, and also provides a score
+        struct IteratorWrapper
 		: public relevant_document_provider
 	{
 		DocsSetIterators::Iterator *const it;
@@ -59,7 +73,7 @@ namespace Trinity
 		// where we only really want to advance the required or main respectively iterator
 		// For now, this is not supported, but it may be in the future as an optimization.
 		// TODO: consider this
-		virtual DocsSetIterators::Iterator *iterator() 
+		inline virtual DocsSetIterators::Iterator *iterator() 
 		{
 			return it;
 		}
@@ -69,7 +83,7 @@ namespace Trinity
 
         double relevant_document_provider::score()
 	{
-		// if you tried to get a score, then this is a IteratorWrapper
+		// If you tried to get a score, then this is a IteratorWrapper
 		// we used to virtual double score() = 0 here
 		// but we really don't want to inflate Iterator's vtable with it
 		return static_cast<IteratorWrapper *>(this)->iterator_score();

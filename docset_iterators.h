@@ -24,7 +24,20 @@ namespace Trinity
         {
                 uint64_t cost(const Iterator *);
 
+		// This provides a DEFAULT scorer based on the iterator type
+		// in the future, you should be able to create your own wrappers that provide a score()
+		// based on the wrapped/owned iterator.
+		//
+		// For example, you may want a different IteratorWrapper for all Disjunction-based iterators, where
+		// you multiply the accumulated score of their matched sub-iterators by a coefficient based on how many
+		// sub-iterators matched.
+		//
+		// It is not supported yet, but the ground-work to supporting has been laid out so all that's left is a way
+		// to perhaps augment ast_node with data that can be used by the exec.engine to materialize those wrappers.
+		//
+		// Besides, we do not expect most Trinity applications will use the ExecFlags::AccumulatedScoreScheme mode.
 		Iterator *wrap_iterator(runtime_ctx *, Iterator *);
+
 
                 // This is Lucene's MinShouldMatchSumScorer.java port
                 // It's a clever design. From their description:
@@ -496,6 +509,7 @@ namespace Trinity
                 };
         }
 
+	// See comments about it i relevant_document.h
 	struct relevant_document final
 		: public IteratorWrapper
         {
