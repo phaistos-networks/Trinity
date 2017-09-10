@@ -6,7 +6,8 @@
 
 #define TRINITY_CODECS_GOOGLE_AVAILABLE 1
 
-static_assert(sizeof(Trinity::isrc_docid_t) <= sizeof(uint32_t), "This codec implementation does not support 64bit document IDs. You can duplicate this file and update it to support larget document identifiers, or use another codec");
+static_assert(sizeof(Trinity::isrc_docid_t) <= sizeof(uint32_t));
+
 namespace Trinity
 {
         namespace Codecs

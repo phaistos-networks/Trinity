@@ -5,6 +5,7 @@
 #include "runtime_ctx.h"
 #include <prioqueue.h>
 
+
 using namespace Trinity;
 thread_local Trinity::runtime_ctx *curRCTX;
 
@@ -1972,8 +1973,8 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
                         decoders[i] = pli;
                 }
 
-                //return reg_docset_it(new DocsSetIterators::DisjunctionAllPLI(decoders, run->size));
-                SLog("foo\n"); return reg_docset_it(new DocsSetIterators::DisjunctionSome(decoders, run->size, 16));
+                return reg_docset_it(new DocsSetIterators::DisjunctionAllPLI(decoders, run->size));
+                //SLog("foo\n"); return reg_docset_it(new DocsSetIterators::DisjunctionSome(decoders, run->size, 1));
         }
         else if (n.fp == ENT::matchphrase)
         {
@@ -2165,8 +2166,8 @@ static std::unique_ptr<DocsSetSpan> build_span(DocsSetIterators::Iterator *root,
                 // take the same time if we are dealing with iterators that are just PostingsListIterator
                 // though if we have phrases and other complex binary ops, cost makes more sense, so we 'll settle for
                 // DocsSetSpanForDisjunctionsWithThresholdAndCost
-                //SLog("HERE\n");return std::make_unique<DocsSetSpanForDisjunctionsWithThresholdAndCost>(d->matchThreshold, its, rctx->accumScoreMode, asRoot);
-                return std::make_unique<DocsSetSpanForDisjunctionsWithThreshold>(d->matchThreshold, its, rctx->accumScoreMode, asRoot);
+                return std::make_unique<DocsSetSpanForDisjunctionsWithThresholdAndCost>(d->matchThreshold, its, rctx->accumScoreMode, asRoot);
+                //return std::make_unique<DocsSetSpanForDisjunctionsWithThreshold>(d->matchThreshold, its, rctx->accumScoreMode, asRoot);
         }
         else if ((rctx->documentsOnly  || rctx->accumScoreMode) && (root->type == DocsSetIterators::Type::Disjunction || root->type == DocsSetIterators::Type::DisjunctionAllPLI))
         {
@@ -2175,20 +2176,14 @@ static std::unique_ptr<DocsSetSpan> build_span(DocsSetIterators::Iterator *root,
                 switch (root->type)
                 {
                         case DocsSetIterators::Type::Disjunction:
-                        case DocsSetIterators::Type::DisjunctionAllPLI:
-                        {
-                                auto it = static_cast<DocsSetIterators::Disjunction *>(root);
-
-                                while (it->pq.size())
-                                {
-                                        auto containerIt = it->pq.top();
-
-                                        containerIt->next();
+                                for (auto containerIt : static_cast<DocsSetIterators::Disjunction *>(root)->pq)
                                         its.push_back(containerIt);
-                                        it->pq.pop();
-                                }
-                        }
-                        break;
+                                break;
+
+                        case DocsSetIterators::Type::DisjunctionAllPLI:
+                                for (auto containerIt : static_cast<DocsSetIterators::DisjunctionAllPLI *>(root)->pq)
+                                        its.push_back(containerIt);
+                                break;
 
                         default:
                                 std::abort();
@@ -2342,7 +2337,7 @@ void Trinity::exec_query(const query &in,
         if (accumScoreMode)
         {
 		// TODO: should be able to configure this somehow
-                rctx.scorer = new Similarity::TrivialScorer();
+                rctx.scorer = new TrivialScorer();
         }
 
         curRCTX = &rctx;
@@ -2722,9 +2717,8 @@ void Trinity::exec_query(const query &in,
                                                         IndexDocumentsFilter *__restrict__ const documentsFilter;
                                                         std::size_t n{0};
 
-                                                        void process(relevant_document_provider *relDoc) override final
+                                                        void process(const isrc_docid_t id) override final
                                                         {
-                                                                const auto id = relDoc->document();
                                                                 const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(id) : id;
 
                                                                 if (!documentsFilter->filter(globalDocID) && !maskedDocumentsRegistry->test(globalDocID))
@@ -2742,7 +2736,7 @@ void Trinity::exec_query(const query &in,
 
                                                 } handler(&rctx, idxsrc, matchesFilter, maskedDocumentsRegistry, documentsFilter);
 
-                                                span->process(&handler, 0, DocIDsEND);
+                                                span->process(&handler, 1, DocIDsEND);
                                                 matchedDocuments = handler.n;
                                         }
                                         else
@@ -2757,9 +2751,8 @@ void Trinity::exec_query(const query &in,
                                                         IndexDocumentsFilter *__restrict__ const documentsFilter;
                                                         std::size_t n{0};
 
-                                                        void process(relevant_document_provider *relDoc) override final
+                                                        void process(const isrc_docid_t id) override final
                                                         {
-                                                                const auto id = relDoc->document();
                                                                 const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(id) : id;
 
                                                                 if (!documentsFilter->filter(globalDocID))
@@ -2776,7 +2769,7 @@ void Trinity::exec_query(const query &in,
 
                                                 } handler(&rctx, idxsrc, matchesFilter, documentsFilter);
 
-                                                span->process(&handler, 0, DocIDsEND);
+                                                span->process(&handler, 1, DocIDsEND);
                                                 matchedDocuments = handler.n;
                                         }
                                 }
@@ -2792,9 +2785,8 @@ void Trinity::exec_query(const query &in,
                                                 masked_documents_registry *const __restrict__ maskedDocumentsRegistry;
                                                 std::size_t n{0};
 
-                                                void process(relevant_document_provider *relDoc) override final
+						void process(const isrc_docid_t id) override final
                                                 {
-                                                        const auto id = relDoc->document();
                                                         const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(id) : id;
 
                                                         if (!maskedDocumentsRegistry->test(globalDocID))
@@ -2811,37 +2803,69 @@ void Trinity::exec_query(const query &in,
 
                                         } handler(&rctx, idxsrc, matchesFilter, maskedDocumentsRegistry);
 
-                                        span->process(&handler, 0, DocIDsEND);
+                                        span->process(&handler, 1, DocIDsEND);
                                         matchedDocuments = handler.n;
                                 }
                                 else
                                 {
-                                        struct Handler
-                                            : public MatchesProxy
-                                        {
-                                                runtime_ctx *const ctx;
-                                                IndexSource *const idxsrc;
-                                                const bool requireDocIDTranslation;
-                                                MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
-                                                std::size_t n{0};
+					if (idxsrc->require_docid_translation())
+					{
+						struct Handler
+							: public MatchesProxy
+						{
+							runtime_ctx *const ctx;
+							IndexSource *const idxsrc;
+							MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
+							std::size_t n{0};
 
-                                                void process(relevant_document_provider *relDoc) override final
-                                                {
-                                                        const auto id = relDoc->document();
+							void process(const isrc_docid_t id) override final
+							{
+								matchesFilter->consider(idxsrc->translate_docid(id));
+								++n;
+							}
 
-                                                        matchesFilter->consider(requireDocIDTranslation ? idxsrc->translate_docid(id) : id);
-                                                        ++n;
-                                                }
+							Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
+								: idxsrc{src}, ctx{c}, matchesFilter{mf}
+							{
+							}
 
-                                                Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
-                                                    : idxsrc{src}, ctx{c}, requireDocIDTranslation{src->require_docid_translation()}, matchesFilter{mf}
-                                                {
-                                                }
+						} handler(&rctx, idxsrc, matchesFilter);
 
-                                        } handler(&rctx, idxsrc, matchesFilter);
+						span->process(&handler, 1, DocIDsEND);
+						matchedDocuments = handler.n;
+					}
+					else
+					{
+						struct Handler
+							: public MatchesProxy
+						{
+							runtime_ctx *const ctx;
+							IndexSource *const idxsrc;
+							MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
+							std::size_t n{0};
 
-                                        span->process(&handler, 0, DocIDsEND);
-                                        matchedDocuments = handler.n;
+							void process(const isrc_docid_t id) override final
+							{
+								matchesFilter->consider(id);
+								++n;
+							}
+
+							void process(relevant_document_provider *rdp) override final
+							{
+								matchesFilter->consider(rdp->document());
+								++n;
+							}
+
+							Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
+								: idxsrc{src}, ctx{c}, matchesFilter{mf}
+							{
+							}
+
+						} handler(&rctx, idxsrc, matchesFilter);
+
+						span->process(&handler, 1, DocIDsEND);
+						matchedDocuments = handler.n;
+					}
                                 }
                         }
 			else if (accumScoreMode)
@@ -2880,7 +2904,7 @@ void Trinity::exec_query(const query &in,
 
                                                 } handler(&rctx, idxsrc, matchesFilter, maskedDocumentsRegistry, documentsFilter);
 
-                                                span->process(&handler, 0, DocIDsEND);
+                                                span->process(&handler, 1, DocIDsEND);
                                                 matchedDocuments = handler.n;
                                         }
                                         else
@@ -2914,7 +2938,7 @@ void Trinity::exec_query(const query &in,
 
                                                 } handler(&rctx, idxsrc, matchesFilter, documentsFilter);
 
-                                                span->process(&handler, 0, DocIDsEND);
+                                                span->process(&handler, 1, DocIDsEND);
                                                 matchedDocuments = handler.n;
                                         }
                                 }
@@ -2949,7 +2973,7 @@ void Trinity::exec_query(const query &in,
 
                                         } handler(&rctx, idxsrc, matchesFilter, maskedDocumentsRegistry);
 
-                                        span->process(&handler, 0, DocIDsEND);
+                                        span->process(&handler, 1, DocIDsEND);
                                         matchedDocuments = handler.n;
                                 }
                                 else
@@ -2980,7 +3004,7 @@ void Trinity::exec_query(const query &in,
 
                                         } handler(&rctx, idxsrc, matchesFilter);
 
-                                        span->process(&handler, 0, DocIDsEND);
+                                        span->process(&handler, 1, DocIDsEND);
                                         matchedDocuments = handler.n;
                                 }
 
@@ -3029,7 +3053,7 @@ void Trinity::exec_query(const query &in,
 
                                                 } handler(&rctx, idxsrc, matchesFilter, maskedDocumentsRegistry, documentsFilter);
 
-                                                span->process(&handler, 0, DocIDsEND);
+                                                span->process(&handler, 1, DocIDsEND);
                                                 matchedDocuments = handler.n;
                                         }
                                         else
@@ -3071,7 +3095,7 @@ void Trinity::exec_query(const query &in,
 
                                                 } handler(&rctx, idxsrc, matchesFilter, documentsFilter);
 
-                                                span->process(&handler, 0, DocIDsEND);
+                                                span->process(&handler, 1, DocIDsEND);
                                                 matchedDocuments = handler.n;
                                         }
                                 }
@@ -3114,7 +3138,7 @@ void Trinity::exec_query(const query &in,
 
                                         } handler(&rctx, idxsrc, matchesFilter, maskedDocumentsRegistry);
 
-                                        span->process(&handler, 0, DocIDsEND);
+                                        span->process(&handler, 1, DocIDsEND);
                                         matchedDocuments = handler.n;
                                 }
                                 else
@@ -3151,7 +3175,7 @@ void Trinity::exec_query(const query &in,
 
                                         } handler(&rctx, idxsrc, matchesFilter);
 
-                                        span->process(&handler, 0, DocIDsEND);
+                                        span->process(&handler, 1, DocIDsEND);
                                         matchedDocuments = handler.n;
                                 }
                         }

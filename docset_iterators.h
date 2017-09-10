@@ -1,3 +1,6 @@
+// ## Important impl. requirement for all Iterators
+// Iterators may not advance themselves (i.e via next() or advance() methods), or any of its sub-iterators they keep track of
+// in their constructors. Doing so would cause all kinds of issues with Docsets Spans.
 #pragma once
 #include "docset_iterators_base.h"
 #include <prioqueue.h>
@@ -20,6 +23,8 @@ namespace Trinity
         namespace DocsSetIterators
         {
                 uint64_t cost(const Iterator *);
+
+		Iterator *wrap_iterator(runtime_ctx *, Iterator *);
 
                 // This is Lucene's MinShouldMatchSumScorer.java port
                 // It's a clever design. From their description:
@@ -48,6 +53,7 @@ namespace Trinity
                     : public Iterator
                 {
                         friend uint64_t cost(const Iterator *);
+			friend struct IteratorWrapper;
 
                       public:
                         struct it_tracker
@@ -61,7 +67,7 @@ namespace Trinity
                       public:
                         const uint16_t matchThreshold;
 
-                      private:
+                      protected:
                         uint16_t curDocMatchedItsCnt{0};
                         it_tracker *trackersStorage{nullptr};
 
@@ -100,22 +106,6 @@ namespace Trinity
 
                         isrc_docid_t next_impl();
 
-			double score() override final
-			{
-				double sum{0};
-
-				update_matched_cnt();
-                                for (auto it{lead}; it; it = it->next)
-                                        sum += it->it->score();
-                                return sum;
-			}
-
-                        auto matched_cnt()
-                        {
-                                update_matched_cnt();
-                                return curDocMatchedItsCnt;
-                        }
-
                         inline void add_lead(it_tracker *const t)
                         {
                                 t->next = lead;
@@ -132,14 +122,21 @@ namespace Trinity
                                         std::free(trackersStorage);
                         }
 
-                        // Advancing to the next document. Iterators in the lead LL need to migrate to
-                        // tail. If tail is full, we take the least costly iterators and advance them.
+                        // Advancing to the next document. Iterators in the lead LL need to migrate to // tail. If tail is full, we take the least costly iterators and advance them.
                         isrc_docid_t next() override final;
 
                         isrc_docid_t advance(const isrc_docid_t target) override final;
 
                         // advance all entries from the tail to know about all matches on the current document
                         void update_matched_cnt();
+
+#ifdef RDP_NEED_TOTAL_MATCHES
+			inline uint32_t total_matches() override final
+                        {
+                                update_matched_cnt();
+                                return curDocMatchedItsCnt;
+                        }
+#endif
                 };
 
                 // This is very handy, and we can use it to model NOT clauses
@@ -150,7 +147,6 @@ namespace Trinity
                 struct Filter final
                     : public Iterator
                 {
-                        friend uint16_t reset_depth(Iterator *, const uint16_t);
                         friend uint64_t cost(const Iterator *);
 
                       public:
@@ -170,21 +166,18 @@ namespace Trinity
 
                         isrc_docid_t advance(const isrc_docid_t target) override final;
 
-			double score() override final
-			{
-				return req->score();
-			}
+#ifdef RDP_NEED_TOTAL_MATCHES
+                        inline uint32_t total_matches() override final
+                        {
+                                return req->total_matches();
+                        }
+#endif
                 };
 
-                // This is how we can implement constrrue_expr()
-                // we 'll operate on the main iterator and will only attempt to advance
-		// the optional iterator in score() or and collect_doc_matching_terms()
-                // e.g [a AND <b>] => Optional(Decoder(a), Decoder(b))
+
                 struct Optional final
                     : public Iterator
                 {
-                        friend uint16_t reset_depth(Iterator *, const uint16_t);
-
                       public:
                         Iterator *const main, *const opt;
 
@@ -204,7 +197,22 @@ namespace Trinity
 				return curDocument.id = main->advance(target);
                         }
 
-			double score() override final;
+#ifdef RDP_NEED_TOTAL_MATCHES
+			uint32_t total_matches() override final
+			{
+				auto freq = main->total_matches();
+				const auto id = main->current();
+				auto optId = opt->current();
+
+				if (optId < id)
+					optId = opt->advance(id);
+				if (optId == id)
+					freq += opt->total_matches();
+
+				return freq;
+			}
+#endif
+
                 };
 
                 struct idx_stack final
@@ -226,7 +234,6 @@ namespace Trinity
                 struct DisjunctionAllPLI final
                     : public Iterator
                 {
-                        friend uint16_t reset_depth(Iterator *, const uint16_t);
 
                       private:
                         struct Compare
@@ -255,16 +262,19 @@ namespace Trinity
 
                         isrc_docid_t advance(const isrc_docid_t target) override final;
 
-			double score() override final
+#ifdef RDP_NEED_TOTAL_MATCHES
+			uint32_t total_matches() override final
 			{
-				double sum{0};
+				uint32_t cnt{0};
 
-                                pq.for_each_top([&sum](const auto it) { sum += it->score(); },
-                                                [](const auto a, const auto b) noexcept {
-                                                        return a->current() == b->current();
-                                                });
-                                return sum;
-                        }
+				pq.for_each_top([&cnt](const auto it) { ++cnt; },
+						[](const auto a, const auto b) noexcept {
+						return a->current() == b->current();
+						});
+				return cnt;
+			}
+#endif
+
                 };
 
                 // Will only match one, and will ignore the rest
@@ -275,8 +285,6 @@ namespace Trinity
                 struct Disjunction final
                     : public Iterator
                 {
-                        friend uint16_t reset_depth(Iterator *, const uint16_t);
-
                       private:
                         struct Compare
                         {
@@ -304,22 +312,24 @@ namespace Trinity
 
                         isrc_docid_t advance(const isrc_docid_t target) override final;
 
-			double score() override final
+#ifdef RDP_NEED_TOTAL_MATCHES
+			uint32_t total_matches() override final
 			{
-				double sum{0};
+				uint32_t cnt{0};
 
-                                pq.for_each_top([&sum](const auto it) { sum += it->score(); },
-                                                [](const auto a, const auto b) noexcept {
-                                                        return a->current() == b->current();
-                                                });
-                                return sum;
-                        }
+				pq.for_each_top([&cnt](const auto it) { ++cnt; },
+						[](const auto a, const auto b) noexcept {
+						return a->current() == b->current();
+						});
+				return cnt;
+			}
+#endif
+
                 };
 
                 struct ConjuctionAllPLI final
                     : public Iterator
                 {
-                        friend uint16_t reset_depth(Iterator *, const uint16_t);
 
                       public:
                         Codecs::PostingsListIterator **const its;
@@ -345,7 +355,12 @@ namespace Trinity
 
                         isrc_docid_t next() override final;
 
-			double score() override final;
+#ifdef RDP_NEED_TOTAL_MATCHES
+			inline uint32_t total_matches() override final
+			{
+				return size;
+			}
+#endif
                 };
 
                 // If we can, and we can, identify the set of leaders that are required like we do now for leadersAndSet
@@ -355,8 +370,6 @@ namespace Trinity
                 struct Conjuction final
                     : public Iterator
                 {
-                        friend uint16_t reset_depth(Iterator *, const uint16_t);
-
                       public:
                         Iterator **const its;
                         uint16_t size;
@@ -381,14 +394,12 @@ namespace Trinity
 
                         isrc_docid_t next() override final;
 
-			double score() override final
-			{
-				double res{0};
-
-				for (uint16_t i{0}; i != size; ++i)
-					res += its[i]->score();
-				return res;
-			}
+#ifdef RDP_NEED_TOTAL_MATCHES
+                        inline uint32_t total_matches() override final
+                        {
+                                return size;
+                        }
+#endif
                 };
 
                 // No longer inherring from Conjuction; some optimization opportunities open up when not doing so
@@ -396,8 +407,6 @@ namespace Trinity
                 struct Phrase final
                     : public Iterator
                 {
-                        friend uint16_t reset_depth(Iterator *, const uint16_t);
-
                       public:
                         bool consider_phrase_match(); // use by exec() / root iterations
 
@@ -432,7 +441,13 @@ namespace Trinity
 
                         isrc_docid_t next() override final;
 
-                        double score() override final;
+#ifdef RDP_NEED_TOTAL_MATCHES
+			inline uint32_t total_matches() override final
+			{
+				return matchCnt;
+			}
+#endif
+
                 };
 
 
@@ -472,13 +487,81 @@ namespace Trinity
                                 return id;
                         }
 
-			double score() override final
+#ifdef RDP_NEED_TOTAL_MATCHES
+			inline uint32_t total_matches() override final
 			{
 				return 1;
 			}
+#endif
                 };
         }
+
+	struct relevant_document final
+		: public IteratorWrapper
+        {
+                double score_;
+                uint32_t matchesCnt;
+
+                struct dummy_iterator final
+                    : public DocsSetIterators::Iterator
+                {
+                        isrc_docid_t advance(const isrc_docid_t target) override final
+                        {
+                                return 0;
+                        }
+
+                        inline isrc_docid_t next() override final
+                        {
+                                return 0;
+                        }
+
+			dummy_iterator()
+				: Iterator{DocsSetIterators::Type::Dummy}
+			{
+			}
+
+                } dummyIt;
+
+                relevant_document()
+                    : IteratorWrapper{&dummyIt}
+                {
+                }
+
+		inline void set_document(const isrc_docid_t id)
+		{
+			dummyIt.curDocument.id = id;
+		}
+
+                inline double iterator_score() override final
+                {
+                        return score_;
+                }
+
+#ifdef RDP_NEED_TOTAL_MATCHES
+                // e.g for a single term, number of times matched in a document, for
+                // a conjuction the total number of operands, for a disjunction the total
+                // number of operands on document() etc.
+                inline uint32_t total_matches() override final
+                {
+                        return matchesCnt;
+                }
+#endif
+        };
 }
+
+#ifdef RDP_NEED_TOTAL_MATCHES
+uint32_t Trinity::IteratorWrapper::total_matches() 
+{
+	return it->total_matches();
+}
+#endif
+
+Trinity::isrc_docid_t Trinity::IteratorWrapper::document() const noexcept
+{
+	return it->current();
+}
+
+
 #ifdef __clang__
 #pragma GCC diagnostic pop
 #endif

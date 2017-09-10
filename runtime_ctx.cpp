@@ -3,6 +3,30 @@
 
 using namespace Trinity;
 
+Codecs::PostingsListIterator *Trinity::runtime_ctx::reg_pli(Codecs::PostingsListIterator *it)
+{
+	if (accumScoreMode)
+		wrap_iterator(this, it);
+
+	allIterators.push_back(it);
+	return it;
+}
+
+DocsSetIterators::Iterator *Trinity::runtime_ctx::reg_docset_it(DocsSetIterators::Iterator *it)
+{
+	auto res{it};
+
+	if (accumScoreMode)
+	{
+		wrap_iterator(this, it);
+		// see comments of IteratorWrapper::iterator() decl.
+		res = static_cast<IteratorWrapper *>(it->rdp)->iterator();
+	}
+		
+	docsetsIterators.push_back(it);
+	return res;
+}
+
 bool runtime_ctx::termsrun::operator==(const termsrun &o) const noexcept
 {
         if (size == o.size)
@@ -198,12 +222,21 @@ runtime_ctx::~runtime_ctx()
 
         while (allIterators.size())
         {
-                delete allIterators.back();
+                auto ptr = allIterators.back();
+
+                if (auto rdp = ptr->rdp; rdp != ptr)
+                        delete static_cast<IteratorWrapper *>(rdp);
+
+                delete ptr;
                 allIterators.pop_back();
         }
 
         for (auto ptr : docsetsIterators)
         {
+		// this is not elegant, but its pragmatic enough to be OK
+		if (auto rdp = ptr->rdp; rdp != ptr)
+			delete static_cast<IteratorWrapper *>(rdp);
+
                 switch (ptr->type)
                 {
                         case DocsSetIterators::Type::AppIterator:

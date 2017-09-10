@@ -92,6 +92,7 @@ namespace Trinity
                         uint32_t indexOutFlushed;
                         char basePath[PATH_MAX];
 
+
                         // The segment name should be the generation
                         // e.g for path Trinity/Indices/Wikipedia/Segments/100
                         // the generation is extracted as 100, but, again, this is codec specific
@@ -243,7 +244,13 @@ namespace Trinity
 				return dec;
 			}
 
-			double score() override final;
+#ifdef RDP_NEED_TOTAL_MATCHES
+			inline uint32_t total_matches() override final
+			{
+				return freq;
+			}
+#endif
+
                 };
 
                 // Decoder interface for decoding a single term's posting list.

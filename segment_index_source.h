@@ -11,6 +11,7 @@ namespace Trinity
             : public IndexSource
         {
               private:
+	      	field_statistics defaultFieldStats;
                 std::unique_ptr<Trinity::Codecs::AccessProxy> accessProxy;
 		std::unique_ptr<SegmentTerms> terms; // all terms for this segment
 		range_base<const uint8_t *, uint32_t> index;
@@ -43,6 +44,11 @@ namespace Trinity
 		auto access_proxy()
 		{
 			return accessProxy.get();
+		}
+
+                field_statistics default_field_stats() override final
+		{
+			return defaultFieldStats;
 		}
 
                 term_index_ctx resolve_term_ctx(const str8_t term) override final

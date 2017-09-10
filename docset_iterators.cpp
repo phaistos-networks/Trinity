@@ -72,11 +72,6 @@ uint64_t Trinity::DocsSetIterators::cost(const Iterator *it)
         }
 }
 
-double Trinity::DocsSetIterators::Phrase::score()
-{
-        return rctxRef->scorer->score(curDocument.id, matchCnt);
-}
-
 bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
 {
         [[maybe_unused]] static constexpr bool trace{false};
@@ -798,8 +793,15 @@ void Trinity::DocsSetIterators::DisjunctionSome::update_current()
         curDocMatchedItsCnt = 1;
 
         curDocument.id = lead->id;
+
+	require(lead->id == lead->it->current());
+
         while (head.size() && head.top()->id == curDocument.id)
+	{
+		require(head.top()->id == head.top()->it->current());
+
                 add_lead(head.pop());
+	}
 }
 
 Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::next_impl()
@@ -813,7 +815,7 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::next_impl()
                 }
                 else
                 {
-			// Match impossibl for this document
+			// Match impossible for this document
 			// Advance to the next potential document that may match
                         for (auto it{lead}; it; it = it->next)
                                 tail.push(it);
@@ -826,7 +828,9 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::next_impl()
 }
 
 Trinity::DocsSetIterators::DisjunctionSome::DisjunctionSome(Trinity::DocsSetIterators::Iterator **const iterators, const uint16_t cnt, const uint16_t minMatch)
-    : Iterator{Type::DisjunctionSome}, matchThreshold{minMatch}, head{uint32_t(cnt - minMatch + 1)}, tail{uint32_t(minMatch - 1)}
+	: Iterator{Type::DisjunctionSome}, matchThreshold{minMatch}, 
+	head{uint32_t(cnt - minMatch + 1)}, 
+	tail{uint32_t(minMatch - 1)}
 {
         expect(minMatch <= cnt);
         expect(minMatch);
@@ -853,19 +857,22 @@ Trinity::DocsSetIterators::DisjunctionSome::DisjunctionSome(Trinity::DocsSetIter
 		for (const auto it : pq)
                         cost_ += it;
         }
+
+	SLog("OK\n"); for (auto it{lead}; it; it = it->next) { require(it->id == 0); require(it->it->current() == 0); }
 }
 
 Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::next()
 {
         it_tracker *evicted;
+	const auto doc{curDocument.id};
 
         for (auto it{lead}; it; it = it->next)
         {
                 if (!tail.try_push(it, evicted))
                 {
-                        evicted->id = (evicted->id == curDocument.id)
+                        evicted->id = (evicted->id == doc)
                                           ? evicted->it->next()
-                                          : evicted->it->advance(curDocument.id + 1);
+                                          : evicted->it->advance(doc + 1);
 
                         head.push(evicted);
                 }
@@ -926,30 +933,8 @@ void Trinity::DocsSetIterators::DisjunctionSome::update_matched_cnt()
 	// order might help avoid some permutations in the head heap.
 	auto data{tail.data()};
 
-	for (int32_t i = int32_t(tail.size())  - 1; i >= 0; --i)
-		advance_tail(data[i]);
-	tail.clear();
-}
+        for (auto i{tail.size()}; i;)
+                advance_tail(data[--i]);
 
-double Trinity::DocsSetIterators::Optional::score()
-{
-        auto score = main->score();
-        const auto id = main->current();
-        auto optId = opt->current();
-
-        if (optId < id)
-                optId = opt->advance(id);
-        if (optId == id)
-                score += opt->score();
-
-        return score;
-}
-
-double Trinity::DocsSetIterators::ConjuctionAllPLI::score() 
-{
-	double res{0};
-
-	for (uint16_t i{0}; i != size; ++i)
-		res += its[i]->score();
-	return res;
+        tail.clear();
 }

@@ -153,6 +153,7 @@ namespace Trinity
                 {
                 }
 
+#if 1
 		// If the Documents Only mode is selected, this will be invoked, passed
 		// the global document ID. Given that you only really want the 
 		virtual void consider(const docid_t id)
@@ -166,6 +167,23 @@ namespace Trinity
 		{
 
 		}
+#else
+		inline void consider(const docid_t id)
+		{
+			static matched_document md;
+
+			md.id = id;
+			consider(md);
+		}
+
+		inline void consider(const docid_t id, const double score)
+		{
+			static matched_document md;
+
+			md.id = id;
+			consider(md);
+		}
+#endif
 
                 // Invoked before the query execution begins by the exec.engine
 		// You may want to override this if you want to be notified and get a chance to do anything before

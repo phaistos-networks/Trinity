@@ -17,6 +17,11 @@ void SegmentIndexSession::document_proxy::insert(const uint32_t termID, const to
         require(termID);
         Dexpect(position < Limits::MaxPosition);
 
+	// XXX: this works assuming that you are indexing in-order
+	// we should probably support indexing terms where positions are not in a strict order
+	positionOverlapsCnt += (position && position == lastPos);
+	lastPos = position;
+
         if (const auto size = payload.size())
         {
                 const auto l = hitsBuf.size();
@@ -33,6 +38,7 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
 {
         uint32_t terms{0};
         const auto all_hits = reinterpret_cast<const uint8_t *>(hitsBuf.data());
+	field_doc_stats fs;
 
         // we can't update the same document more than once in the same session
         if (unlikely(!track(proxy.did)))
@@ -49,6 +55,10 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
 
         b.pack(uint16_t(0)); // XXX: should be u32 if possible, or use varint
 
+
+	fs.reset();
+	fs.overlapsCnt = proxy.positionOverlapsCnt;	 // computed earlier
+
 	for (auto &v : hits)
         {
                 std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) noexcept {
@@ -61,6 +71,7 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
                         uint32_t termHits{0};
                         uint32_t prev{0};
                         uint8_t prevPayloadSize{0xff};
+			uint16_t posHits{0};
 
                         require(term);
                         b.pack(term);
@@ -74,6 +85,9 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
                                 const auto &it = p->second;
                                 const auto delta = it.first - prev;
                                 const auto payloadSize = it.second.size();
+
+				posHits += (it.first != 0);
+
 
                                 prev = it.first;
                                 if (payloadSize != prevPayloadSize)
@@ -94,6 +108,13 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
                                 ++termHits;
                         } while (++p != e && p->first == term);
 
+			if (posHits)
+                        {
+                                ++fs.distinctTermsCnt;
+                                fs.maxTermFreq = std::max(fs.maxTermFreq, posHits);
+                                fs.positionHitsCnt += posHits;
+                        }
+
                         require(termHits <= UINT16_MAX);
                         *(uint16_t *)(b.data() + o) = termHits; // total hits for (document, term): TODO use varint?
 
@@ -104,6 +125,31 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
         }
 
         *(uint16_t *)(b.data() + offset) = terms; // total distinct terms for (document) XXX: see earlier comments
+
+
+	// Lucene tracks similar state to field_doc_state into a FieldInvertState
+	// and then invokes a Similarity::computeNorm() which is passed that FieldInvertState
+	// and this is where subclasses of Similarity, e.g BP25 get to compute a normalization value for a (field, document)
+	// given the acumulated state of the term processing for this (field, document)
+	// e.g lucene's BM25Similarity::computeNorm(FieldInvertState state) { final int numTerms = discountOverlaps ? state.getLength() - state.getNumOverlap() : state.getLength(); return encodeNormValue(state.getBoost(), numTerms); }
+	//
+	// Notice how Lucene uses a NormValuesWriter and in finish() which is invoked when a (field, document) is parsed
+	// it invokes norm.addValue(docState.docID, similarity.computeNorm(invertState));
+	// NormValuesWriter class is quite interesting. It holds a private PackedLongValues.Builder pending
+	// where it pads it with 0(missing) in the addValue() impl. its flush() invokes pending.build
+	// util/packed/PackedLongValues#Builder.build() is interesting as well
+	// It tracks longs in an array, and build() returns an instance of PackedLongValues, which has a pack()  method
+	// which identifies the min and max values in the list of values, and then for each value figures out how many bits are required
+	// to encode it and goes to work.
+	// I wonder how that's decoded and if this is about pages of whatever
+
+
+	if (fs.positionHitsCnt)
+	{
+
+	}
+
+
 
         if (intermediateStateFlushFreq && unlikely(b.size() > intermediateStateFlushFreq))
         {
@@ -215,7 +261,7 @@ Trinity::SegmentIndexSession::document_proxy SegmentIndexSession::begin(const is
 // Callee is responsible for clos()ing indexFd
 //
 // Please note that it will invoke sess->end() for you
-void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<isrc_docid_t> &updatedDocumentIDs, int indexFd)
+void Trinity::persist_segment(const Trinity::IndexSource::field_statistics &fs, Trinity::Codecs::IndexSession *const sess, std::vector<isrc_docid_t> &updatedDocumentIDs, int indexFd)
 {
         if (sess->indexOut.size())
         {
@@ -237,17 +283,24 @@ void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::ve
         }
 
         // Persist codec info
-        int fd = open(Buffer{}.append(sess->basePath, "/codec").c_str(), O_WRONLY | O_LARGEFILE | O_TRUNC | O_CREAT, 0775);
+	// TODO: Use a different name e.g info, that holds the codec and stats etc
+	// instead of using the file for just the codec
+        int fd = open(Buffer{}.append(sess->basePath, "/id").c_str(), O_WRONLY | O_LARGEFILE | O_TRUNC | O_CREAT, 0775);
 
         if (fd == -1)
-                throw Switch::system_error("Failed to persist codec id");
+                throw Switch::system_error("Failed to persist ID");
 
         const auto codecID = sess->codec_identifier();
+	IOBuffer b;
 
-        if (write(fd, codecID.data(), codecID.size()) != codecID.size())
+        b.pack(uint8_t(1), codecID.size());
+        b.serialize(codecID.data(), codecID.size());
+	b.pack(fs.sumTermHits, fs.totalTerms, fs.sumTermsDocs, fs.docsCnt);
+
+        if (write(fd, b.data(), b.size()) != b.size())
         {
                 close(fd);
-                throw Switch::system_error("Failed to persist codec id");
+                throw Switch::system_error("Failed to persist ID");
         }
         else
                 close(fd);
@@ -255,7 +308,7 @@ void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::ve
         sess->end();
 }
 
-void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::vector<isrc_docid_t> &updatedDocumentIDs)
+void Trinity::persist_segment(const Trinity::IndexSource::field_statistics &fs, Trinity::Codecs::IndexSession *const sess, std::vector<isrc_docid_t> &updatedDocumentIDs)
 {
         auto path = Buffer{}.append(sess->basePath, "/index.t");
         int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_LARGEFILE | O_TRUNC, 0775);
@@ -267,7 +320,7 @@ void Trinity::persist_segment(Trinity::Codecs::IndexSession *const sess, std::ve
                 close(fd);
         });
 
-        persist_segment(sess, updatedDocumentIDs, fd);
+        persist_segment(fs, sess, updatedDocumentIDs, fd);
 
         if (rename(path.c_str(), Buffer{}.append(strwlen32_t(path.data(), path.size() - 2)).c_str()) == -1)
                 throw Switch::system_error("Failed to persist index");
@@ -308,7 +361,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                         close(indexFd);
         });
 
-        const auto scan = [ flushFreq = this->flushFreq, indexFd, enc = enc_.get(), &map, sess ](const auto &ranges)
+        const auto scan = [ &defaultFieldStats = this->defaultFieldStats, flushFreq = this->flushFreq, indexFd, enc = enc_.get(), &map, sess ](const auto &ranges)
         {
                 uint8_t payloadSize;
                 std::vector<segment_data> all[32];
@@ -340,6 +393,8 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                                         // deleted?
                                         continue;
                                 }
+
+				++defaultFieldStats.docsCnt;
 
                                 do
                                 {
@@ -427,6 +482,8 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
 
                                         require(documentID > prevDID);
 
+					defaultFieldStats.sumTermHits +=  hitsCnt;
+
                                         enc->begin_document(documentID);
                                         for (uint32_t i{0}; i != hitsCnt; ++i)
                                         {
@@ -447,11 +504,15 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
                                         }
                                         enc->end_document();
 
+					++defaultFieldStats.sumTermsDocs;
+
                                         prevDID = documentID;
                                 } while (likely(++it != e) && it->termID == term);
 
                                 enc->end_term(&tctx);
                                 map.insert({term, tctx});
+
+				++defaultFieldStats.totalTerms;
 
                                 if (flushFreq && unlikely(sess->indexOut.size() > flushFreq))
                                         sess->flush_index(indexFd);
@@ -497,6 +558,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         else if (ranges.size())
                 scan(ranges);
 
+
         // Persist terms dictionary
         std::vector<std::pair<str8_t, term_index_ctx>> v;
         size_t sum{0};
@@ -520,7 +582,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess)
         before = Timings::Microseconds::Tick();
 
         sess->persist_terms(v);
-        persist_segment(sess, updatedDocumentIDs, indexFd);
+        persist_segment(defaultFieldStats, sess, updatedDocumentIDs, indexFd);
 
         if (trace)
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " to persist segment\n");

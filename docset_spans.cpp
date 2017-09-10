@@ -2,6 +2,7 @@
 #include "runtime_ctx.h"
 #include <switch_bitops.h>
 
+
 using namespace Trinity;
 extern thread_local Trinity::runtime_ctx *curRCTX;
 
@@ -33,9 +34,10 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForPartialMatch::process(MatchesProxy 
                 if (collectedCnt == 1)
                 {
                         auto *const it = collected[0];
+			const auto rdp{it->rdp};
 
                         for (auto id = it->current(); id < windowMax; id = it->next())
-                                mp->process(it);
+                                mp->process(rdp);
 
                         pq.push(it);
                 }
@@ -76,7 +78,7 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForPartialMatch::process(MatchesProxy 
 
                                         if (trackInfo.second >= matchThreshold)
                                         {
-                                                relDoc.id = id;
+                                                relDoc.set_document(id);
                                                 mp->process(&relDoc);
                                         }
 
@@ -98,7 +100,11 @@ Trinity::DocsSetSpanForDisjunctionsWithSpans::DocsSetSpanForDisjunctionsWithSpan
     : DocsSetSpan{root}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((span_ctx *)malloc(sizeof(span_ctx) * (its.size() + 1))), tracker(matching, curRCTX)
 {
         for (auto it : its)
+	{
+		// XXX: do we need to it->process(nullptr, 1,1) here for the eqivalent of it->next() we 
+		// do in other pq population loops in other Spans?
                 pq.push({it, 0});
+	}
 
         require(pq.size());
 }
@@ -113,8 +119,9 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctions::process(MatchesProxy 
                 auto it = pq.top();
 
                 id = it->current();
-                if (id >= max)
+                if (unlikely(id >= max))
                         break;
+
 
                 // fast round down to SIZE(works because SIZE is a power of two int.). Identifies the window the next match belongs to.
                 const isrc_docid_t windowBase = id & ~MASK;
@@ -122,22 +129,24 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctions::process(MatchesProxy 
                 const auto windowMax = std::min<isrc_docid_t>(max, windowBase + SIZE);
                 uint16_t collectedCnt{1};
 
+
                 collected[0] = it;
                 for (pq.pop(); likely(pq.size()) && (it = pq.top())->current() < windowMax; pq.pop())
                 {
                         collected[collectedCnt++] = it;
                 }
 
+
                 if (collectedCnt == 1)
                 {
                         // fast-path: one iterator can match in this window
                         auto *const it = collected[0];
 
-                        // no need for
-                        // if (id < windowMin) id = it->advance(windowMin);
-                        // because id has been rounded down to SIZE, and windowMin is std::min(min, windowBase)
                         for (auto id = it->current(); id < windowMax; id = it->next())
-                                mp->process(it);
+			{
+                                //mp->process(it);
+                                mp->process(id);
+			}
 
                         pq.push(it);
                 }
@@ -156,6 +165,7 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctions::process(MatchesProxy 
                                 {
                                         const auto i = id - windowBase;
                                         const auto mi = i >> 6;
+
 
                                         // std::max() is at least as fast as the branchless alt.
                                         // m = m ^ ((m ^ mi) & -(m < mi));
@@ -177,14 +187,16 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctions::process(MatchesProxy 
                                         const auto translated = _b + bidx;
                                         const auto id = windowBase + translated;
 
+					require(translated == (id & MASK));
+
                                         b ^= uint64_t(1) << bidx;
 
-                                        relDoc.id = id;
-                                        mp->process(&relDoc);
+                                        //relDoc.set_document(id); mp->process(&relDoc);
+					mp->process(id);
                                 }
                         }
 
-                        //memset(matching, 0, sizeof(matching)); // this will reset 256bytes. Can we do better?
+                        //memset(matching, 0, sizeof(uint64_t) * SET_SIZE); 
                         memset(matching, 0, (m + 1) * sizeof(matching[0])); // yes, we can
                 }
         }
@@ -258,7 +270,7 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithSpans::process(Matc
 
                                 b ^= uint64_t(1) << bidx;
 
-                                relDoc.id = id;
+                                relDoc.set_document(id);
                                 mp->process(&relDoc);
                         }
                 }
@@ -304,11 +316,12 @@ Trinity::isrc_docid_t Trinity::FilteredDocsSetSpan::process(MatchesProxy *const 
 Trinity::isrc_docid_t Trinity::GenericDocsSetSpan::process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max)
 {
         auto id = it->current();
+        const auto rdp{it->rdp};
 
-        if (id == 0 && min == 0 && max == DocIDsEND)
+        if (id == 0 && min == 1 && max == DocIDsEND)
         {
                 for (id = it->next(); likely(id != DocIDsEND); id = it->next())
-                        mp->process(it);
+                        mp->process(rdp);
 
                 return DocIDsEND;
         }
@@ -317,9 +330,9 @@ Trinity::isrc_docid_t Trinity::GenericDocsSetSpan::process(MatchesProxy *const m
                 if (id < min)
                         id = it->advance(min);
 
-                while (id < max)
+                while (likely(id < max))
                 {
-                        mp->process(it);
+                        mp->process(rdp);
                         id = it->next();
                 }
 
@@ -456,7 +469,7 @@ void Trinity::DocsSetSpanForDisjunctionsWithSpansAndCost::score_window_many(Matc
 
                                 if (trackInfo.second >= matchThreshold)
                                 {
-                                        relDoc.id = id;
+                                        relDoc.set_document(id);
                                         mp->process(&relDoc);
                                 }
 
@@ -639,6 +652,7 @@ void Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::score_window_many(
                         for (uint16_t i{0}; i != leadsCnt; ++i)
                         {
                                 auto *const it = leads[i]->it;
+				const auto rdp{it->rdp};
 
                                 if (it->current() < min)
                                         it->advance(min);
@@ -652,7 +666,7 @@ void Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::score_window_many(
                                         matching[mi] |= uint64_t(1) << (i & 63);
 
                                         matchesTracker[i].second++;
-                                        matchesTracker[i].first += it->score();
+                                        matchesTracker[i].first += rdp->score();
                                 }
                                 leads[i]->next = it->current();
                         }
@@ -695,7 +709,7 @@ void Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::score_window_many(
 
                                 if (trackInfo.second >= matchThreshold)
                                 {
-                                        relDoc.id = id;
+                                        relDoc.set_document(id);
                                         relDoc.score_ = trackInfo.first;
                                         mp->process(&relDoc);
                                 }
@@ -785,22 +799,33 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThreshold::process(
                         break;
 
                 const isrc_docid_t windowBase = id & ~MASK;
-                //[[maybe_unused]] const auto windowMin = std::max<isrc_docid_t>(min, windowBase);
+                [[maybe_unused]] const auto windowMin = std::max<isrc_docid_t>(min, windowBase);
                 const auto windowMax = std::min<isrc_docid_t>(max, windowBase + SIZE);
                 uint16_t collectedCnt{1};
-
+	
                 collected[0] = it;
                 for (pq.pop(); likely(pq.size()) && (it = pq.top())->current() < windowMax; pq.pop())
                 {
+			// there's no need for this now
+                        // if (it->current() < windowMin) it->advance(windowMin);
+			// as long as we make sure to advance iterators pushed into the PQ
+			// in the constructor. This is really only necessary once, when current() == 0
+			// It's not particularly expensive to check and advance() here, but simply
+			// next() in the ctor means we don't need to do any of that here.
+			// 
+			// This is true for other similar Spans designs.
+                        // if (it->current() < windowMin) it->advance(windowMin);
+
                         collected[collectedCnt++] = it;
                 }
 
                 if (collectedCnt == 1 && matchThreshold == 1)
                 {
                         auto *const it = collected[0];
+			const auto rdp{it->rdp};
 
                         for (auto id = it->current(); id < windowMax; id = it->next())
-                                mp->process(it);
+                                mp->process(rdp);
 
                         pq.push(it);
                 }
@@ -813,6 +838,7 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThreshold::process(
                                 for (uint32_t i_{0}; i_ != collectedCnt; ++i_)
                                 {
                                         auto *const it = collected[i_];
+					const auto rdp{it->rdp};
 
                                         for (auto id = it->current(); id < windowMax; id = it->next())
                                         {
@@ -822,12 +848,37 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThreshold::process(
                                                 m = std::max<uint32_t>(m, mi);
                                                 matching[mi] |= uint64_t(1) << (i & 63);
 
-                                                tracker[i].first += it->score();
+                                                tracker[i].first += rdp->score();
                                                 tracker[i].second++;
                                         }
 
                                         pq.push(it);
                                 }
+
+				for (uint32_t idx{0}; idx <= m; ++idx)
+				{
+					const uint64_t _b = uint64_t(idx) << 6;
+
+					for (auto b = matching[idx]; b;)
+					{
+						const auto bidx = SwitchBitOps::TrailingZeros(b);
+						const auto translated = _b + bidx;
+						const auto id = windowBase + translated;
+						auto &trackInfo = tracker[translated];
+
+						b ^= uint64_t(1) << bidx;
+
+						if (trackInfo.second >= matchThreshold)
+						{
+							relDoc.set_document(id);
+							relDoc.score_ = trackInfo.first;
+							mp->process(&relDoc);
+						}
+
+						trackInfo.first = 0;
+						trackInfo.second = 0;
+					}
+				}
                         }
                         else
                         {
@@ -835,6 +886,8 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThreshold::process(
                                 {
                                         auto *const it = collected[i_];
 
+					if (it->current() < windowMin) it->advance(windowMax);
+
                                         for (auto id = it->current(); id < windowMax; id = it->next())
                                         {
                                                 const auto i = id - windowBase;
@@ -848,31 +901,28 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThreshold::process(
 
                                         pq.push(it);
                                 }
-                        }
 
-                        for (uint32_t idx{0}; idx <= m; ++idx)
-                        {
-                                const uint64_t _b = uint64_t(idx) << 6;
+				for (uint32_t idx{0}; idx <= m; ++idx)
+				{
+					const uint64_t _b = uint64_t(idx) << 6;
 
-                                for (auto b = matching[idx]; b;)
-                                {
-                                        const auto bidx = SwitchBitOps::TrailingZeros(b);
-                                        const auto translated = _b + bidx;
-                                        const auto id = windowBase + translated;
-                                        auto &trackInfo = tracker[translated];
+					for (auto b = matching[idx]; b;)
+					{
+						const auto bidx = SwitchBitOps::TrailingZeros(b);
+						const auto translated = _b + bidx;
+						const auto id = windowBase + translated;
+						auto &trackInfo = tracker[translated];
 
-                                        b ^= uint64_t(1) << bidx;
+						b ^= uint64_t(1) << bidx;
 
-                                        if (trackInfo.second >= matchThreshold)
-                                        {
-                                                relDoc.id = id;
-                                                relDoc.score_ = trackInfo.first;
-                                                mp->process(&relDoc);
-                                        }
+						if (trackInfo.second >= matchThreshold)
+						{
+							mp->process(id);
+						}
 
-                                        trackInfo.first = 0;
-                                        trackInfo.second = 0;
-                                }
+						trackInfo.second = 0;
+					}
+				}
                         }
 
                         memset(matching, 0, (m + 1) * sizeof(matching[0])); 

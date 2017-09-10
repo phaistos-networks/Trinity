@@ -280,17 +280,9 @@ namespace Trinity
                 // Instead of having a virtual DocsSetIterators::Iterator::~Iterator()
                 // which means we would need another entry in the vtable, which means an higher chance for cache misses, for no really good reason
                 // we just track all created DocsSetIterators::Iterators along with its type, and in ~runtime_ctx() we consider the type, cast and delete it
-                DocsSetIterators::Iterator *reg_docset_it(DocsSetIterators::Iterator *it)
-                {
-                        docsetsIterators.push_back(it);
-                        return it;
-                }
+                DocsSetIterators::Iterator *reg_docset_it(DocsSetIterators::Iterator *it);
 
-                Codecs::PostingsListIterator *reg_pli(Codecs::PostingsListIterator *it)
-                {
-                        allIterators.push_back(it);
-                        return it;
-                }
+                Codecs::PostingsListIterator *reg_pli(Codecs::PostingsListIterator *it);
 
                 // indexed by termID
                 query_term_ctx **originalQueryTermCtx;

@@ -1,5 +1,10 @@
+// ## Important impl. requirements for all Spans
+// See docset_iterators.h header comments. Depending on the type of the Span, you may want to advance
+// provided iterators to the first document (i.e from 0 to whatever by invoking their next() method).
+// See comments here for why that makes sense.
 #pragma once
 #include "docset_iterators.h"
+
 
 namespace Trinity
 {
@@ -11,12 +16,17 @@ namespace Trinity
         {
               public:
                 virtual void process(relevant_document_provider *)
-                {
-                }
+		{
+		}
 
-                ~MatchesProxy()
-                {
-                }
+		// fast-path for documents only
+		virtual  void process(const isrc_docid_t id)
+		{
+		}
+
+		~MatchesProxy()
+		{
+		}
         };
 
         // Instead of accessing documents sets directly using Iterators, using
@@ -171,13 +181,17 @@ namespace Trinity
 
               public:
                 DocsSetSpanForDisjunctions(std::vector<Trinity::DocsSetIterators::Iterator *> &its, const bool root = false)
-                    : DocsSetSpan{root}, matching((uint64_t *)calloc(SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1)))
+                    : DocsSetSpan{root}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1)))
                 {
+
                         for (auto it : its)
-                        {
-                                it->next(); // advance to the first
+			{
+				// See comments in DocsSetSpanForDisjunctionsWithThreshold::process() collection loop
+				require(it->current() ==0);
+				it->next();
+
                                 pq.push(it);
-                        }
+			}
 
                         require(pq.size());
                 }
@@ -223,17 +237,19 @@ namespace Trinity
 
               public:
                 DocsSetSpanForDisjunctionsWithThreshold(const uint16_t min, std::vector<Trinity::DocsSetIterators::Iterator *> &its, const bool ns, const bool root = false)
-                    : DocsSetSpan{root}, needScores{ns}, matchThreshold{min}, matching((uint64_t *)calloc(SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1))), tracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>)))
+                    : DocsSetSpan{root}, needScores{ns}, matchThreshold{min}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1))), tracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>)))
                 {
                         expect(min && min <= its.size());
                         expect(its.size() > 1);
 
                         for (auto it : its)
-                        {
-                                it->next(); // advance to the first
-                                require(it->current());
-                                pq.push(it);
-                        }
+			{
+				// See comments in DocsSetSpanForDisjunctionsWithThreshold::process() collection loop
+				require(it->current() ==0);
+				it->next();
+
+				pq.push(it);
+			}
                 }
 
                 ~DocsSetSpanForDisjunctionsWithThreshold()
@@ -280,10 +296,13 @@ namespace Trinity
                     : DocsSetSpan{root}, matchThreshold{min}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), tracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>))), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1)))
                 {
                         for (auto it : its)
-                        {
-                                it->next();
-                                pq.push(it);
-                        }
+			{
+				// See comments in DocsSetSpanForDisjunctionsWithThreshold::process() collection loop
+				require(it->current() ==0);
+				it->next();
+
+				pq.push(it);
+			}
 
                         expect(pq.size());
                 }
@@ -386,6 +405,7 @@ namespace Trinity
 
                         for (auto it : pq)
                                 res += it.span->cost();
+
                         return res;
                 }
         };
