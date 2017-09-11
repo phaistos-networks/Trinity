@@ -74,6 +74,14 @@ namespace Trinity
                 // data so it may not be used in those designs.
                 struct IndexSession
                 {
+			enum class Capabilities  : uint8_t
+			{
+				// append_index_chunk() is implemented
+				AppendIndexChunk = 1,
+				Merge = 1<<1
+			};
+
+			const uint8_t caps;
                         IOBuffer indexOut;
                         // Whenever you flush indexOut to disk, say, every few MBs or GBs,
                         // you need to adjust indexOutFlushed, because the various codecs implementations need to compute some offset in the index
@@ -96,8 +104,8 @@ namespace Trinity
                         // The segment name should be the generation
                         // e.g for path Trinity/Indices/Wikipedia/Segments/100
                         // the generation is extracted as 100, but, again, this is codec specific
-                        IndexSession(const char *bp)
-                            : indexOutFlushed{0}
+                        IndexSession(const char *bp, const uint8_t capabilities = 0)
+                            : caps{capabilities}, indexOutFlushed{0}
                         {
                                 strcpy(basePath, bp);
                         }
@@ -144,7 +152,15 @@ namespace Trinity
                         // really only used for queries as an IndexSource), then you can just implement this and merge() as no-ops.
                         //
                         // see MergeCandidatesCollection::merge() impl.
-                        virtual range32_t append_index_chunk(const AccessProxy *src, const term_index_ctx srcTCTX) = 0;
+			//
+			// UPDATE: this is now optional. If your codec implements it, make sure you set (Capabilities::AppendIndexChunk)
+			// in capabilities flags passed to Codecs::IndexSession::IndexSession(). Both Google and Lucene's do so.
+			// The default impl. does nothing/aborts
+                        virtual range32_t append_index_chunk(const AccessProxy *src, const term_index_ctx srcTCTX) 
+			{
+				std::abort();
+				return {};
+			}
 
                         // If we have multiple postng lists for the same term(i.e merging 2+ segments
                         // and same term exists in 2+ of them)
@@ -166,7 +182,11 @@ namespace Trinity
                                 masked_documents_registry *maskedDocsReg;
                         };
 
-                        virtual void merge(merge_participant *participants, const uint16_t participantsCnt, Encoder *const encoder) = 0;
+			// UPDATE: now optional; if you override and implement it, make sure you set Capabilities::Merge in the constructo
+                        virtual void merge(merge_participant *participants, const uint16_t participantsCnt, Encoder *const encoder)
+			{
+
+			}
                 };
 
                 // Encoder interface for encoding a single term's posting list

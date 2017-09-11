@@ -28,7 +28,7 @@ namespace Trinity
 		// in the future, you should be able to create your own wrappers that provide a score()
 		// based on the wrapped/owned iterator.
 		//
-		// For example, you may want a different IteratorWrapper for all Disjunction-based iterators, where
+		// For example, you may want a different IteratorScorer for all Disjunction-based iterators, where
 		// you multiply the accumulated score of their matched sub-iterators by a coefficient based on how many
 		// sub-iterators matched.
 		//
@@ -66,7 +66,7 @@ namespace Trinity
                     : public Iterator
                 {
                         friend uint64_t cost(const Iterator *);
-			friend struct IteratorWrapper;
+			friend struct IteratorScorer;
 
                       public:
                         struct it_tracker
@@ -511,7 +511,7 @@ namespace Trinity
 
 	// See comments about it i relevant_document.h
 	struct relevant_document final
-		: public IteratorWrapper
+		: public IteratorScorer
         {
                 double score_;
                 uint32_t matchesCnt;
@@ -537,7 +537,7 @@ namespace Trinity
                 } dummyIt;
 
                 relevant_document()
-                    : IteratorWrapper{&dummyIt}
+                    : IteratorScorer{&dummyIt}
                 {
                 }
 
@@ -564,13 +564,13 @@ namespace Trinity
 }
 
 #ifdef RDP_NEED_TOTAL_MATCHES
-uint32_t Trinity::IteratorWrapper::total_matches() 
+uint32_t Trinity::IteratorScorer::total_matches() 
 {
 	return it->total_matches();
 }
 #endif
 
-Trinity::isrc_docid_t Trinity::IteratorWrapper::document() const noexcept
+Trinity::isrc_docid_t Trinity::IteratorScorer::document() const noexcept
 {
 	return it->current();
 }

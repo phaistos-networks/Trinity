@@ -1,6 +1,7 @@
 #pragma once
 #include "docidupdates.h"
 #include "terms.h"
+#include "index_source.h"
 
 namespace Trinity
 {
@@ -65,7 +66,12 @@ namespace Trinity
                 //
                 // You are expected to outIndexSess->begin() before you merge(), and outIndexSess->end() afterwards, though you may
                 // want to use Trinity::persist_segment(outIndexSess) which will persist and invoke end() for you
-                void merge(Codecs::IndexSession *outIndexSess, simple_allocator *, std::vector<std::pair<str8_t, term_index_ctx>> *const outTerms, const uint32_t flushFreq = 0);
+		//
+		// You may want to explicitly disable use of IndexSession::append_index_chunk() and IndexSession::merge(), even if it is supported by the outIndexSess's codec.
+		// If you are going to use ExecFlags::AccumulatedScoreScheme, and your scorer depends on IndexSource::field_statistics, those are
+		// only computed, during merge, for terms that are not handled by append_index_chunk(), so you may want to disable it, so that
+		// statistics for those terms as well will be collected.
+                void merge(Codecs::IndexSession *outIndexSess, simple_allocator *, std::vector<std::pair<str8_t, term_index_ctx>> *const outTerms, IndexSource::field_statistics *fs, const uint32_t flushFreq = 0, const bool disableOptimizations = false);
 
 		enum class IndexSourceRetention : uint8_t
 		{

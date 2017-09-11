@@ -33,7 +33,7 @@ std::unique_ptr<Trinity::masked_documents_registry> Trinity::MergeCandidatesColl
 // Make sure you have commited first
 // Unlike with e.g SegmentIndexSession where the order of postlists in the index is based on our translation(term=>integer id) and the ascending order of that id
 // here the order will match the order the terms are found in `tersm`, because we perform a merge-sort and so we process terms in lexicograpphic order
-void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is, simple_allocator *allocator, std::vector<std::pair<str8_t, Trinity::term_index_ctx>> *const terms, const uint32_t flushFreq)
+void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is, simple_allocator *allocator, std::vector<std::pair<str8_t, Trinity::term_index_ctx>> *const terms, IndexSource::field_statistics *const defaultFieldStats, const uint32_t flushFreq, const bool disableOptimizations)
 {
         static constexpr bool trace{false};
 
@@ -81,6 +81,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 			masked_documents_registry *>> decodersV;
         term_index_ctx tctx;
         std::unique_ptr<Trinity::Codecs::Encoder> enc(is->new_encoder());
+	// Only if it's implemented by the codec's IndexSession
+        const bool haveAppendIndexChunk = (false == disableOptimizations) && (is->caps & unsigned(Codecs::IndexSession::Capabilities::AppendIndexChunk));
+	const bool haveMerge = (false == disableOptimizations) && (is->caps & unsigned(Codecs::IndexSession::Capabilities::Merge));
 
         Defer(
             {
@@ -125,7 +128,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                 }
 
                 const str8_t outTerm(allocator->CopyOf(selected.first.data(), selected.first.size()), selected.first.size());
-              	[[maybe_unused]] const bool fastPath = sameCODEC && codec == isCODEC;
+              	[[maybe_unused]] const bool fastPath =  sameCODEC && codec == isCODEC;
                 static constexpr bool trace{false};
                 //const bool trace = selected.first.Eq(_S("ANNEX"));
 
@@ -137,7 +140,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                         auto c = all[toAdvance[0]].candidate;
                         auto maskedDocsReg = scanner_registry_for(all[toAdvance[0]].idx);
 
-                        if (fastPath && maskedDocsReg->empty())
+                        if (fastPath && maskedDocsReg->empty() && haveAppendIndexChunk)
                         {
                                 if (likely(selected.second.documents))
                                 {
@@ -145,6 +148,8 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                         const auto chunk = is->append_index_chunk(c.ap, selected.second);
 
                                         terms->push_back({outTerm, {selected.second.documents, chunk}});
+
+					++(defaultFieldStats->totalTerms);
                                 }
                                 else if (trace)
                                         SLog("No documents\n");
@@ -196,6 +201,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                         enc->begin_document(docID);
                                                         it->materialize_hits(&dws /* dummy */, termHitsStorage);
 
+							++(defaultFieldStats->sumTermsDocs);
+							defaultFieldStats->sumTermHits +=  freq;
+
                                                         for (uint32_t i{0}; i != freq; ++i)
                                                         {
                                                                 const auto &th = termHitsStorage[i];
@@ -218,6 +226,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 						// have been set even if no documents were indexed for this term.
 						// That's fine though -- will ignore them in a future merge op.
                                                 terms->push_back({outTerm, tctx});
+						++(defaultFieldStats->totalTerms);
 					}
 
                                         if (trace)
@@ -227,7 +236,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                 }
                 else
                 {
-                        if (fastPath)
+                        if (fastPath && haveMerge)
                         {
                                 mergeParticipants.clear();
 
@@ -255,7 +264,10 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                         enc->end_term(&tctx);
 
                                         if (tctx.documents)
+					{
                                                 terms->push_back({outTerm, tctx});
+						++(defaultFieldStats->totalTerms);
+					}
 
                                         for (uint16_t i{0}; i != mergeParticipants.size(); ++i)
                                                 delete mergeParticipants[i].maskedDocsReg;
@@ -343,6 +355,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                                 enc->new_hit(th.pos, {bytes, th.payloadLen});
                                                         }
                                                         enc->end_document();
+
+							++(defaultFieldStats->sumTermsDocs);
+							defaultFieldStats->sumTermHits +=  freq;
                                                 }
 
                                                 do
@@ -369,7 +384,10 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                         enc->end_term(&tctx);
 
                                         if (tctx.documents)
+					{
                                                 terms->push_back({outTerm, tctx});
+						++(defaultFieldStats->totalTerms);
+					}
                                 }
                         }
                 }

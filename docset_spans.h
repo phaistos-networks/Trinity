@@ -19,11 +19,6 @@ namespace Trinity
 		{
 		}
 
-		// fast-path for documents only
-		virtual  void process(const isrc_docid_t id)
-		{
-		}
-
 		~MatchesProxy()
 		{
 		}

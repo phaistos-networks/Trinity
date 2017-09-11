@@ -1,16 +1,19 @@
 #pragma once
 #include <switch.h>
 
-// A simple binary heap / prio.queue, of fixed capacity_.
+// A simple binary heap / prio.queue, of fixed capacity.
+// It provides constant time lookup of the smallest(by default) element, at the expense of logarithmic insertion and extraction.
+// A user-provided Compare can be supplied to chage the ordering, e.g using std::greater<T> would cause the LARGEST element to appear as the top().
+// This is the inverse of std::priority_queue<> semantics, where the Compare function defines the order from end to top, this implementation's Compare 
+// defines the order from top to end.
+// e.g if you are using std::greater<T> and capacity is set to 3, it will track the lowest 3 values, with top() being the largest among them.
+// e.g if you are using std::less<T> and capacity is set to 3, it will track the highest 3 values, with top() being the smallest among them
+//
 // It's more flexible and faster than std::priority_queue<>, and it also
 // supports faster top value updates via update_top(). It was 32% on a specific use case benchmarked against std::priority_queue<>
 //
 // base-1 not base-0, because it affords some nice optimizations
 // Based on Lucene's PriorityQueue design and impl.
-//
-// XXX:  the provided Compare class operator() should return true if first passed < second passed, so that
-// top() always contains the lowest value, UNLIKE std::priority_queue where the respective Compare class operator()
-// needs to check if second < first in order to get the same order
 namespace Switch
 {
         template <typename T, class Compare = std::less<T>>
@@ -30,45 +33,77 @@ namespace Switch
                 bool up(const uint32_t orig)
                 {
                         auto i{orig};
-                        const auto node = heap[i];
+                        auto node = std::move(heap[i]);
                         const Compare cmp;
 
-                        for (uint32_t j = i / 2; j > 0 && cmp(node, heap[j]); j /= 2)
+                        for (uint32_t j = i / 2; j && cmp(node, heap[j]); j /= 2)
                         {
-                                heap[i] = heap[j]; // shift parents down
+                                heap[i] = std::move(heap[j]); // shift parents down
                                 i = j;
                         }
 
-                        heap[i] = node; // install saved node
+                        heap[i] = std::move(node); // install saved node
                         return i != orig;
                 }
 
+#if 0 // should have been faster, but it's not
                 void down(uint32_t i)
                 {
-                        const auto node = heap[i]; // top node
-                        uint32_t j = i << 1;       // smaller child(left)
-                        uint32_t k = j + 1;        // (right)
+                        uint32_t j = i << 1; // smaller child(left)
+
+                        if (j > size_)
+                                return;
+
+                        auto node = std::move(heap[i]); // top node
+                        uint32_t k = j + 1;             // (right)
                         const Compare cmp;
 
-                        if (k <= size_ && cmp(heap[k], heap[j]))
+                        for (j = (k <= size_ && cmp(heap[k], heap[j])) ? k : j;
+                             cmp(heap[j], node);
+                             k = j + 1, j = (k <= size_ && cmp(heap[k], heap[j])) ? k : j)
                         {
-                                // right child exists and smaller than left
-                                j = k;
-                        }
-
-                        while (j <= size_ && cmp(heap[j], node))
-                        {
-                                heap[i] = heap[j]; // shift up child
+                                heap[i] = std::move(heap[j]); // shift up child
                                 i = j;
                                 j = i << 1;
-                                k = j + 1;
 
-                                if (k <= size_ && cmp(heap[k], heap[j]))
-                                        j = k;
+                                if (j > size_)
+                                        break;
                         }
 
-                        heap[i] = node;
+                        heap[i] = std::move(node);
                 }
+#else
+                void down(uint32_t i)
+                {
+                        uint32_t j = i << 1;            // smaller child(left)
+
+			if (j <= size_)
+                        {
+                        	auto node = std::move(heap[i]); // top node
+                                uint32_t k = j + 1; // (right)
+                                const Compare cmp;
+
+                                if (k <= size_ && cmp(heap[k], heap[j]))
+                                {
+                                        // right child exists and smaller than left
+                                        j = k;
+                                }
+
+                                while (j <= size_ && cmp(heap[j], node))
+                                {
+                                        heap[i] = std::move(heap[j]); // shift up child
+                                        i = j;
+                                        j = i << 1;
+                                        k = j + 1;
+
+                                        if (k <= size_ && cmp(heap[k], heap[j]))
+                                                j = k;
+                                }
+
+                                heap[i] = std::move(node);
+                        }
+                }
+#endif
 
               public:
                 priority_queue(const uint32_t m)
@@ -83,36 +118,92 @@ namespace Switch
                         std::free(heap);
                 }
 
+		// Using a stack here because recurssion is likely more expensive than
+		// maintaining a thread_local stc::vector<>
+		//
+		// XXX: we are not checking if (false == empty()). Make sure your application does before
+		// invoking this here method
+		template<typename ProcessTop, typename CompareTop = std::equal_to<T>>
+		void for_each_top(ProcessTop &&process, CompareTop &&cmp = CompareTop{})
+                {
+                        static thread_local std::vector<uint32_t> stackTLS;
+                        auto &stack{stackTLS};
+                        const auto s{size()};
+                        const auto h{data()};
+			const auto top{h[0]};
+
+                        stack.clear();
+                        process(top);
+                        if (s >= 3)
+                        {
+                                stack.push_back(1);
+                                stack.push_back(2);
+
+                                do
+                                {
+                                        const auto i = stack.back();
+
+                                        stack.pop_back();
+                                        if (auto it = h[i]; cmp(top, it))
+                                        {
+                                                process(it);
+
+                                                const auto left = ((i + 1) << 1) - 1;
+                                                const auto right = left + 1;
+
+                                                if (right < s)
+                                                {
+                                                        stack.push_back(left);
+                                                        stack.push_back(right);
+                                                }
+                                                else if (left < s && cmp(top, (it = h[left])))
+                                                {
+                                                        process(it);
+                                                }
+                                        }
+                                } while (stack.size());
+                        }
+                        else if (s == 2 && cmp(top, h[1]))
+                                process(h[1]);
+                }
+
                 void clear()
                 {
                         size_ = 0;
                 }
 
                 // Attempts to push a new value
-                // It returns true if a value was dropped to make space for it, or `v` can't be inserted due to capacity_ constraints
-                // if true is returned, prev is assigned either v or the value that was dropped to make space
+                // It returns false if a value was dropped to make space for it, or `v` can't be inserted due to capacity_ constraints
+                // if false is returned, prev is assigned either v or the value that was dropped to make space
                 bool try_push(const T v, T &prev)
                 {
                         if (size_ < capacity_)
                         {
                                 push(v);
-                                return false;
+                                return true;
                         }
-                        else if (size_ && Compare{}(v, heap[1]))
+                        //WAS: else if (size_ && !Compare{}(v, heap[1]))	 
+			// This wasn't correct because e.g if Compare is std::less<unsigned>
+			// and (v == 5 && heap[1]) == 5,  !std::less<unsined>(5, 5) would be true
+			// so we 'd end up invoking update_top(), whereas now that we just check
+			// for std::less<unsigned>{}(5,5) it returns false, and
+			// std::less<unsigned>{}(8, 5) would return true (we 'd need to replace
+			// 	top=5 with 8)
+                        else if (size_ && Compare{}(heap[1], v))	 // need to check if (size_t) because a queue can be empty
                         {
                                 prev = std::move(heap[1]);
                                 heap[1] = std::move(v);
                                 update_top();
-                                return true;
+                                return false;
                         }
                         else
                         {
                                 prev = v;
-                                return true;
+                                return false;
                         }
                 }
 
-                void push(const T &v)
+                inline void push(const T &v)
                 {
 #if 0 // use try_push() if you need capacity_ checks
                         if (unlikely(size_ == capacity_))
@@ -123,39 +214,38 @@ namespace Switch
                         up(size_);
                 }
 
-                void push(T &&v)
+                inline void push(T &&v)
                 {
 #if 0
                         if (unlikely(size_ == capacity_))
                                 throw Switch::data_error("Full");
 #endif
-
                         heap[++size_] = std::move(v);
                         up(size_);
                 }
 
-		// push_back() does NOT ensure the heap semantics are upheld
-		// this is really only useful if you want to e.g populate a pq until
-		// you reach a size and then use make_heap() and from then on, you use push()/pop()
-		// Make sure you know what you are doing here
-		void push_back(T &&v)
-		{
-			heap[++size_] = std::move(v);
-		}
+                // push_back() does NOT ensure the heap semantics are upheld
+                // this is really only useful if you want to e.g populate a pq until
+                // you reach a size and then use make_heap() and from then on, you use push()/pop()
+                // Make sure you know what you are doing here
+                inline void push_back(T &&v)
+                {
+                        heap[++size_] = std::move(v);
+                }
 
-		void push_back(const T &v)
-		{
-			heap[++size_] = v;
-		}
+                inline void push_back(const T &v)
+                {
+                        heap[++size_] = v;
+                }
 
-		void make_heap()
+                void make_heap()
                 {
                         struct
                         {
                                 inline bool operator()(const T &a, const T &b) noexcept
                                 {
-					// we are comparing (b,a), not (a,b) because
-					// the semantics are inverted in STL
+                                        // we are comparing (b,a), not (a,b) because
+                                        // the semantics are inverted in STL
                                         return Compare{}(b, a);
                                 }
                         } hp;
@@ -167,17 +257,17 @@ namespace Switch
                 {
                         // won't check if (size == 0), so that we can use noexcept
                         // but you should check
-                        const auto res = heap[1];
+                        const auto res = std::move(heap[1]);
 
                         heap[1] = std::move(heap[size_--]); // remember, base-1
                         down(1);
                         return res;
                 }
 
-		constexpr auto capacity() const noexcept
-		{
-			return capacity_;
-		}
+                constexpr auto capacity() const noexcept
+                {
+                        return capacity_;
+                }
 
                 constexpr auto size() const noexcept
                 {
@@ -253,6 +343,16 @@ namespace Switch
                                 }
                         }
                         return false;
+                }
+
+		inline auto begin() const noexcept
+		{
+			return data() + 0;
+		}
+
+                inline auto end() const noexcept
+                {
+                        return data() + size_;
                 }
         };
 }

@@ -47,7 +47,7 @@ namespace Trinity
                 struct Iterator
                     : public relevant_document_provider
                 {
-                        friend struct IteratorWrapper;
+                        friend struct IteratorScorer;
 
                       public:
                         // this is either thyself, or someone else
@@ -96,7 +96,7 @@ namespace Trinity
                         // relevant_document_provider() overrides
                         // we are only going to need to implement total_matches()
                         // score() returns 0; if we needed actual scoring we 'd have
-                        // set owner to an IteratorWrapper
+                        // set owner to an IteratorScorer
                         inline isrc_docid_t document() const noexcept override final
                         {
                                 return curDocument.id;

@@ -29,7 +29,7 @@ namespace Trinity
                                 Trinity::Codecs::Encoder *new_encoder() override final;
 
                                 IndexSession(const char *bp)
-                                    : Trinity::Codecs::IndexSession{bp}
+                                    : Trinity::Codecs::IndexSession{bp, unsigned(Capabilities::AppendIndexChunk) | unsigned(Capabilities::Merge)}
                                 {
                                 }
 

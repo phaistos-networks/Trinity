@@ -3,6 +3,7 @@
 #include "docwordspace.h"
 #include "matches.h"
 #include "runtime_ctx.h"
+#include "similarity.h"
 #include <prioqueue.h>
 
 
@@ -1974,7 +1975,7 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
                 }
 
                 return reg_docset_it(new DocsSetIterators::DisjunctionAllPLI(decoders, run->size));
-                //SLog("foo\n"); return reg_docset_it(new DocsSetIterators::DisjunctionSome(decoders, run->size, 1));
+                //SLog("foo\n"); return reg_docset_it(new DocsSetIterators::DisjunctionSome(decoders, run->size, 16));
         }
         else if (n.fp == ENT::matchphrase)
         {
@@ -2223,7 +2224,8 @@ void Trinity::exec_query(const query &in,
                          masked_documents_registry *const __restrict__ maskedDocumentsRegistry,
                          MatchedIndexDocumentsFilter *__restrict__ const matchesFilter,
                          IndexDocumentsFilter *__restrict__ const documentsFilter,
-                         const uint32_t execFlags)
+                         const uint32_t execFlags, 
+			 Similarity::IndexSourceScorer *scorer)
 {
         struct query_term_instance final
             : public query_term_ctx::instance_struct
@@ -2261,6 +2263,13 @@ void Trinity::exec_query(const query &in,
         std::vector<query_term_instance> originalQueryTokenInstances;
         const bool documentsOnly = execFlags & uint32_t(ExecFlags::DocumentsOnly);
         const bool accumScoreMode = execFlags & uint32_t(ExecFlags::AccumulatedScoreScheme);
+
+	if (accumScoreMode)
+	{
+		// Just in case
+		expect(scorer);
+	}
+
 
         {
                 std::vector<ast_node *> stack{q.root}; // use a stack because we don't care about the evaluation order
@@ -2334,13 +2343,8 @@ void Trinity::exec_query(const query &in,
         const auto before = Timings::Microseconds::Tick();
         auto rootExecNode = compile_query(q.root, rctx, execFlags);
 
-        if (accumScoreMode)
-        {
-		// TODO: should be able to configure this somehow
-                rctx.scorer = new TrivialScorer();
-        }
-
         curRCTX = &rctx;
+	curRCTX->scorer = scorer;
 
         if (traceCompile)
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " to compile, ", duration_repr(Timings::Microseconds::Since(_start)), " since start\n");
@@ -2717,8 +2721,9 @@ void Trinity::exec_query(const query &in,
                                                         IndexDocumentsFilter *__restrict__ const documentsFilter;
                                                         std::size_t n{0};
 
-                                                        void process(const isrc_docid_t id) override final
+                                                        void process(relevant_document_provider *const rdp) override final
                                                         {
+								const auto id = rdp->document();
                                                                 const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(id) : id;
 
                                                                 if (!documentsFilter->filter(globalDocID) && !maskedDocumentsRegistry->test(globalDocID))
@@ -2751,8 +2756,9 @@ void Trinity::exec_query(const query &in,
                                                         IndexDocumentsFilter *__restrict__ const documentsFilter;
                                                         std::size_t n{0};
 
-                                                        void process(const isrc_docid_t id) override final
+                                                        void process(relevant_document_provider *const rdp) override final
                                                         {
+								const auto id = rdp->document();
                                                                 const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(id) : id;
 
                                                                 if (!documentsFilter->filter(globalDocID))
@@ -2785,8 +2791,9 @@ void Trinity::exec_query(const query &in,
                                                 masked_documents_registry *const __restrict__ maskedDocumentsRegistry;
                                                 std::size_t n{0};
 
-						void process(const isrc_docid_t id) override final
-                                                {
+                                                        void process(relevant_document_provider *const rdp) override final
+                                                        {
+								const auto id = rdp->document();
                                                         const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(id) : id;
 
                                                         if (!maskedDocumentsRegistry->test(globalDocID))
@@ -2818,8 +2825,10 @@ void Trinity::exec_query(const query &in,
 							MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
 							std::size_t n{0};
 
-							void process(const isrc_docid_t id) override final
-							{
+                                                        void process(relevant_document_provider *const rdp) override final
+                                                        {
+								const auto id = rdp->document();
+
 								matchesFilter->consider(idxsrc->translate_docid(id));
 								++n;
 							}
@@ -2844,8 +2853,10 @@ void Trinity::exec_query(const query &in,
 							MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
 							std::size_t n{0};
 
-							void process(const isrc_docid_t id) override final
-							{
+                                                        void process(relevant_document_provider *const rdp) override final
+                                                        {
+								const auto id = rdp->document();
+
 								matchesFilter->consider(id);
 								++n;
 							}
@@ -3187,6 +3198,6 @@ void Trinity::exec_query(const query &in,
         const auto duration = Timings::Microseconds::Since(start);
         const auto durationAll = Timings::Microseconds::Since(_start);
 
-        if (traceCompile || traceExec || true)
+        if (traceCompile || traceExec)
                 SLog(ansifmt::bold, ansifmt::color_red, dotnotation_repr(matchedDocuments), " matched in ", duration_repr(duration), ansifmt::reset, " (", Timings::Microseconds::ToMillis(duration), " ms) ", duration_repr(durationAll), " all\n");
 }

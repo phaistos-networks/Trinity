@@ -19,8 +19,8 @@ DocsSetIterators::Iterator *Trinity::runtime_ctx::reg_docset_it(DocsSetIterators
 	if (accumScoreMode)
 	{
 		wrap_iterator(this, it);
-		// see comments of IteratorWrapper::iterator() decl.
-		res = static_cast<IteratorWrapper *>(it->rdp)->iterator();
+		// see comments of IteratorScorer::iterator() decl.
+		res = static_cast<IteratorScorer *>(it->rdp)->iterator();
 	}
 		
 	docsetsIterators.push_back(it);
@@ -225,7 +225,7 @@ runtime_ctx::~runtime_ctx()
                 auto ptr = allIterators.back();
 
                 if (auto rdp = ptr->rdp; rdp != ptr)
-                        delete static_cast<IteratorWrapper *>(rdp);
+                        delete static_cast<IteratorScorer *>(rdp);
 
                 delete ptr;
                 allIterators.pop_back();
@@ -235,7 +235,7 @@ runtime_ctx::~runtime_ctx()
         {
 		// this is not elegant, but its pragmatic enough to be OK
 		if (auto rdp = ptr->rdp; rdp != ptr)
-			delete static_cast<IteratorWrapper *>(rdp);
+			delete static_cast<IteratorScorer *>(rdp);
 
                 switch (ptr->type)
                 {
@@ -290,8 +290,6 @@ runtime_ctx::~runtime_ctx()
 
         if (reusableCDS.data)
                 std::free(reusableCDS.data);
-	
-	delete scorer;
 }
 
 void runtime_ctx::prepare_decoder(exec_term_id_t termID)

@@ -45,7 +45,7 @@ namespace Trinity
                                 void flush_positions_data();
 
                                 IndexSession(const char *bp)
-                                    : Trinity::Codecs::IndexSession{bp}, positionsOutFlushed{0}, positionsOutFd{-1}, flushFreq{0}
+                                    : Trinity::Codecs::IndexSession{bp, unsigned(Capabilities::AppendIndexChunk) | unsigned(Capabilities::Merge)}, positionsOutFlushed{0}, positionsOutFd{-1}, flushFreq{0}
                                 {
                                 }
 

@@ -125,7 +125,7 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctions::process(MatchesProxy 
 
                 // fast round down to SIZE(works because SIZE is a power of two int.). Identifies the window the next match belongs to.
                 const isrc_docid_t windowBase = id & ~MASK;
-                [[maybe_unused]] const auto windowMin = std::max<isrc_docid_t>(min, windowBase);
+                //[[maybe_unused]] const auto windowMin = std::max<isrc_docid_t>(min, windowBase);
                 const auto windowMax = std::min<isrc_docid_t>(max, windowBase + SIZE);
                 uint16_t collectedCnt{1};
 
@@ -144,8 +144,8 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctions::process(MatchesProxy 
 
                         for (auto id = it->current(); id < windowMax; id = it->next())
 			{
-                                //mp->process(it);
-                                mp->process(id);
+				relDoc.set_document(id);
+                                mp->process(&relDoc);
 			}
 
                         pq.push(it);
@@ -159,8 +159,6 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctions::process(MatchesProxy 
                         {
                                 auto *const it = collected[i_];
 
-                                // no need for if (id < windowMin) id = it->advance(windowMin);
-                                // see comments above
                                 for (auto id = it->current(); id < windowMax; id = it->next())
                                 {
                                         const auto i = id - windowBase;
@@ -190,8 +188,8 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctions::process(MatchesProxy 
 
                                         b ^= uint64_t(1) << bidx;
 
-                                        //relDoc.set_document(id); mp->process(&relDoc);
-					mp->process(id);
+                                        relDoc.set_document(id); 
+					mp->process(&relDoc);
                                 }
                         }
 
@@ -667,6 +665,7 @@ void Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::score_window_many(
                                 }
                                 leads[i]->next = it->current();
                         }
+
                 }
                 else
                 {
@@ -691,30 +690,31 @@ void Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::score_window_many(
                         }
                 }
 
-                for (uint32_t idx{0}; idx <= m; ++idx)
-                {
-                        const uint64_t _b = uint64_t(idx) << 6;
+		for (uint32_t idx{0}; idx <= m; ++idx)
+		{
+			const uint64_t _b = uint64_t(idx) << 6;
 
-                        for (auto b = matching[idx]; b;)
-                        {
-                                const auto bidx = SwitchBitOps::TrailingZeros(b);
-                                const auto translated = _b + bidx;
-                                const auto id = windowBase + translated;
-                                auto &trackInfo = matchesTracker[translated];
+			for (auto b = matching[idx]; b;)
+			{
+				const auto bidx = SwitchBitOps::TrailingZeros(b);
+				const auto translated = _b + bidx;
+				const auto id = windowBase + translated;
+				auto &trackInfo = matchesTracker[translated];
 
-                                b ^= uint64_t(1) << bidx;
+				b ^= uint64_t(1) << bidx;
 
-                                if (trackInfo.second >= matchThreshold)
-                                {
-                                        relDoc.set_document(id);
-                                        relDoc.score_ = trackInfo.first;
-                                        mp->process(&relDoc);
-                                }
+				if (trackInfo.second >= matchThreshold)
+				{
+					relDoc.set_document(id);
+					relDoc.score_ = trackInfo.first;
+					mp->process(&relDoc);
+				}
 
-                                trackInfo.first = 0;
-                                trackInfo.second = 0;
-                        }
-                }
+				trackInfo.first = 0;
+				trackInfo.second = 0;
+			}
+		}
+
 
                 memset(matching, 0, (m + 1) * sizeof(matching[0]));
         }
@@ -834,7 +834,7 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThreshold::process(
                                 for (uint32_t i_{0}; i_ != collectedCnt; ++i_)
                                 {
                                         auto *const it = collected[i_];
-					const auto rdp{it->rdp};
+                                        const auto rdp{it->rdp};
 
                                         for (auto id = it->current(); id < windowMax; id = it->next())
                                         {
@@ -850,31 +850,6 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThreshold::process(
 
                                         pq.push(it);
                                 }
-
-				for (uint32_t idx{0}; idx <= m; ++idx)
-				{
-					const uint64_t _b = uint64_t(idx) << 6;
-
-					for (auto b = matching[idx]; b;)
-					{
-						const auto bidx = SwitchBitOps::TrailingZeros(b);
-						const auto translated = _b + bidx;
-						const auto id = windowBase + translated;
-						auto &trackInfo = tracker[translated];
-
-						b ^= uint64_t(1) << bidx;
-
-						if (trackInfo.second >= matchThreshold)
-						{
-							relDoc.set_document(id);
-							relDoc.score_ = trackInfo.first;
-							mp->process(&relDoc);
-						}
-
-						trackInfo.first = 0;
-						trackInfo.second = 0;
-					}
-				}
                         }
                         else
                         {
@@ -882,7 +857,8 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThreshold::process(
                                 {
                                         auto *const it = collected[i_];
 
-					if (it->current() < windowMin) it->advance(windowMax);
+                                        if (it->current() < windowMin)
+                                                it->advance(windowMax);
 
                                         for (auto id = it->current(); id < windowMax; id = it->next())
                                         {
@@ -897,31 +873,34 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctionsWithThreshold::process(
 
                                         pq.push(it);
                                 }
-
-				for (uint32_t idx{0}; idx <= m; ++idx)
-				{
-					const uint64_t _b = uint64_t(idx) << 6;
-
-					for (auto b = matching[idx]; b;)
-					{
-						const auto bidx = SwitchBitOps::TrailingZeros(b);
-						const auto translated = _b + bidx;
-						const auto id = windowBase + translated;
-						auto &trackInfo = tracker[translated];
-
-						b ^= uint64_t(1) << bidx;
-
-						if (trackInfo.second >= matchThreshold)
-						{
-							mp->process(id);
-						}
-
-						trackInfo.second = 0;
-					}
-				}
                         }
 
-                        memset(matching, 0, (m + 1) * sizeof(matching[0])); 
+                        for (uint32_t idx{0}; idx <= m; ++idx)
+                        {
+                                const uint64_t _b = uint64_t(idx) << 6;
+
+                                for (auto b = matching[idx]; b;)
+                                {
+                                        const auto bidx = SwitchBitOps::TrailingZeros(b);
+                                        const auto translated = _b + bidx;
+                                        const auto id = windowBase + translated;
+                                        auto &trackInfo = tracker[translated];
+
+                                        b ^= uint64_t(1) << bidx;
+
+                                        if (trackInfo.second >= matchThreshold)
+                                        {
+                                                relDoc.set_document(id);
+                                                relDoc.score_ = trackInfo.first;
+                                                mp->process(&relDoc);
+                                        }
+
+                                        trackInfo.first = 0;
+                                        trackInfo.second = 0;
+                                }
+                        }
+
+                        memset(matching, 0, (m + 1) * sizeof(matching[0]));
                 }
         }
 
