@@ -148,7 +148,7 @@ namespace Trinity
                 const bool documentsOnly, accumScoreMode;
                 IndexSource *const idxsrc;
                 iterators_collector collectedIts;
-		Similarity::IndexSourceScorer *scorer{nullptr};
+		Similarity::IndexSourceTermsScorer *scorer{nullptr};
 
                 struct binop_ctx final
                 {

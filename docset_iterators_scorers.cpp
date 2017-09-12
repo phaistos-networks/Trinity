@@ -14,7 +14,7 @@ static IteratorScorer *default_wrapper(runtime_ctx *const rctx, DocsSetIterators
                         struct Wrapper final
                             : public IteratorScorer
                         {
-                                Similarity::IndexSourceScorer *const scorer;
+                                Similarity::IndexSourceTermsScorer *const scorer;
 				Similarity::ScorerWeight *weight;
 
                                 Wrapper(Iterator *const it, runtime_ctx *const rctx)
@@ -234,7 +234,7 @@ static IteratorScorer *default_wrapper(runtime_ctx *const rctx, DocsSetIterators
                         struct Wrapper final
                             : public IteratorScorer
                         {
-                                Similarity::IndexSourceScorer *const scorer;
+                                Similarity::IndexSourceTermsScorer *const scorer;
 				Similarity::ScorerWeight *weight;
 
                                 Wrapper(Iterator *it, runtime_ctx *const rctx)

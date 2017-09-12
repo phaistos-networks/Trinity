@@ -8,7 +8,7 @@ namespace Trinity
 {
         namespace Similarity
         {
-                struct IndexSourcesCollectionScorer;
+                struct IndexSourcesCollectionTermsScorer;
 
                 // You may want to compute/track more than just a double-worth of state
                 // for each term/phrase. Even though this is somewhat expensive, it's not that expensive
@@ -20,19 +20,19 @@ namespace Trinity
 
                 // Responsible for providing scores for a single IndexSource
                 // You may want to compute some IndexSource specific state in the constructor.
-                // This is created by IndexSourcesCollectionScorer::new_source_scorer() for each IndexSource involed
+                // This is created by IndexSourcesCollectionTermsScorer::new_source_scorer() for each IndexSource involed
                 // in a query execution.
-                struct IndexSourceScorer
+                struct IndexSourceTermsScorer
                 {
                         IndexSource *const src;
-                        IndexSourcesCollectionScorer *const collectionScorer;
+                        IndexSourcesCollectionTermsScorer *const collectionScorer;
 
-                        IndexSourceScorer(IndexSourcesCollectionScorer *const r, IndexSource *const s)
+                        IndexSourceTermsScorer(IndexSourcesCollectionTermsScorer *const r, IndexSource *const s)
                             : collectionScorer{r}, src{s}
                         {
                         }
 
-			virtual ~IndexSourceScorer()
+			virtual ~IndexSourceTermsScorer()
 			{
 
 			}
@@ -48,7 +48,7 @@ namespace Trinity
                         virtual float score(const isrc_docid_t id, const uint16_t freq, const ScorerWeight *) = 0;
                 };
 
-                struct IndexSourcesCollectionScorer
+                struct IndexSourcesCollectionTermsScorer
                 {
                         // Override this if you want to, for example, aggregate all field_statistics of all
                         // index sources involved in the execution session collection and store that for later access
@@ -56,22 +56,22 @@ namespace Trinity
                         {
                         }
 
-                        virtual IndexSourceScorer *new_source_scorer(IndexSource *) = 0;
+                        virtual IndexSourceTermsScorer *new_source_scorer(IndexSource *) = 0;
 
-                        virtual ~IndexSourcesCollectionScorer()
+                        virtual ~IndexSourcesCollectionTermsScorer()
                         {
                         }
                 };
 
                 // A trivial scorer that simply scores based on the matches
                 struct IndexSourcesCollectionTrivialScorer
-                    : public IndexSourcesCollectionScorer
+                    : public IndexSourcesCollectionTermsScorer
                 {
                         struct Scorer final
-                            : public IndexSourceScorer
+                            : public IndexSourceTermsScorer
                         {
-                                Scorer(IndexSourcesCollectionScorer *r, IndexSource *src)
-                                    : IndexSourceScorer(r, src)
+                                Scorer(IndexSourcesCollectionTermsScorer *r, IndexSource *src)
+                                    : IndexSourceTermsScorer(r, src)
                                 {
                                 }
 
@@ -81,7 +81,7 @@ namespace Trinity
                                 }
                         };
 
-                        IndexSourceScorer *new_source_scorer(IndexSource *s) override final
+                        IndexSourceTermsScorer *new_source_scorer(IndexSource *s) override final
                         {
                                 return new Scorer(this, s);
                         }
@@ -89,13 +89,13 @@ namespace Trinity
 
                 // A TF-IDF scorer
                 struct IndexSourcesCollectionTFIDFScorer
-                    : public IndexSourcesCollectionScorer
+                    : public IndexSourcesCollectionTermsScorer
                 {
                         IndexSource::field_statistics dfsAccum;
                         const IndexSourcesCollection *collection;
 
                         struct Scorer final
-                            : public IndexSourceScorer
+                            : public IndexSourceTermsScorer
                         {
                                 const IndexSource::field_statistics fs;
 
@@ -114,8 +114,8 @@ namespace Trinity
                                         return sqrt(freq);
                                 }
 
-                                Scorer(IndexSourcesCollectionScorer *r, IndexSource *src)
-                                    : IndexSourceScorer(r, src), fs(src->default_field_stats())
+                                Scorer(IndexSourcesCollectionTermsScorer *r, IndexSource *src)
+                                    : IndexSourceTermsScorer(r, src), fs(src->default_field_stats())
                                 {
                                 }
 
@@ -157,7 +157,7 @@ namespace Trinity
                                 }
 
                                 // documentMatches: freq, i.e how many matches of a term in a document
-                                // weight: See IndexSourcesCollectionScorer::compute_iterator_wrapper_weight() decl. comments
+                                // weight: See IndexSourcesCollectionTermsScorer::compute_iterator_wrapper_weight() decl. comments
                                 inline float score(const isrc_docid_t id, const uint16_t freq, const Similarity::ScorerWeight *sw) override final
                                 {
                                         const auto v = tf(freq) * static_cast<const ScorerWeight *>(sw)->v; // tf-idf
@@ -185,14 +185,14 @@ namespace Trinity
                                 }
                         }
 
-                        IndexSourceScorer *new_source_scorer(IndexSource *s) override final
+                        IndexSourceTermsScorer *new_source_scorer(IndexSource *s) override final
                         {
                                 return new Scorer(this, s);
                         }
                 };
 
                 struct IndexSourcesCollectionBM25Scorer
-                    : public IndexSourcesCollectionScorer
+                    : public IndexSourcesCollectionTermsScorer
                 {
                         IndexSource::field_statistics dfsAccum;
                         const IndexSourcesCollection *collection;
@@ -202,7 +202,7 @@ namespace Trinity
                         static constexpr float b{0.75};
 
                         struct Scorer final
-                            : public IndexSourceScorer
+                            : public IndexSourceTermsScorer
                         {
                                 static float normalizationTable[256]; // will be initialized elsewhere
                                 static bool initializer;
@@ -217,8 +217,8 @@ namespace Trinity
                                         return sqrt(freq);
                                 }
 
-                                Scorer(IndexSourcesCollectionScorer *r, IndexSource *src)
-                                    : IndexSourceScorer(r, src)
+                                Scorer(IndexSourcesCollectionTermsScorer *r, IndexSource *src)
+                                    : IndexSourceTermsScorer(r, src)
                                 {
                                 }
 
@@ -290,7 +290,7 @@ namespace Trinity
                                 }
                         }
 
-                        IndexSourceScorer *new_source_scorer(IndexSource *s) override final
+                        IndexSourceTermsScorer *new_source_scorer(IndexSource *s) override final
                         {
                                 return new Scorer(this, s);
                         }

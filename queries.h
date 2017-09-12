@@ -204,6 +204,12 @@ namespace Trinity
         {
                 // for now, just the token but maybe in the future we 'll want to extend to support flags etc
                 str8_t token;
+
+		// We now have this union here, which maybe useful for some applications, but is otherwise not used by Trinity
+		union
+		{
+			uint32_t u32;
+		};
         };
 
         // This is an AST parser

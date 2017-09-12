@@ -2225,7 +2225,7 @@ void Trinity::exec_query(const query &in,
                          MatchedIndexDocumentsFilter *__restrict__ const matchesFilter,
                          IndexDocumentsFilter *__restrict__ const documentsFilter,
                          const uint32_t execFlags, 
-			 Similarity::IndexSourceScorer *scorer)
+			 Similarity::IndexSourceTermsScorer *scorer)
 {
         struct query_term_instance final
             : public query_term_ctx::instance_struct
@@ -2237,6 +2237,7 @@ void Trinity::exec_query(const query &in,
         {
                 if (traceCompile)
                         SLog("No root node\n");
+
                 return;
         }
 
@@ -2254,23 +2255,27 @@ void Trinity::exec_query(const query &in,
                 return;
         }
 
+        const bool documentsOnly = execFlags & uint32_t(ExecFlags::DocumentsOnly);
+        const bool accumScoreMode = execFlags & uint32_t(ExecFlags::AccumulatedScoreScheme);
+        const bool defaultMode = !documentsOnly && !accumScoreMode;
+
         // We need to collect all term instances in the query
         // so that we the score function will be able to take that into account (See matched_document::queryTermInstances)
         // We only need to do this for specific AST branches and node types(i.e we ignore all RHS expressions of logical NOT nodes)
         //
         // This must be performed before any query optimizations, for otherwise because the optimiser will most definitely rearrange the query, doing it after
         // the optimization passes will not capture the original, input query tokens instances information.
+        //
+        // This is required if the default execution mode is selected
         std::vector<query_term_instance> originalQueryTokenInstances;
-        const bool documentsOnly = execFlags & uint32_t(ExecFlags::DocumentsOnly);
-        const bool accumScoreMode = execFlags & uint32_t(ExecFlags::AccumulatedScoreScheme);
 
-	if (accumScoreMode)
-	{
-		// Just in case
-		expect(scorer);
-	}
+        if (accumScoreMode)
+        {
+                // Just in case
+                expect(scorer);
+        }
 
-
+        if (defaultMode)
         {
                 std::vector<ast_node *> stack{q.root}; // use a stack because we don't care about the evaluation order
                 std::vector<phrase *> collected;
@@ -2339,12 +2344,12 @@ void Trinity::exec_query(const query &in,
         if (traceCompile)
                 SLog("Compiling:", q, "\n");
 
-        runtime_ctx rctx(idxsrc, execFlags & unsigned(ExecFlags::DocumentsOnly), execFlags & unsigned(ExecFlags::AccumulatedScoreScheme));
+        runtime_ctx rctx(idxsrc, documentsOnly, accumScoreMode);
         const auto before = Timings::Microseconds::Tick();
         auto rootExecNode = compile_query(q.root, rctx, execFlags);
 
         curRCTX = &rctx;
-	curRCTX->scorer = scorer;
+        curRCTX->scorer = scorer;
 
         if (traceCompile)
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " to compile, ", duration_repr(Timings::Microseconds::Since(_start)), " since start\n");
@@ -2357,15 +2362,11 @@ void Trinity::exec_query(const query &in,
                 return;
         }
 
-        // It should be easy to emit machine code from the exec_nodes tree
-        // which should result in a respectable speed up.
-        // For now, for simplicity and for portability we are not doing it yet, but someome
-        // should be able do it without significant effort.
-
         // see query_index_terms and MatchedIndexDocumentsFilter::prepare() comments
         query_index_terms **queryIndicesTerms;
         const auto maxQueryTermIDPlus1 = rctx.termsDict.size() + 1;
 
+        if (defaultMode)
         {
                 std::vector<const query_term_instance *> collected;
                 std::vector<std::pair<uint16_t, query_index_term>> originalQueryTokensTracker; // query index => (termID, toNextSpan)
@@ -2549,11 +2550,16 @@ void Trinity::exec_query(const query &in,
         [[maybe_unused]] const auto start = Timings::Microseconds::Tick();
         const auto requireDocIDTranslation = idxsrc->require_docid_translation();
 
-        matchesFilter->prepare(const_cast<const query_index_terms **>(queryIndicesTerms));
+        if (defaultMode)
+        {
+                // doesn't make sense in other exec.modes
+                matchesFilter->prepare(const_cast<const query_index_terms **>(queryIndicesTerms));
+        }
 
         if (traceCompile)
                 SLog("RUNNING: ", duration_repr(Timings::Microseconds::Since(_start)), " since start, documentsOnly = ", documentsOnly, "\n");
 
+#pragma mark Execution
         try
         {
                 if (rootExecNode.fp == ENT::matchterm && !accumScoreMode)
@@ -2696,7 +2702,7 @@ void Trinity::exec_query(const query &in,
                 {
                         auto *const sit = rctx.build_iterator(rootExecNode, execFlags);
                         // Over-estimate capacity, make sure we won't overrun any buffers
-                        const std::size_t capacity = rctx.tctxMap.size() + rctx.allIterators.size() + rctx.docsetsIterators.size() + 16;
+                        const std::size_t capacity = rctx.tctxMap.size() + rctx.allIterators.size() + rctx.docsetsIterators.size() + 64;
                         auto span = build_span(sit, &rctx);
 
                         rctx.collectedIts.init(capacity);
@@ -2704,6 +2710,8 @@ void Trinity::exec_query(const query &in,
                         rctx.reusableCDS.data = (candidate_document **)malloc(sizeof(candidate_document *) * rctx.reusableCDS.capacity);
                         rctx.rootIterator = sit;
 
+                        // We will create different Handlers depending on the mode and other execution options so
+                        // because process() is a hot method and we 'd like to reduce checks in there if we can
                         if (documentsOnly)
                         {
                                 if (documentsFilter)
@@ -2723,7 +2731,7 @@ void Trinity::exec_query(const query &in,
 
                                                         void process(relevant_document_provider *const rdp) override final
                                                         {
-								const auto id = rdp->document();
+                                                                const auto id = rdp->document();
                                                                 const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(id) : id;
 
                                                                 if (!documentsFilter->filter(globalDocID) && !maskedDocumentsRegistry->test(globalDocID))
@@ -2736,7 +2744,6 @@ void Trinity::exec_query(const query &in,
                                                         Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, masked_documents_registry *mr, IndexDocumentsFilter *df)
                                                             : idxsrc{src}, ctx{c}, requireDocIDTranslation{src->require_docid_translation()}, matchesFilter{mf}, maskedDocumentsRegistry{mr}, documentsFilter{df}
                                                         {
-
                                                         }
 
                                                 } handler(&rctx, idxsrc, matchesFilter, maskedDocumentsRegistry, documentsFilter);
@@ -2758,7 +2765,7 @@ void Trinity::exec_query(const query &in,
 
                                                         void process(relevant_document_provider *const rdp) override final
                                                         {
-								const auto id = rdp->document();
+                                                                const auto id = rdp->document();
                                                                 const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(id) : id;
 
                                                                 if (!documentsFilter->filter(globalDocID))
@@ -2791,9 +2798,9 @@ void Trinity::exec_query(const query &in,
                                                 masked_documents_registry *const __restrict__ maskedDocumentsRegistry;
                                                 std::size_t n{0};
 
-                                                        void process(relevant_document_provider *const rdp) override final
-                                                        {
-								const auto id = rdp->document();
+                                                void process(relevant_document_provider *const rdp) override final
+                                                {
+                                                        const auto id = rdp->document();
                                                         const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(id) : id;
 
                                                         if (!maskedDocumentsRegistry->test(globalDocID))
@@ -2815,66 +2822,66 @@ void Trinity::exec_query(const query &in,
                                 }
                                 else
                                 {
-					if (idxsrc->require_docid_translation())
-					{
-						struct Handler
-							: public MatchesProxy
-						{
-							runtime_ctx *const ctx;
-							IndexSource *const idxsrc;
-							MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
-							std::size_t n{0};
+                                        if (idxsrc->require_docid_translation())
+                                        {
+                                                struct Handler
+                                                    : public MatchesProxy
+                                                {
+                                                        runtime_ctx *const ctx;
+                                                        IndexSource *const idxsrc;
+                                                        MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
+                                                        std::size_t n{0};
 
                                                         void process(relevant_document_provider *const rdp) override final
                                                         {
-								const auto id = rdp->document();
+                                                                const auto id = rdp->document();
 
-								matchesFilter->consider(idxsrc->translate_docid(id));
-								++n;
-							}
+                                                                matchesFilter->consider(idxsrc->translate_docid(id));
+                                                                ++n;
+                                                        }
 
-							Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
-								: idxsrc{src}, ctx{c}, matchesFilter{mf}
-							{
-							}
+                                                        Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
+                                                            : idxsrc{src}, ctx{c}, matchesFilter{mf}
+                                                        {
+                                                        }
 
-						} handler(&rctx, idxsrc, matchesFilter);
+                                                } handler(&rctx, idxsrc, matchesFilter);
 
-						span->process(&handler, 1, DocIDsEND);
-						matchedDocuments = handler.n;
-					}
-					else
-					{
-						struct Handler
-							: public MatchesProxy
-						{
-							runtime_ctx *const ctx;
-							IndexSource *const idxsrc;
-							MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
-							std::size_t n{0};
+                                                span->process(&handler, 1, DocIDsEND);
+                                                matchedDocuments = handler.n;
+                                        }
+                                        else
+                                        {
+                                                struct Handler
+                                                    : public MatchesProxy
+                                                {
+                                                        runtime_ctx *const ctx;
+                                                        IndexSource *const idxsrc;
+                                                        MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
+                                                        std::size_t n{0};
 
                                                         void process(relevant_document_provider *const rdp) override final
                                                         {
-								const auto id = rdp->document();
+                                                                const auto id = rdp->document();
 
-								matchesFilter->consider(id);
-								++n;
-							}
+                                                                matchesFilter->consider(id);
+                                                                ++n;
+                                                        }
 
-							Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
-								: idxsrc{src}, ctx{c}, matchesFilter{mf}
-							{
-							}
+                                                        Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
+                                                            : idxsrc{src}, ctx{c}, matchesFilter{mf}
+                                                        {
+                                                        }
 
-						} handler(&rctx, idxsrc, matchesFilter);
+                                                } handler(&rctx, idxsrc, matchesFilter);
 
-						span->process(&handler, 1, DocIDsEND);
-						matchedDocuments = handler.n;
-					}
+                                                span->process(&handler, 1, DocIDsEND);
+                                                matchedDocuments = handler.n;
+                                        }
                                 }
                         }
-			else if (accumScoreMode)
-			{
+                        else if (accumScoreMode)
+                        {
                                 if (documentsFilter)
                                 {
                                         if (maskedDocumentsRegistry && !maskedDocumentsRegistry->empty())
@@ -2896,10 +2903,10 @@ void Trinity::exec_query(const query &in,
                                                                 const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(id) : id;
 
                                                                 if (!documentsFilter->filter(globalDocID) && !maskedDocumentsRegistry->test(globalDocID))
-								{
-									matchesFilter->consider(globalDocID, relDoc->score());
-									++n;
-								}
+                                                                {
+                                                                        matchesFilter->consider(globalDocID, relDoc->score());
+                                                                        ++n;
+                                                                }
                                                         }
 
                                                         Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, masked_documents_registry *mr, IndexDocumentsFilter *df)
@@ -2931,7 +2938,7 @@ void Trinity::exec_query(const query &in,
 
                                                                 if (!documentsFilter->filter(globalDocID))
                                                                 {
-									matchesFilter->consider(globalDocID, relDoc->score());
+                                                                        matchesFilter->consider(globalDocID, relDoc->score());
                                                                         ++n;
                                                                 }
                                                         }
@@ -2966,7 +2973,7 @@ void Trinity::exec_query(const query &in,
 
                                                         if (!maskedDocumentsRegistry->test(globalDocID))
                                                         {
-								matchesFilter->consider(globalDocID, relDoc->score());
+                                                                matchesFilter->consider(globalDocID, relDoc->score());
                                                                 ++n;
                                                         }
                                                 }
@@ -2997,14 +3004,13 @@ void Trinity::exec_query(const query &in,
                                                         const auto id = relDoc->document();
                                                         [[maybe_unused]] const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(id) : id;
 
-							matchesFilter->consider(globalDocID, relDoc->score());
+                                                        matchesFilter->consider(globalDocID, relDoc->score());
                                                         ++n;
                                                 }
 
                                                 Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
                                                     : idxsrc{src}, ctx{c}, requireDocIDTranslation{src->require_docid_translation()}, matchesFilter{mf}
                                                 {
-
                                                 }
 
                                         } handler(&rctx, idxsrc, matchesFilter);
@@ -3012,8 +3018,7 @@ void Trinity::exec_query(const query &in,
                                         span->process(&handler, 1, DocIDsEND);
                                         matchedDocuments = handler.n;
                                 }
-
-			}
+                        }
                         else // documentsOnly == false
                         {
                                 if (documentsFilter)
@@ -3192,6 +3197,7 @@ void Trinity::exec_query(const query &in,
         }
         catch (...)
         {
+                // something else, throw it and let someone else handle it
                 throw;
         }
 

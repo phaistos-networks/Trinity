@@ -188,6 +188,8 @@ namespace Trinity
                 // Invoked before the query execution begins by the exec.engine
 		// You may want to override this if you want to be notified and get a chance to do anything before
 		// the engine executes the query in the index source
+		//
+		// This is only invoked if the default execution mode is selected; it makes no sense otherwise.
                 virtual void prepare(const query_index_terms **queryIndicesTerms_)
                 {
                         queryIndicesTerms = queryIndicesTerms_;
