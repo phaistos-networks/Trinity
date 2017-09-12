@@ -2,13 +2,13 @@
 #include "docset_spans.h"
 #include "docwordspace.h"
 #include "matches.h"
-#include "runtime_ctx.h"
+#include "queryexec_ctx.h"
 #include "similarity.h"
 #include <prioqueue.h>
 
 
 using namespace Trinity;
-thread_local Trinity::runtime_ctx *curRCTX;
+thread_local Trinity::queryexec_ctx *curRCTX;
 
 namespace // static/local this module
 {
@@ -16,13 +16,13 @@ namespace // static/local this module
         static constexpr bool traceCompile{false};
 }
 
-static uint64_t reorder_execnode(exec_node &n, bool &updates, runtime_ctx &rctx);
+static uint64_t reorder_execnode(exec_node &n, bool &updates, queryexec_ctx &rctx);
 
 //WAS: return rctx.term_ctx(p->termIDs[0]).documents;
 //Now it's proprortional to the number of terms of the phrase
 //because we 'd like to avoid avoid materializing hits for un-necessary documents if possible, and we
 //need to materialize for processing phrases
-static uint64_t phrase_cost(runtime_ctx &rctx, const runtime_ctx::phrase *const p)
+static uint64_t phrase_cost(queryexec_ctx &rctx, const queryexec_ctx::phrase *const p)
 {
         // boost it because its's a phrase so we will need to deserialize hits
         //
@@ -33,19 +33,19 @@ static uint64_t phrase_cost(runtime_ctx &rctx, const runtime_ctx::phrase *const 
         return rctx.term_ctx(p->termIDs[0]).documents + UINT32_MAX + UINT16_MAX * p->size;
 }
 
-static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, runtime_ctx &rctx)
+static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, queryexec_ctx &rctx)
 {
         if (n.fp == ENT::matchterm)
                 return rctx.term_ctx(n.u16).documents;
         else if (n.fp == ENT::matchphrase)
         {
-                const auto p = static_cast<const runtime_ctx::phrase *>(n.ptr);
+                const auto p = static_cast<const queryexec_ctx::phrase *>(n.ptr);
 
                 return phrase_cost(rctx, p);
         }
         else if (n.fp == ENT::logicaland)
         {
-                auto ctx = static_cast<runtime_ctx::binop_ctx *>(n.ptr);
+                auto ctx = static_cast<queryexec_ctx::binop_ctx *>(n.ptr);
                 const auto lhsCost = reorder_execnode(ctx->lhs, updates, rctx);
                 const auto rhsCost = reorder_execnode(ctx->rhs, updates, rctx);
 
@@ -60,7 +60,7 @@ static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, runtime_ctx &
         }
         else if (n.fp == ENT::logicalnot)
         {
-                auto *const ctx = static_cast<runtime_ctx::binop_ctx *>(n.ptr);
+                auto *const ctx = static_cast<queryexec_ctx::binop_ctx *>(n.ptr);
                 const auto lhsCost = reorder_execnode(ctx->lhs, updates, rctx);
                 [[maybe_unused]] const auto rhsCost = reorder_execnode(ctx->rhs, updates, rctx);
 
@@ -68,7 +68,7 @@ static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, runtime_ctx &
         }
         else if (n.fp == ENT::logicalor)
         {
-                auto *const ctx = static_cast<runtime_ctx::binop_ctx *>(n.ptr);
+                auto *const ctx = static_cast<queryexec_ctx::binop_ctx *>(n.ptr);
                 const auto lhsCost = reorder_execnode(ctx->lhs, updates, rctx);
                 const auto rhsCost = reorder_execnode(ctx->rhs, updates, rctx);
 
@@ -76,13 +76,13 @@ static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, runtime_ctx &
         }
         else if (n.fp == ENT::unaryand || n.fp == ENT::unarynot)
         {
-                auto *const ctx = static_cast<runtime_ctx::unaryop_ctx *>(n.ptr);
+                auto *const ctx = static_cast<queryexec_ctx::unaryop_ctx *>(n.ptr);
 
                 return reorder_execnode(ctx->expr, updates, rctx);
         }
         else if (n.fp == ENT::consttrueexpr)
         {
-                auto ctx = static_cast<runtime_ctx::unaryop_ctx *>(n.ptr);
+                auto ctx = static_cast<queryexec_ctx::unaryop_ctx *>(n.ptr);
 
                 // it is important to return UINT64_MAX - 1 so that it will not result in a binop's (lhs, rhs) swap
                 // we need to special-case the handling of those nodes
@@ -91,7 +91,7 @@ static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, runtime_ctx &
         }
         else if (n.fp == ENT::matchsome)
         {
-                auto pm = static_cast<runtime_ctx::partial_match_ctx *>(n.ptr);
+                auto pm = static_cast<queryexec_ctx::partial_match_ctx *>(n.ptr);
 
                 for (uint32_t i{0}; i != pm->size; ++i)
                         reorder_execnode(pm->nodes[i], updates, rctx);
@@ -99,13 +99,13 @@ static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, runtime_ctx &
         }
         else if (n.fp == ENT::matchallterms)
         {
-                const auto run = static_cast<const runtime_ctx::termsrun *>(n.ptr);
+                const auto run = static_cast<const queryexec_ctx::termsrun *>(n.ptr);
 
                 return rctx.term_ctx(run->terms[0]).documents;
         }
         else if (n.fp == ENT::matchanyterms)
         {
-                const auto run = static_cast<const runtime_ctx::termsrun *>(n.ptr);
+                const auto run = static_cast<const queryexec_ctx::termsrun *>(n.ptr);
                 uint64_t sum{0};
 
                 for (uint32_t i{0}; i != run->size; ++i)
@@ -114,13 +114,13 @@ static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, runtime_ctx &
         }
         else if (n.fp == ENT::matchallphrases)
         {
-                const auto *const __restrict__ run = (const runtime_ctx::phrasesrun *)n.ptr;
+                const auto *const __restrict__ run = (const queryexec_ctx::phrasesrun *)n.ptr;
 
                 return phrase_cost(rctx, run->phrases[0]) * run->size; // This may or may not make sense
         }
         else if (n.fp == ENT::matchanyphrases)
         {
-                const auto *const __restrict__ run = (runtime_ctx::phrasesrun *)n.ptr;
+                const auto *const __restrict__ run = (queryexec_ctx::phrasesrun *)n.ptr;
                 uint64_t sum{0};
 
                 for (uint32_t i{0}; i != run->size; ++i)
@@ -133,12 +133,12 @@ static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, runtime_ctx &
         }
 }
 
-uint64_t reorder_execnode(exec_node &n, bool &updates, runtime_ctx &rctx)
+uint64_t reorder_execnode(exec_node &n, bool &updates, queryexec_ctx &rctx)
 {
         return n.cost = reorder_execnode_impl(n, updates, rctx);
 }
 
-static exec_node reorder_execnodes(exec_node n, runtime_ctx &rctx)
+static exec_node reorder_execnodes(exec_node n, queryexec_ctx &rctx)
 {
         bool updates;
 
@@ -396,7 +396,7 @@ static execnodes_collection *try_collect_impl(const exec_node lhs, const exec_no
 template <typename T, typename T2>
 static bool try_collect(exec_node &res, simple_allocator &a, T fp, T2 fp2)
 {
-        auto opctx = static_cast<runtime_ctx::binop_ctx *>(res.ptr);
+        auto opctx = static_cast<queryexec_ctx::binop_ctx *>(res.ptr);
 
         if (auto ptr = try_collect_impl(opctx->lhs, opctx->rhs, a, fp, fp2))
         {
@@ -408,7 +408,7 @@ static bool try_collect(exec_node &res, simple_allocator &a, T fp, T2 fp2)
                 return false;
 }
 
-static exec_node compile_node(const ast_node *const n, runtime_ctx &rctx, simple_allocator &a)
+static exec_node compile_node(const ast_node *const n, queryexec_ctx &rctx, simple_allocator &a)
 {
         exec_node res;
 
@@ -479,7 +479,7 @@ static exec_node compile_node(const ast_node *const n, runtime_ctx &rctx, simple
                 case ast_node::Type::MatchSome:
                         res.fp = ENT::matchsome;
                         {
-                                auto pm = (runtime_ctx::partial_match_ctx *)a.Alloc(sizeof(runtime_ctx::partial_match_ctx) + sizeof(exec_node) * n->match_some.size);
+                                auto pm = (queryexec_ctx::partial_match_ctx *)a.Alloc(sizeof(queryexec_ctx::partial_match_ctx) + sizeof(exec_node) * n->match_some.size);
 
                                 pm->min = n->match_some.min;
                                 pm->size = n->match_some.size;
@@ -513,7 +513,7 @@ static exec_node compile_node(const ast_node *const n, runtime_ctx &rctx, simple
                         // use register_unaryop() for this as well
                         // no need for another register_x()
                         res.ptr = rctx.register_unaryop(compile_node(n->expr, rctx, a));
-                        if (static_cast<runtime_ctx::unaryop_ctx *>(res.ptr)->expr.fp == ENT::constfalse)
+                        if (static_cast<queryexec_ctx::unaryop_ctx *>(res.ptr)->expr.fp == ENT::constfalse)
                                 res.fp = ENT::dummyop;
                         else
                                 res.fp = ENT::consttrueexpr;
@@ -535,8 +535,8 @@ static bool same(const exec_node &a, const exec_node &b) noexcept
 {
         if (a.fp == ENT::matchallterms && b.fp == a.fp)
         {
-                const auto *const __restrict__ runa = (runtime_ctx::termsrun *)a.ptr;
-                const auto *const __restrict__ runb = (runtime_ctx::termsrun *)b.ptr;
+                const auto *const __restrict__ runa = (queryexec_ctx::termsrun *)a.ptr;
+                const auto *const __restrict__ runb = (queryexec_ctx::termsrun *)b.ptr;
 
                 return *runa == *runb;
         }
@@ -544,8 +544,8 @@ static bool same(const exec_node &a, const exec_node &b) noexcept
                 return a.u16 == b.u16;
         else if (a.fp == ENT::matchphrase && b.fp == ENT::matchphrase)
         {
-                const auto *const __restrict__ pa = (runtime_ctx::phrase *)a.ptr;
-                const auto *const __restrict__ pb = (runtime_ctx::phrase *)b.ptr;
+                const auto *const __restrict__ pa = (queryexec_ctx::phrase *)a.ptr;
+                const auto *const __restrict__ pb = (queryexec_ctx::phrase *)b.ptr;
 
                 return *pa == *pb;
         }
@@ -553,25 +553,25 @@ static bool same(const exec_node &a, const exec_node &b) noexcept
         return false;
 }
 
-static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, std::vector<exec_term_id_t> &terms, std::vector<const runtime_ctx::phrase *> &phrases, std::vector<exec_node> &stack)
+static void collapse_node(exec_node &n, queryexec_ctx &rctx, simple_allocator &a, std::vector<exec_term_id_t> &terms, std::vector<const queryexec_ctx::phrase *> &phrases, std::vector<exec_node> &stack)
 {
         if (n.fp == ENT::consttrueexpr || n.fp == ENT::unaryand || n.fp == ENT::unarynot)
         {
-                auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
+                auto ctx = (queryexec_ctx::unaryop_ctx *)n.ptr;
 
                 collapse_node(ctx->expr, rctx, a, terms, phrases, stack);
         }
         else if (n.fp == ENT::matchsome)
         {
-                auto pm = static_cast<runtime_ctx::partial_match_ctx *>(n.ptr);
+                auto pm = static_cast<queryexec_ctx::partial_match_ctx *>(n.ptr);
 
                 for (uint32_t i{0}; i != pm->size; ++i)
                         collapse_node(pm->nodes[i], rctx, a, terms, phrases, stack);
         }
         else if (n.fp == ENT::logicaland || n.fp == ENT::logicalor || n.fp == ENT::logicalnot)
         {
-                auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
-                runtime_ctx::binop_ctx *otherCtx;
+                auto ctx = (queryexec_ctx::binop_ctx *)n.ptr;
+                queryexec_ctx::binop_ctx *otherCtx;
 
                 collapse_node(ctx->lhs, rctx, a, terms, phrases, stack);
                 collapse_node(ctx->rhs, rctx, a, terms, phrases, stack);
@@ -581,7 +581,7 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
                         if (try_collect(n, a, ENT::SPECIALIMPL_COLLECTION_LOGICALAND, ENT::matchallterms))
                                 return;
 
-                        if ((ctx->lhs.fp == ENT::matchterm || ctx->lhs.fp == ENT::matchphrase || ctx->lhs.fp == ENT::SPECIALIMPL_COLLECTION_LOGICALAND) && ctx->rhs.fp == ENT::logicaland && ((otherCtx = (runtime_ctx::binop_ctx *)ctx->rhs.ptr)->lhs.fp == ENT::matchterm || otherCtx->lhs.fp == ENT::SPECIALIMPL_COLLECTION_LOGICALAND || otherCtx->lhs.fp == ENT::matchphrase))
+                        if ((ctx->lhs.fp == ENT::matchterm || ctx->lhs.fp == ENT::matchphrase || ctx->lhs.fp == ENT::SPECIALIMPL_COLLECTION_LOGICALAND) && ctx->rhs.fp == ENT::logicaland && ((otherCtx = (queryexec_ctx::binop_ctx *)ctx->rhs.ptr)->lhs.fp == ENT::matchterm || otherCtx->lhs.fp == ENT::SPECIALIMPL_COLLECTION_LOGICALAND || otherCtx->lhs.fp == ENT::matchphrase))
                         {
                                 // lord AND (of AND (the AND rings))
                                 // (lord of) AND (the AND rings)
@@ -596,8 +596,8 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
                         if (ctx->lhs.fp == ENT::consttrueexpr && ctx->rhs.fp == ENT::consttrueexpr)
                         {
                                 // [<foo> AND <bar>] => [ <foo,bar> ]
-                                auto *const __restrict__ lhsCtx = (runtime_ctx::unaryop_ctx *)ctx->lhs.ptr;
-                                auto *const __restrict__ rhsCtx = (runtime_ctx::unaryop_ctx *)ctx->rhs.ptr;
+                                auto *const __restrict__ lhsCtx = (queryexec_ctx::unaryop_ctx *)ctx->lhs.ptr;
+                                auto *const __restrict__ rhsCtx = (queryexec_ctx::unaryop_ctx *)ctx->rhs.ptr;
 
                                 if (auto ptr = try_collect_impl(lhsCtx->expr, rhsCtx->expr, a, ENT::SPECIALIMPL_COLLECTION_LOGICALAND, ENT::matchallterms))
                                 {
@@ -615,12 +615,12 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
                         {
                                 // <foo> AND (<bar> AND whatever)
                                 // <foo, bar> AND whatever
-                                auto *const __restrict__ lhsCtx = (runtime_ctx::unaryop_ctx *)ctx->lhs.ptr;
-                                auto *const __restrict__ rhsCtx = (runtime_ctx::binop_ctx *)ctx->rhs.ptr;
+                                auto *const __restrict__ lhsCtx = (queryexec_ctx::unaryop_ctx *)ctx->lhs.ptr;
+                                auto *const __restrict__ rhsCtx = (queryexec_ctx::binop_ctx *)ctx->rhs.ptr;
 
                                 if (rhsCtx->lhs.fp == ENT::consttrueexpr)
                                 {
-                                        auto *const __restrict__ otherCtx = (runtime_ctx::unaryop_ctx *)rhsCtx->lhs.ptr;
+                                        auto *const __restrict__ otherCtx = (queryexec_ctx::unaryop_ctx *)rhsCtx->lhs.ptr;
 
                                         if (auto ptr = try_collect_impl(lhsCtx->expr,
                                                                         otherCtx->expr, a, ENT::SPECIALIMPL_COLLECTION_LOGICALAND, ENT::matchallterms))
@@ -639,7 +639,7 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
                         if (try_collect(n, a, ENT::SPECIALIMPL_COLLECTION_LOGICALOR, ENT::matchanyterms))
                                 return;
 
-                        if ((ctx->lhs.fp == ENT::matchterm || ctx->lhs.fp == ENT::matchphrase || ctx->lhs.fp == ENT::SPECIALIMPL_COLLECTION_LOGICALOR) && ctx->rhs.fp == ENT::logicalor && ((otherCtx = (runtime_ctx::binop_ctx *)ctx->rhs.ptr)->lhs.fp == ENT::matchterm || otherCtx->lhs.fp == ENT::SPECIALIMPL_COLLECTION_LOGICALOR || otherCtx->lhs.fp == ENT::matchphrase))
+                        if ((ctx->lhs.fp == ENT::matchterm || ctx->lhs.fp == ENT::matchphrase || ctx->lhs.fp == ENT::SPECIALIMPL_COLLECTION_LOGICALOR) && ctx->rhs.fp == ENT::logicalor && ((otherCtx = (queryexec_ctx::binop_ctx *)ctx->rhs.ptr)->lhs.fp == ENT::matchterm || otherCtx->lhs.fp == ENT::SPECIALIMPL_COLLECTION_LOGICALOR || otherCtx->lhs.fp == ENT::matchphrase))
                         {
                                 // lord OR (ring OR (rings OR towers))
                                 // (lord OR ring) OR (rings OR towers)
@@ -655,8 +655,8 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
                         if (ctx->lhs.fp == ENT::consttrueexpr && ctx->rhs.fp == ENT::consttrueexpr)
                         {
                                 // [<foo> OR <bar>] => [ OR<foo, bar> ]
-                                auto *const __restrict__ lhsCtx = (runtime_ctx::unaryop_ctx *)ctx->lhs.ptr;
-                                auto *const __restrict__ rhsCtx = (runtime_ctx::unaryop_ctx *)ctx->rhs.ptr;
+                                auto *const __restrict__ lhsCtx = (queryexec_ctx::unaryop_ctx *)ctx->lhs.ptr;
+                                auto *const __restrict__ rhsCtx = (queryexec_ctx::unaryop_ctx *)ctx->rhs.ptr;
 
                                 if (auto ptr = try_collect_impl(lhsCtx->expr, rhsCtx->expr, a, ENT::SPECIALIMPL_COLLECTION_LOGICALOR, ENT::matchanyterms))
                                 {
@@ -674,12 +674,12 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
                         {
                                 // <foo> OR (<bar> OR whatever)
                                 // <foo, bar> OR whatever
-                                auto *const __restrict__ lhsCtx = (runtime_ctx::unaryop_ctx *)ctx->lhs.ptr;
-                                auto *const __restrict__ rhsCtx = (runtime_ctx::binop_ctx *)ctx->rhs.ptr;
+                                auto *const __restrict__ lhsCtx = (queryexec_ctx::unaryop_ctx *)ctx->lhs.ptr;
+                                auto *const __restrict__ rhsCtx = (queryexec_ctx::binop_ctx *)ctx->rhs.ptr;
 
                                 if (rhsCtx->lhs.fp == ENT::consttrueexpr)
                                 {
-                                        auto *const __restrict__ otherCtx = (runtime_ctx::unaryop_ctx *)rhsCtx->lhs.ptr;
+                                        auto *const __restrict__ otherCtx = (queryexec_ctx::unaryop_ctx *)rhsCtx->lhs.ptr;
 
                                         if (auto ptr = try_collect_impl(lhsCtx->expr,
                                                                         otherCtx->expr, a, ENT::SPECIALIMPL_COLLECTION_LOGICALOR, ENT::matchanyterms))
@@ -697,7 +697,7 @@ static void collapse_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, 
         }
 }
 
-static void trim_phrasesrun(exec_node &n, runtime_ctx::phrasesrun *pr)
+static void trim_phrasesrun(exec_node &n, queryexec_ctx::phrasesrun *pr)
 {
         auto out = pr->phrases;
         const auto size = pr->size;
@@ -729,24 +729,24 @@ static void trim_phrasesrun(exec_node &n, runtime_ctx::phrasesrun *pr)
         }
 }
 
-static void expand_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, std::vector<exec_term_id_t> &terms, std::vector<const runtime_ctx::phrase *> &phrases, std::vector<exec_node> &stack)
+static void expand_node(exec_node &n, queryexec_ctx &rctx, simple_allocator &a, std::vector<exec_term_id_t> &terms, std::vector<const queryexec_ctx::phrase *> &phrases, std::vector<exec_node> &stack)
 {
         if (n.fp == ENT::consttrueexpr || n.fp == ENT::unaryand || n.fp == ENT::unarynot)
         {
-                auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
+                auto ctx = (queryexec_ctx::unaryop_ctx *)n.ptr;
 
                 expand_node(ctx->expr, rctx, a, terms, phrases, stack);
         }
         else if (n.fp == ENT::matchsome)
         {
-                auto ctx = static_cast<runtime_ctx::partial_match_ctx *>(n.ptr);
+                auto ctx = static_cast<queryexec_ctx::partial_match_ctx *>(n.ptr);
 
                 for (uint32_t i{0}; i != ctx->size; ++i)
                         expand_node(ctx->nodes[i], rctx, a, terms, phrases, stack);
         }
         else if (n.fp == ENT::logicaland || n.fp == ENT::logicalor || n.fp == ENT::logicalnot)
         {
-                auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
+                auto ctx = (queryexec_ctx::binop_ctx *)n.ptr;
 
                 expand_node(ctx->lhs, rctx, a, terms, phrases, stack);
                 expand_node(ctx->rhs, rctx, a, terms, phrases, stack);
@@ -775,13 +775,13 @@ static void expand_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, st
                         }
                         else if (en.fp == ENT::matchphrase)
                         {
-                                const auto p = (runtime_ctx::phrase *)en.ptr;
+                                const auto p = (queryexec_ctx::phrase *)en.ptr;
 
                                 phrases.push_back(p);
                         }
                         else if (en.fp == ENT::matchallterms || en.fp == ENT::matchanyterms)
                         {
-                                const auto run = static_cast<const runtime_ctx::termsrun *>(en.ptr);
+                                const auto run = static_cast<const queryexec_ctx::termsrun *>(en.ptr);
 
                                 terms.insert(terms.end(), run->terms, run->terms + run->size);
                         }
@@ -830,10 +830,10 @@ static void expand_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, st
                         else
                         {
                                 exec_node phrasesRunNode;
-                                auto phrasesRun = (runtime_ctx::phrasesrun *)rctx.allocator.Alloc(sizeof(runtime_ctx::phrasesrun) + phrasesCnt * sizeof(runtime_ctx::phrase *));
+                                auto phrasesRun = (queryexec_ctx::phrasesrun *)rctx.allocator.Alloc(sizeof(queryexec_ctx::phrasesrun) + phrasesCnt * sizeof(queryexec_ctx::phrase *));
 
                                 phrasesRun->size = phrasesCnt;
-                                memcpy(phrasesRun->phrases, phrases.data(), phrasesCnt * sizeof(runtime_ctx::phrase *));
+                                memcpy(phrasesRun->phrases, phrases.data(), phrasesCnt * sizeof(queryexec_ctx::phrase *));
 
                                 phrasesRunNode.fp = (n.fp == ENT::SPECIALIMPL_COLLECTION_LOGICALOR ? ENT::matchanyphrases : ENT::matchallphrases);
                                 phrasesRunNode.ptr = (void *)phrasesRun;
@@ -846,7 +846,7 @@ static void expand_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, st
                 }
                 else if (termsCnt > 1)
                 {
-                        auto run = (runtime_ctx::termsrun *)rctx.runsAllocator.Alloc(sizeof(runtime_ctx::termsrun) + sizeof(exec_term_id_t) * termsCnt);
+                        auto run = (queryexec_ctx::termsrun *)rctx.runsAllocator.Alloc(sizeof(queryexec_ctx::termsrun) + sizeof(exec_term_id_t) * termsCnt);
                         exec_node runNode;
 
                         run->size = termsCnt;
@@ -876,10 +876,10 @@ static void expand_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, st
                         else
                         {
                                 exec_node phrasesRunNode;
-                                auto phrasesRun = (runtime_ctx::phrasesrun *)rctx.allocator.Alloc(sizeof(runtime_ctx::phrasesrun) + phrasesCnt * sizeof(runtime_ctx::phrase *));
+                                auto phrasesRun = (queryexec_ctx::phrasesrun *)rctx.allocator.Alloc(sizeof(queryexec_ctx::phrasesrun) + phrasesCnt * sizeof(queryexec_ctx::phrase *));
 
                                 phrasesRun->size = phrasesCnt;
-                                memcpy(phrasesRun->phrases, phrases.data(), phrasesCnt * sizeof(runtime_ctx::phrase *));
+                                memcpy(phrasesRun->phrases, phrases.data(), phrasesCnt * sizeof(queryexec_ctx::phrase *));
 
                                 phrasesRunNode.fp = (n.fp == ENT::SPECIALIMPL_COLLECTION_LOGICALOR ? ENT::matchanyphrases : ENT::matchallphrases);
                                 phrasesRunNode.ptr = (void *)phrasesRun;
@@ -899,10 +899,10 @@ static void expand_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, st
                         }
                         else
                         {
-                                auto phrasesRun = (runtime_ctx::phrasesrun *)rctx.allocator.Alloc(sizeof(runtime_ctx::phrasesrun) + phrasesCnt * sizeof(runtime_ctx::phrase *));
+                                auto phrasesRun = (queryexec_ctx::phrasesrun *)rctx.allocator.Alloc(sizeof(queryexec_ctx::phrasesrun) + phrasesCnt * sizeof(queryexec_ctx::phrase *));
 
                                 phrasesRun->size = phrasesCnt;
-                                memcpy(phrasesRun->phrases, phrases.data(), phrasesCnt * sizeof(runtime_ctx::phrase *));
+                                memcpy(phrasesRun->phrases, phrases.data(), phrasesCnt * sizeof(queryexec_ctx::phrase *));
 
                                 n.fp = (n.fp == ENT::SPECIALIMPL_COLLECTION_LOGICALOR ? ENT::matchanyphrases : ENT::matchallphrases);
                                 n.ptr = (void *)phrasesRun;
@@ -921,7 +921,7 @@ static void expand_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, st
         }
         else if (n.fp == ENT::matchallterms || n.fp == ENT::matchanyterms)
         {
-                const auto run = static_cast<const runtime_ctx::termsrun *>(n.ptr);
+                const auto run = static_cast<const queryexec_ctx::termsrun *>(n.ptr);
 
                 if (run->size == 1)
                 {
@@ -931,7 +931,7 @@ static void expand_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, st
         }
         else if (n.fp == ENT::matchphrase)
         {
-                const auto p = (runtime_ctx::phrase *)n.ptr;
+                const auto p = (queryexec_ctx::phrase *)n.ptr;
 
                 if (p->size == 1)
                 {
@@ -941,7 +941,7 @@ static void expand_node(exec_node &n, runtime_ctx &rctx, simple_allocator &a, st
         }
 }
 
-static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator &a, std::vector<exec_term_id_t> &terms, std::vector<const runtime_ctx::phrase *> &phrases, std::vector<exec_node> &stack, bool &updates, const exec_node *const root)
+static exec_node optimize_node(exec_node n, queryexec_ctx &rctx, simple_allocator &a, std::vector<exec_term_id_t> &terms, std::vector<const queryexec_ctx::phrase *> &phrases, std::vector<exec_node> &stack, bool &updates, const exec_node *const root)
 {
         const auto saved{n};
 
@@ -958,7 +958,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
 
         if (n.fp == ENT::consttrueexpr)
         {
-                auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
+                auto ctx = (queryexec_ctx::unaryop_ctx *)n.ptr;
 
                 ctx->expr = optimize_node(ctx->expr, rctx, a, terms, phrases, stack, updates, root);
                 if (ctx->expr.fp == ENT::constfalse || ctx->expr.fp == ENT::dummyop)
@@ -969,7 +969,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
         }
         else if (n.fp == ENT::matchsome)
         {
-                auto ctx = static_cast<runtime_ctx::partial_match_ctx *>(n.ptr);
+                auto ctx = static_cast<queryexec_ctx::partial_match_ctx *>(n.ptr);
                 const auto saved{ctx->size};
 
                 for (uint32_t i{0}; i < ctx->size; ++i)
@@ -1001,7 +1001,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
 
                                 for (uint32_t i{1}; i != ctx->size; ++i)
                                 {
-                                        auto b = (runtime_ctx::binop_ctx *)a.Alloc(sizeof(runtime_ctx::binop_ctx));
+                                        auto b = (queryexec_ctx::binop_ctx *)a.Alloc(sizeof(queryexec_ctx::binop_ctx));
 
                                         b->lhs = en;
                                         b->rhs = ctx->nodes[i];
@@ -1024,7 +1024,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
         }
         else if (n.fp == ENT::unaryand)
         {
-                auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
+                auto ctx = (queryexec_ctx::unaryop_ctx *)n.ptr;
 
                 ctx->expr = optimize_node(ctx->expr, rctx, a, terms, phrases, stack, updates, root);
                 if (ctx->expr.fp == ENT::constfalse)
@@ -1040,7 +1040,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
         }
         else if (n.fp == ENT::unarynot)
         {
-                auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
+                auto ctx = (queryexec_ctx::unaryop_ctx *)n.ptr;
 
                 ctx->expr = optimize_node(ctx->expr, rctx, a, terms, phrases, stack, updates, root);
                 if (ctx->expr.fp == ENT::dummyop)
@@ -1051,8 +1051,8 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
         }
         else if (n.fp == ENT::logicaland || n.fp == ENT::logicalor || n.fp == ENT::logicalnot)
         {
-                auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
-                runtime_ctx::binop_ctx *otherCtx;
+                auto ctx = (queryexec_ctx::binop_ctx *)n.ptr;
+                queryexec_ctx::binop_ctx *otherCtx;
 
                 ctx->lhs = optimize_node(ctx->lhs, rctx, a, terms, phrases, stack, updates, root);
                 ctx->rhs = optimize_node(ctx->rhs, rctx, a, terms, phrases, stack, updates, root);
@@ -1130,8 +1130,8 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         else if (ctx->lhs.fp == ENT::matchphrase && ctx->rhs.fp == ENT::matchallterms)
                         {
                                 // ([1,2] OR ALL OF[3,1,2]) => ALL OF [3,1,2]
-                                const auto *const __restrict__ run = (runtime_ctx::termsrun *)ctx->rhs.ptr;
-                                const auto *const phrase = (runtime_ctx::phrase *)ctx->lhs.ptr;
+                                const auto *const __restrict__ run = (queryexec_ctx::termsrun *)ctx->rhs.ptr;
+                                const auto *const phrase = (queryexec_ctx::phrase *)ctx->lhs.ptr;
 
                                 if (phrase->intersected_by(run))
                                 {
@@ -1143,8 +1143,8 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         else if (ctx->lhs.fp == ENT::matchallterms && ctx->rhs.fp == ENT::matchphrase)
                         {
                                 // ([1,2] OR ALL OF[1,3,2]) => ALL OF [1,3,2]
-                                const auto *const __restrict__ run = (runtime_ctx::termsrun *)ctx->lhs.ptr;
-                                const auto *const phrase = (runtime_ctx::phrase *)ctx->rhs.ptr;
+                                const auto *const __restrict__ run = (queryexec_ctx::termsrun *)ctx->lhs.ptr;
+                                const auto *const phrase = (queryexec_ctx::phrase *)ctx->rhs.ptr;
 
                                 if (phrase->intersected_by(run))
                                 {
@@ -1155,7 +1155,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         }
                         else if (ctx->lhs.fp == ENT::consttrueexpr)
                         {
-                                auto c = static_cast<const runtime_ctx::unaryop_ctx *>(ctx->lhs.ptr);
+                                auto c = static_cast<const queryexec_ctx::unaryop_ctx *>(ctx->lhs.ptr);
 
                                 ctx->lhs = c->expr;
                                 set_dirty();
@@ -1163,7 +1163,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         }
                         if (ctx->rhs.fp == ENT::consttrueexpr)
                         {
-                                auto c = static_cast<const runtime_ctx::unaryop_ctx *>(ctx->rhs.ptr);
+                                auto c = static_cast<const queryexec_ctx::unaryop_ctx *>(ctx->rhs.ptr);
 
                                 ctx->rhs = c->expr;
                                 set_dirty();
@@ -1184,7 +1184,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                                 set_dirty();
                                 return n;
                         }
-                        else if (ctx->lhs.fp == ENT::logicalnot && same(static_cast<runtime_ctx::binop_ctx *>(ctx->lhs.ptr)->rhs, ctx->rhs))
+                        else if (ctx->lhs.fp == ENT::logicalnot && same(static_cast<queryexec_ctx::binop_ctx *>(ctx->lhs.ptr)->rhs, ctx->rhs))
                         {
                                 // ((1 NOT 2) AND 2)
                                 n.fp = ENT::constfalse;
@@ -1198,7 +1198,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         else if (ctx->lhs.fp == ENT::matchterm && ctx->rhs.fp == ENT::matchanyterms)
                         {
                                 // (1 AND ANY OF[1,4,10]) => [1 AND <ANY OF [4, 10]>]
-                                auto run = (runtime_ctx::termsrun *)ctx->rhs.ptr;
+                                auto run = (queryexec_ctx::termsrun *)ctx->rhs.ptr;
 
                                 if (run->erase(ctx->lhs.u16))
                                 {
@@ -1225,8 +1225,8 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         if (ctx->lhs.fp == ENT::matchallterms && ctx->rhs.fp == ENT::matchanyterms)
                         {
                                 // (ALL OF[2,1] AND ANY OF[2,1])
-                                auto runa = (runtime_ctx::termsrun *)ctx->lhs.ptr;
-                                auto runb = (runtime_ctx::termsrun *)ctx->rhs.ptr;
+                                auto runa = (queryexec_ctx::termsrun *)ctx->lhs.ptr;
+                                auto runb = (queryexec_ctx::termsrun *)ctx->rhs.ptr;
 
                                 if (*runa == *runb)
                                 {
@@ -1239,8 +1239,8 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         if (ctx->lhs.fp == ENT::matchanyterms && ctx->rhs.fp == ENT::matchallterms)
                         {
                                 // (ANY OF[2,1] AND ALL OF[2,1])
-                                auto runa = (runtime_ctx::termsrun *)ctx->lhs.ptr;
-                                auto runb = (runtime_ctx::termsrun *)ctx->rhs.ptr;
+                                auto runa = (queryexec_ctx::termsrun *)ctx->lhs.ptr;
+                                auto runb = (queryexec_ctx::termsrun *)ctx->rhs.ptr;
 
                                 if (*runa == *runb)
                                 {
@@ -1265,8 +1265,8 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
 #if 0
                         if (ctx->lhs.fp == ENT::matchallterms && ctx->rhs.fp == ENT::matchanyterms)
                         {
-                                auto runa = (runtime_ctx::termsrun *)ctx->lhs.ptr;
-                                auto runb = (runtime_ctx::termsrun *)ctx->rhs.ptr;
+                                auto runa = (queryexec_ctx::termsrun *)ctx->lhs.ptr;
+                                auto runb = (queryexec_ctx::termsrun *)ctx->rhs.ptr;
 
                                 if (runb->erase(*runa))
                                 {
@@ -1289,8 +1289,8 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         if (ctx->lhs.fp == ENT::matchanyterms && ctx->rhs.fp == ENT::matchanyterms)
                         {
                                 // (ANY OF[2,1] AND ANY OF[2,1])
-                                auto runa = (runtime_ctx::termsrun *)ctx->lhs.ptr;
-                                auto runb = (runtime_ctx::termsrun *)ctx->rhs.ptr;
+                                auto runa = (queryexec_ctx::termsrun *)ctx->lhs.ptr;
+                                auto runb = (queryexec_ctx::termsrun *)ctx->rhs.ptr;
 
                                 if (*runa == *runb)
                                 {
@@ -1303,7 +1303,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         if (ctx->lhs.fp == ENT::matchterm && ctx->rhs.fp == ENT::matchallphrases)
                         {
                                 // (1 AND ALLPHRASES:[[4,3,5][2,3,1]])
-                                const auto *const __restrict__ run = (runtime_ctx::phrasesrun *)ctx->rhs.ptr;
+                                const auto *const __restrict__ run = (queryexec_ctx::phrasesrun *)ctx->rhs.ptr;
                                 const auto termID = ctx->lhs.u16;
 
                                 for (uint32_t i{0}; i != run->size; ++i)
@@ -1324,8 +1324,8 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                                 // ( pc game  hitman ) AND  "pc game"
                                 //  hitman AND "pc game"
                                 // this is somewhat expensive, but worth it
-                                auto run = static_cast<runtime_ctx::termsrun *>(ctx->lhs.ptr);
-                                const auto phr = static_cast<const runtime_ctx::phrase *>(ctx->rhs.ptr);
+                                auto run = static_cast<queryexec_ctx::termsrun *>(ctx->lhs.ptr);
+                                const auto phr = static_cast<const queryexec_ctx::phrase *>(ctx->rhs.ptr);
 
                                 if (phr->size < 128) //arbitrary
                                 {
@@ -1354,8 +1354,8 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                                 // "pc game" AND ( pc game  hitman )
                                 //  "pc game" AND hitman
                                 // this is somewhat expensive, but worth it
-                                auto run = static_cast<runtime_ctx::termsrun *>(ctx->rhs.ptr);
-                                const auto phr = static_cast<const runtime_ctx::phrase *>(ctx->lhs.ptr);
+                                auto run = static_cast<queryexec_ctx::termsrun *>(ctx->rhs.ptr);
+                                const auto phr = static_cast<const queryexec_ctx::phrase *>(ctx->lhs.ptr);
 
                                 if (phr->size < 128) //arbitrary
                                 {
@@ -1403,7 +1403,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         if ((ctx->lhs.fp == ENT::matchallterms || ctx->lhs.fp == ENT::matchanyterms) && ctx->rhs.fp == ENT::matchterm)
                         {
                                 // ALL OF[1,5] NOT 5) => ALL OF [1] NOT 5
-                                auto run = (runtime_ctx::termsrun *)ctx->lhs.ptr;
+                                auto run = (queryexec_ctx::termsrun *)ctx->lhs.ptr;
 
                                 if (run->erase(ctx->rhs.u16))
                                 {
@@ -1412,7 +1412,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                                 }
                         }
 
-                        if (ctx->lhs.fp == ENT::logicalnot && same((otherCtx = static_cast<runtime_ctx::binop_ctx *>(ctx->lhs.ptr))->lhs, ctx->rhs))
+                        if (ctx->lhs.fp == ENT::logicalnot && same((otherCtx = static_cast<queryexec_ctx::binop_ctx *>(ctx->lhs.ptr))->lhs, ctx->rhs))
                         {
                                 // ((2 NOT 1) NOT 2)
                                 n.fp = ENT::constfalse;
@@ -1430,8 +1430,8 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         if (ctx->lhs.fp == ENT::matchanyterms && ctx->rhs.fp == ENT::matchanyterms)
                         {
                                 // (ANY OF[2,1] NOT ANY OF[2,1])
-                                auto runa = (runtime_ctx::termsrun *)ctx->lhs.ptr;
-                                auto runb = (runtime_ctx::termsrun *)ctx->rhs.ptr;
+                                auto runa = (queryexec_ctx::termsrun *)ctx->lhs.ptr;
+                                auto runb = (queryexec_ctx::termsrun *)ctx->rhs.ptr;
 
                                 if (*runa == *runb)
                                 {
@@ -1444,7 +1444,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
                         if (ctx->lhs.fp == ENT::matchphrase && ctx->rhs.fp == ENT::matchterm)
                         {
                                 // (([1,2,3] NOT 3) AND ALLPHRASES:[[4,2,5][1,2,3]])
-                                const auto p = (runtime_ctx::phrase *)ctx->lhs.ptr;
+                                const auto p = (queryexec_ctx::phrase *)ctx->lhs.ptr;
 
                                 if (p->is_set(ctx->rhs.u16))
                                 {
@@ -1456,7 +1456,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
 
                         if (ctx->lhs.fp == ENT::matchanyphrases && ctx->rhs.fp == ENT::matchterm)
                         {
-                                auto *const __restrict__ run = (runtime_ctx::phrasesrun *)ctx->lhs.ptr;
+                                auto *const __restrict__ run = (queryexec_ctx::phrasesrun *)ctx->lhs.ptr;
                                 const auto termID = ctx->rhs.u16;
 
                                 for (uint32_t i{0}; i < run->size;)
@@ -1487,8 +1487,8 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
 
                         if (ctx->lhs.fp == ENT::matchanyphrases && ctx->rhs.fp == ENT::matchphrase)
                         {
-                                auto *const __restrict__ run = (runtime_ctx::phrasesrun *)ctx->lhs.ptr;
-                                const auto rhsPhrase = static_cast<const runtime_ctx::phrase *>(ctx->rhs.ptr);
+                                auto *const __restrict__ run = (queryexec_ctx::phrasesrun *)ctx->lhs.ptr;
+                                const auto rhsPhrase = static_cast<const queryexec_ctx::phrase *>(ctx->rhs.ptr);
 
                                 for (uint32_t i{0}; i != run->size;)
                                 {
@@ -1518,8 +1518,8 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
 
                         if (ctx->lhs.fp == ENT::matchallphrases && ctx->rhs.fp == ENT::matchphrase)
                         {
-                                auto *const __restrict__ run = (runtime_ctx::phrasesrun *)ctx->lhs.ptr;
-                                const auto rhsPhrase = static_cast<const runtime_ctx::phrase *>(ctx->rhs.ptr);
+                                auto *const __restrict__ run = (queryexec_ctx::phrasesrun *)ctx->lhs.ptr;
+                                const auto rhsPhrase = static_cast<const queryexec_ctx::phrase *>(ctx->rhs.ptr);
 
                                 for (uint32_t i{0}; i != run->size; ++i)
                                 {
@@ -1539,7 +1539,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
         }
         else if (n.fp == ENT::matchanyterms || n.fp == ENT::matchallterms)
         {
-                auto run = (runtime_ctx::termsrun *)n.ptr;
+                auto run = (queryexec_ctx::termsrun *)n.ptr;
 
                 if (run->size == 1)
                 {
@@ -1556,7 +1556,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
         else if (n.fp == ENT::matchallphrases)
         {
                 // ("a b", "a b c") => ("a b c")
-                auto *const __restrict__ run = static_cast<runtime_ctx::phrasesrun *>(n.ptr);
+                auto *const __restrict__ run = static_cast<queryexec_ctx::phrasesrun *>(n.ptr);
                 auto size = run->size;
 
                 if (size == 1)
@@ -1603,7 +1603,7 @@ static exec_node optimize_node(exec_node n, runtime_ctx &rctx, simple_allocator 
         }
         else if (n.fp == ENT::matchanyphrases)
         {
-                auto *const __restrict__ run = static_cast<runtime_ctx::phrasesrun *>(n.ptr);
+                auto *const __restrict__ run = static_cast<queryexec_ctx::phrasesrun *>(n.ptr);
 
                 if (run->size == 1)
                 {
@@ -1620,37 +1620,37 @@ static void PrintImpl(Buffer &b, const exec_node &n)
 {
         if (n.fp == ENT::unaryand)
         {
-                auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
+                auto ctx = (queryexec_ctx::unaryop_ctx *)n.ptr;
 
                 b.append("<AND>", ctx->expr);
         }
         else if (n.fp == ENT::unarynot)
         {
-                auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
+                auto ctx = (queryexec_ctx::unaryop_ctx *)n.ptr;
 
                 b.append("<NOT>", ctx->expr);
         }
         else if (n.fp == ENT::consttrueexpr)
         {
-                auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
+                auto ctx = (queryexec_ctx::unaryop_ctx *)n.ptr;
 
                 b.append("<", ctx->expr, ">");
         }
         else if (n.fp == ENT::logicaland)
         {
-                auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
+                auto ctx = (queryexec_ctx::binop_ctx *)n.ptr;
 
                 b.append("(", ctx->lhs, ansifmt::bold, " AND ", ansifmt::reset, ctx->rhs, ")");
         }
         else if (n.fp == ENT::logicalor)
         {
-                auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
+                auto ctx = (queryexec_ctx::binop_ctx *)n.ptr;
 
                 b.append("(", ctx->lhs, " OR ", ctx->rhs, ")");
         }
         else if (n.fp == ENT::logicalnot)
         {
-                auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
+                auto ctx = (queryexec_ctx::binop_ctx *)n.ptr;
 
                 b.append("(", ctx->lhs, " NOT ", ctx->rhs, ")");
         }
@@ -1658,7 +1658,7 @@ static void PrintImpl(Buffer &b, const exec_node &n)
                 b.append(n.u16);
         else if (n.fp == ENT::matchphrase)
         {
-                const auto p = (runtime_ctx::phrase *)n.ptr;
+                const auto p = (queryexec_ctx::phrase *)n.ptr;
 
                 b.append('[');
                 for (uint32_t i{0}; i != p->size; ++i)
@@ -1672,7 +1672,7 @@ static void PrintImpl(Buffer &b, const exec_node &n)
                 b.append(true);
         else if (n.fp == ENT::matchanyterms)
         {
-                const auto *__restrict__ run = static_cast<const runtime_ctx::termsrun *>(n.ptr);
+                const auto *__restrict__ run = static_cast<const queryexec_ctx::termsrun *>(n.ptr);
 
                 b.append("ANY OF[");
                 for (uint32_t i{0}; i != run->size; ++i)
@@ -1682,7 +1682,7 @@ static void PrintImpl(Buffer &b, const exec_node &n)
         }
         else if (n.fp == ENT::matchallterms)
         {
-                const auto *__restrict__ run = static_cast<const runtime_ctx::termsrun *>(n.ptr);
+                const auto *__restrict__ run = static_cast<const queryexec_ctx::termsrun *>(n.ptr);
 
                 b.append("ALL OF[");
                 for (uint32_t i{0}; i != run->size; ++i)
@@ -1692,7 +1692,7 @@ static void PrintImpl(Buffer &b, const exec_node &n)
         }
         else if (n.fp == ENT::matchallphrases)
         {
-                const auto *const __restrict__ run = (runtime_ctx::phrasesrun *)n.ptr;
+                const auto *const __restrict__ run = (queryexec_ctx::phrasesrun *)n.ptr;
 
                 b.append("ALLPHRASES:[");
                 for (uint32_t k{0}; k != run->size; ++k)
@@ -1709,7 +1709,7 @@ static void PrintImpl(Buffer &b, const exec_node &n)
         }
         else if (n.fp == ENT::matchanyterms)
         {
-                const auto *const __restrict__ run = (runtime_ctx::phrasesrun *)n.ptr;
+                const auto *const __restrict__ run = (queryexec_ctx::phrasesrun *)n.ptr;
 
                 b.append("ANYPHRASES:[");
                 for (uint32_t k{0}; k != run->size; ++k)
@@ -1730,11 +1730,11 @@ static void PrintImpl(Buffer &b, const exec_node &n)
         }
 }
 
-static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allocator &a, const uint32_t execFlags)
+static exec_node compile(const ast_node *const n, queryexec_ctx &rctx, simple_allocator &a, const uint32_t execFlags)
 {
         static constexpr bool traceMetrics{false};
         std::vector<exec_term_id_t> terms;
-        std::vector<const runtime_ctx::phrase *> phrases;
+        std::vector<const queryexec_ctx::phrase *> phrases;
         std::vector<exec_node> stack;
         std::vector<exec_node *> stackP;
         std::vector<std::pair<exec_term_id_t, uint32_t>> v;
@@ -1817,7 +1817,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 ++totalNodes;
                 if (n.fp == ENT::matchallterms)
                 {
-                        auto ctx = static_cast<runtime_ctx::termsrun *>(n.ptr);
+                        auto ctx = static_cast<queryexec_ctx::termsrun *>(n.ptr);
 
                         v.clear();
                         for (uint32_t i{0}; i != ctx->size; ++i)
@@ -1838,7 +1838,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 {
                         // There are no real benefits to sorting terms for ENT::matchanyterms but we 'll do it anyway because its cheap
                         // This is actually useful, for leaders(deprecated)
-                        auto ctx = static_cast<runtime_ctx::termsrun *>(n.ptr);
+                        auto ctx = static_cast<queryexec_ctx::termsrun *>(n.ptr);
 
                         v.clear();
                         for (uint32_t i{0}; i != ctx->size; ++i)
@@ -1858,14 +1858,14 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
                 }
                 else if (n.fp == ENT::logicaland || n.fp == ENT::logicalor || n.fp == ENT::logicalnot)
                 {
-                        auto ctx = (runtime_ctx::binop_ctx *)n.ptr;
+                        auto ctx = (queryexec_ctx::binop_ctx *)n.ptr;
 
                         stackP.push_back(&ctx->lhs);
                         stackP.push_back(&ctx->rhs);
                 }
                 else if (n.fp == ENT::unaryand || n.fp == ENT::unarynot || n.fp == ENT::consttrueexpr)
                 {
-                        auto ctx = (runtime_ctx::unaryop_ctx *)n.ptr;
+                        auto ctx = (queryexec_ctx::unaryop_ctx *)n.ptr;
 
                         stackP.push_back(&ctx->expr);
                 }
@@ -1919,7 +1919,7 @@ static exec_node compile(const ast_node *const n, runtime_ctx &rctx, simple_allo
         return root;
 }
 
-static exec_node compile_query(ast_node *root, runtime_ctx &rctx, const uint32_t execFlags)
+static exec_node compile_query(ast_node *root, queryexec_ctx &rctx, const uint32_t execFlags)
 {
         simple_allocator a(4096);
 
@@ -1946,7 +1946,7 @@ static bool all_pli(const std::vector<DocsSetIterators::Iterator *> &its) noexce
         return true;
 }
 
-DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const uint32_t execFlags)
+DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, const uint32_t execFlags)
 {
         if (n.fp == ENT::matchallterms)
         {
@@ -1979,7 +1979,7 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
         }
         else if (n.fp == ENT::matchphrase)
         {
-                const auto p = static_cast<const runtime_ctx::phrase *>(n.ptr);
+                const auto p = static_cast<const queryexec_ctx::phrase *>(n.ptr);
                 Codecs::PostingsListIterator *its[p->size];
 
                 for (uint32_t i{0}; i != p->size; ++i)
@@ -1996,7 +1996,7 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
         }
         else if (n.fp == ENT::matchanyphrases)
         {
-                const auto run = static_cast<const runtime_ctx::phrasesrun *>(n.ptr);
+                const auto run = static_cast<const queryexec_ctx::phrasesrun *>(n.ptr);
                 DocsSetIterators::Iterator *its[run->size];
 
                 for (uint32_t pit{0}; pit != run->size; ++pit)
@@ -2014,7 +2014,7 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
         }
         else if (n.fp == ENT::matchallphrases)
         {
-                const auto run = static_cast<const runtime_ctx::phrasesrun *>(n.ptr);
+                const auto run = static_cast<const queryexec_ctx::phrasesrun *>(n.ptr);
                 DocsSetIterators::Iterator *its[run->size];
 
                 for (uint32_t pit{0}; pit != run->size; ++pit)
@@ -2033,7 +2033,7 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
         else if (n.fp == ENT::logicalor)
         {
                 // <foo> | bar => (foo | bar)
-                const auto e = static_cast<const runtime_ctx::binop_ctx *>(n.ptr);
+                const auto e = static_cast<const queryexec_ctx::binop_ctx *>(n.ptr);
                 std::vector<DocsSetIterators::Iterator *> its;
                 DocsSetIterators::Iterator *v[2] = {build_iterator(e->lhs, execFlags), build_iterator(e->rhs, execFlags)};
 
@@ -2076,17 +2076,17 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
         }
         else if (n.fp == ENT::logicaland)
         {
-                const auto e = static_cast<const runtime_ctx::binop_ctx *>(n.ptr);
+                const auto e = static_cast<const queryexec_ctx::binop_ctx *>(n.ptr);
 
                 if (e->lhs.fp == ENT::consttrueexpr)
                 {
-                        const auto op = static_cast<const runtime_ctx::unaryop_ctx *>(e->lhs.ptr);
+                        const auto op = static_cast<const queryexec_ctx::unaryop_ctx *>(e->lhs.ptr);
 
                         return reg_docset_it(new DocsSetIterators::Optional(build_iterator(e->rhs, execFlags), build_iterator(op->expr, execFlags)));
                 }
                 else if (e->rhs.fp == ENT::consttrueexpr)
                 {
-                        const auto op = static_cast<const runtime_ctx::unaryop_ctx *>(e->rhs.ptr);
+                        const auto op = static_cast<const queryexec_ctx::unaryop_ctx *>(e->rhs.ptr);
 
                         return reg_docset_it(new DocsSetIterators::Optional(build_iterator(e->lhs, execFlags), build_iterator(op->expr, execFlags)));
                 }
@@ -2120,7 +2120,7 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
         }
         else if (n.fp == ENT::logicalnot)
         {
-                const auto e = static_cast<const runtime_ctx::binop_ctx *>(n.ptr);
+                const auto e = static_cast<const queryexec_ctx::binop_ctx *>(n.ptr);
 
                 return reg_docset_it(new DocsSetIterators::Filter(build_iterator(e->lhs, execFlags), build_iterator(e->rhs, execFlags)));
         }
@@ -2130,14 +2130,14 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
         }
         else if (n.fp == ENT::unaryand)
         {
-                auto *const ctx = static_cast<const runtime_ctx::unaryop_ctx *>(n.ptr);
+                auto *const ctx = static_cast<const queryexec_ctx::unaryop_ctx *>(n.ptr);
 
                 return build_iterator(ctx->expr, execFlags);
         }
         else if (n.fp == ENT::consttrueexpr)
         {
                 // not part of a binary op.
-                const auto op = static_cast<const runtime_ctx::unaryop_ctx *>(n.ptr);
+                const auto op = static_cast<const queryexec_ctx::unaryop_ctx *>(n.ptr);
 
                 return build_iterator(op->expr, execFlags);
         }
@@ -2153,7 +2153,7 @@ DocsSetIterators::Iterator *runtime_ctx::build_iterator(const exec_node n, const
         }
 }
 
-static std::unique_ptr<DocsSetSpan> build_span(DocsSetIterators::Iterator *root, runtime_ctx *const rctx)
+static std::unique_ptr<DocsSetSpan> build_span(DocsSetIterators::Iterator *root, queryexec_ctx *const rctx)
 {
         if (root->type == DocsSetIterators::Type::DisjunctionSome && (rctx->documentsOnly || rctx->accumScoreMode))
         {
@@ -2344,7 +2344,7 @@ void Trinity::exec_query(const query &in,
         if (traceCompile)
                 SLog("Compiling:", q, "\n");
 
-        runtime_ctx rctx(idxsrc, documentsOnly, accumScoreMode);
+        queryexec_ctx rctx(idxsrc, documentsOnly, accumScoreMode);
         const auto before = Timings::Microseconds::Tick();
         auto rootExecNode = compile_query(q.root, rctx, execFlags);
 
@@ -2721,7 +2721,7 @@ void Trinity::exec_query(const query &in,
                                                 struct Handler
                                                     : public MatchesProxy
                                                 {
-                                                        runtime_ctx *const ctx;
+                                                        queryexec_ctx *const ctx;
                                                         IndexSource *const idxsrc;
                                                         const bool requireDocIDTranslation;
                                                         MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
@@ -2741,7 +2741,7 @@ void Trinity::exec_query(const query &in,
                                                                 }
                                                         }
 
-                                                        Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, masked_documents_registry *mr, IndexDocumentsFilter *df)
+                                                        Handler(queryexec_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, masked_documents_registry *mr, IndexDocumentsFilter *df)
                                                             : idxsrc{src}, ctx{c}, requireDocIDTranslation{src->require_docid_translation()}, matchesFilter{mf}, maskedDocumentsRegistry{mr}, documentsFilter{df}
                                                         {
                                                         }
@@ -2756,7 +2756,7 @@ void Trinity::exec_query(const query &in,
                                                 struct Handler
                                                     : public MatchesProxy
                                                 {
-                                                        runtime_ctx *const ctx;
+                                                        queryexec_ctx *const ctx;
                                                         IndexSource *const idxsrc;
                                                         const bool requireDocIDTranslation;
                                                         MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
@@ -2775,7 +2775,7 @@ void Trinity::exec_query(const query &in,
                                                                 }
                                                         }
 
-                                                        Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, IndexDocumentsFilter *df)
+                                                        Handler(queryexec_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, IndexDocumentsFilter *df)
                                                             : idxsrc{src}, ctx{c}, requireDocIDTranslation{src->require_docid_translation()}, matchesFilter{mf}, documentsFilter{df}
                                                         {
                                                         }
@@ -2791,7 +2791,7 @@ void Trinity::exec_query(const query &in,
                                         struct Handler
                                             : public MatchesProxy
                                         {
-                                                runtime_ctx *const ctx;
+                                                queryexec_ctx *const ctx;
                                                 IndexSource *const idxsrc;
                                                 const bool requireDocIDTranslation;
                                                 MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
@@ -2810,7 +2810,7 @@ void Trinity::exec_query(const query &in,
                                                         }
                                                 }
 
-                                                Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, masked_documents_registry *mr)
+                                                Handler(queryexec_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, masked_documents_registry *mr)
                                                     : idxsrc{src}, ctx{c}, requireDocIDTranslation{src->require_docid_translation()}, matchesFilter{mf}, maskedDocumentsRegistry{mr}
                                                 {
                                                 }
@@ -2827,7 +2827,7 @@ void Trinity::exec_query(const query &in,
                                                 struct Handler
                                                     : public MatchesProxy
                                                 {
-                                                        runtime_ctx *const ctx;
+                                                        queryexec_ctx *const ctx;
                                                         IndexSource *const idxsrc;
                                                         MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
                                                         std::size_t n{0};
@@ -2840,7 +2840,7 @@ void Trinity::exec_query(const query &in,
                                                                 ++n;
                                                         }
 
-                                                        Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
+                                                        Handler(queryexec_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
                                                             : idxsrc{src}, ctx{c}, matchesFilter{mf}
                                                         {
                                                         }
@@ -2855,7 +2855,7 @@ void Trinity::exec_query(const query &in,
                                                 struct Handler
                                                     : public MatchesProxy
                                                 {
-                                                        runtime_ctx *const ctx;
+                                                        queryexec_ctx *const ctx;
                                                         IndexSource *const idxsrc;
                                                         MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
                                                         std::size_t n{0};
@@ -2868,7 +2868,7 @@ void Trinity::exec_query(const query &in,
                                                                 ++n;
                                                         }
 
-                                                        Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
+                                                        Handler(queryexec_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
                                                             : idxsrc{src}, ctx{c}, matchesFilter{mf}
                                                         {
                                                         }
@@ -2889,7 +2889,7 @@ void Trinity::exec_query(const query &in,
                                                 struct Handler
                                                     : public MatchesProxy
                                                 {
-                                                        runtime_ctx *const ctx;
+                                                        queryexec_ctx *const ctx;
                                                         IndexSource *const idxsrc;
                                                         const bool requireDocIDTranslation;
                                                         MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
@@ -2909,7 +2909,7 @@ void Trinity::exec_query(const query &in,
                                                                 }
                                                         }
 
-                                                        Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, masked_documents_registry *mr, IndexDocumentsFilter *df)
+                                                        Handler(queryexec_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, masked_documents_registry *mr, IndexDocumentsFilter *df)
                                                             : idxsrc{src}, ctx{c}, requireDocIDTranslation{src->require_docid_translation()}, matchesFilter{mf}, maskedDocumentsRegistry{mr}, documentsFilter{df}
                                                         {
                                                         }
@@ -2924,7 +2924,7 @@ void Trinity::exec_query(const query &in,
                                                 struct Handler
                                                     : public MatchesProxy
                                                 {
-                                                        runtime_ctx *const ctx;
+                                                        queryexec_ctx *const ctx;
                                                         IndexSource *const idxsrc;
                                                         const bool requireDocIDTranslation;
                                                         MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
@@ -2943,7 +2943,7 @@ void Trinity::exec_query(const query &in,
                                                                 }
                                                         }
 
-                                                        Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, IndexDocumentsFilter *df)
+                                                        Handler(queryexec_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, IndexDocumentsFilter *df)
                                                             : idxsrc{src}, ctx{c}, requireDocIDTranslation{src->require_docid_translation()}, matchesFilter{mf}, documentsFilter{df}
                                                         {
                                                         }
@@ -2959,7 +2959,7 @@ void Trinity::exec_query(const query &in,
                                         struct Handler
                                             : public MatchesProxy
                                         {
-                                                runtime_ctx *const ctx;
+                                                queryexec_ctx *const ctx;
                                                 IndexSource *const idxsrc;
                                                 const bool requireDocIDTranslation;
                                                 MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
@@ -2978,7 +2978,7 @@ void Trinity::exec_query(const query &in,
                                                         }
                                                 }
 
-                                                Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, masked_documents_registry *mr)
+                                                Handler(queryexec_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, masked_documents_registry *mr)
                                                     : idxsrc{src}, ctx{c}, requireDocIDTranslation{src->require_docid_translation()}, matchesFilter{mf}, maskedDocumentsRegistry{mr}
                                                 {
                                                 }
@@ -2993,7 +2993,7 @@ void Trinity::exec_query(const query &in,
                                         struct Handler
                                             : public MatchesProxy
                                         {
-                                                runtime_ctx *const ctx;
+                                                queryexec_ctx *const ctx;
                                                 IndexSource *const idxsrc;
                                                 const bool requireDocIDTranslation;
                                                 MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
@@ -3008,7 +3008,7 @@ void Trinity::exec_query(const query &in,
                                                         ++n;
                                                 }
 
-                                                Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
+                                                Handler(queryexec_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
                                                     : idxsrc{src}, ctx{c}, requireDocIDTranslation{src->require_docid_translation()}, matchesFilter{mf}
                                                 {
                                                 }
@@ -3028,7 +3028,7 @@ void Trinity::exec_query(const query &in,
                                                 struct Handler
                                                     : public MatchesProxy
                                                 {
-                                                        runtime_ctx *const ctx;
+                                                        queryexec_ctx *const ctx;
                                                         IndexSource *const idxsrc;
                                                         const bool requireDocIDTranslation;
                                                         MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
@@ -3056,7 +3056,7 @@ void Trinity::exec_query(const query &in,
                                                                 }
                                                         }
 
-                                                        Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, masked_documents_registry *mr, IndexDocumentsFilter *df)
+                                                        Handler(queryexec_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, masked_documents_registry *mr, IndexDocumentsFilter *df)
                                                             : idxsrc{src}, ctx{c}, requireDocIDTranslation{src->require_docid_translation()}, matchesFilter{mf}, maskedDocumentsRegistry{mr}, documentsFilter{df}
                                                         {
                                                         }
@@ -3071,7 +3071,7 @@ void Trinity::exec_query(const query &in,
                                                 struct Handler
                                                     : public MatchesProxy
                                                 {
-                                                        runtime_ctx *const ctx;
+                                                        queryexec_ctx *const ctx;
                                                         IndexSource *const idxsrc;
                                                         const bool requireDocIDTranslation;
                                                         MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
@@ -3098,7 +3098,7 @@ void Trinity::exec_query(const query &in,
                                                                 }
                                                         }
 
-                                                        Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, IndexDocumentsFilter *df)
+                                                        Handler(queryexec_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, IndexDocumentsFilter *df)
                                                             : idxsrc{src}, ctx{c}, requireDocIDTranslation{src->require_docid_translation()}, matchesFilter{mf}, documentsFilter{df}
                                                         {
                                                         }
@@ -3114,7 +3114,7 @@ void Trinity::exec_query(const query &in,
                                         struct Handler
                                             : public MatchesProxy
                                         {
-                                                runtime_ctx *const ctx;
+                                                queryexec_ctx *const ctx;
                                                 IndexSource *const idxsrc;
                                                 const bool requireDocIDTranslation;
                                                 MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
@@ -3141,7 +3141,7 @@ void Trinity::exec_query(const query &in,
                                                         }
                                                 }
 
-                                                Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, masked_documents_registry *mr)
+                                                Handler(queryexec_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf, masked_documents_registry *mr)
                                                     : idxsrc{src}, ctx{c}, requireDocIDTranslation{src->require_docid_translation()}, matchesFilter{mf}, maskedDocumentsRegistry{mr}
                                                 {
                                                 }
@@ -3156,7 +3156,7 @@ void Trinity::exec_query(const query &in,
                                         struct Handler
                                             : public MatchesProxy
                                         {
-                                                runtime_ctx *const ctx;
+                                                queryexec_ctx *const ctx;
                                                 IndexSource *const idxsrc;
                                                 const bool requireDocIDTranslation;
                                                 MatchedIndexDocumentsFilter *__restrict__ const matchesFilter;
@@ -3178,7 +3178,7 @@ void Trinity::exec_query(const query &in,
                                                         ++n;
                                                 }
 
-                                                Handler(runtime_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
+                                                Handler(queryexec_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)
                                                     : idxsrc{src}, ctx{c}, requireDocIDTranslation{src->require_docid_translation()}, matchesFilter{mf}
                                                 {
                                                 }

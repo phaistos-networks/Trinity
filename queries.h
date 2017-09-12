@@ -225,16 +225,16 @@ namespace Trinity
         // Keep in mind that you can always copy nodes/asts using ast_node::copy()
         struct ast_parser final
         {
-		enum class Flags : uint32_t
-		{
-			// Treat OR as a regular token
-			// Amazon.com treats (AND, NOT, OR) as regular tokens, but they do support '|' AND '-' AND '+' operators
-			ORAsToken = 1,
-			// Treat NOT as a regular token
-			NOTAsToken = 1<<1,
-			// Treat AND as a regular token
-			ANDAsToken = 1<<2
-		};
+                enum class Flags : uint32_t
+                {
+                        // Treat OR as a regular token
+                        // Amazon.com treats (AND, NOT, OR) as regular tokens, but they do support '|' AND '-' AND '+' operators
+                        ORAsToken = 1,
+                        // Treat NOT as a regular token
+                        NOTAsToken = 1 << 1,
+                        // Treat AND as a regular token
+                        ANDAsToken = 1 << 2
+                };
 
                 str32_t content;
                 const char_t *contentBase;
@@ -263,7 +263,24 @@ namespace Trinity
                 //
                 // Make sure that the allocate you provide is not deleted or reused before you are done accessing
                 // any query tokens
+		//
+		// UPDATE: you can now use reset_and_parse()
+		// which will reset content and state. This is useful if you really don't want to allocate/init a new ast_parser
+		// in say, a loop, and want to reuse it.
                 ast_node *parse();
+
+		auto reset_and_parse(const str32_t c)
+                {
+                        content = c;
+			contentBase = content.data();
+
+                        allocator.reuse();
+
+                        distinctTokens.clear();
+                        groupTerm.clear();
+
+                        return parse();
+                }
 
                 inline void skip_ws()
                 {

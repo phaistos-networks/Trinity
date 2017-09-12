@@ -356,9 +356,9 @@ namespace Trinity
                 {
                         uint32_t m{0};
                         uint64_t *const matching;
-                        runtime_ctx *const rctx;
+                        queryexec_ctx *const rctx;
 
-                        Tracker(uint64_t *const m, runtime_ctx *const ctx)
+                        Tracker(uint64_t *const m, queryexec_ctx *const ctx)
                             : matching{m}, rctx{ctx}
                         {
                         }
@@ -454,9 +454,9 @@ namespace Trinity
                         uint32_t m{0};
                         std::pair<double, uint32_t> *const matchesTracker;
                         uint64_t *const matching;
-                        runtime_ctx *const rctx;
+                        queryexec_ctx *const rctx;
 
-                        Tracker(uint64_t *const m, std::pair<double, uint32_t> *const t, runtime_ctx *const ctx)
+                        Tracker(uint64_t *const m, std::pair<double, uint32_t> *const t, queryexec_ctx *const ctx)
                             : matchesTracker{t}, matching{m}, rctx{ctx}
                         {
                         }

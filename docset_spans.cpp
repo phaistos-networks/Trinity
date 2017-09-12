@@ -1,10 +1,10 @@
 #include "docset_spans.h"
-#include "runtime_ctx.h"
+#include "queryexec_ctx.h"
 #include <switch_bitops.h>
 
 
 using namespace Trinity;
-extern thread_local Trinity::runtime_ctx *curRCTX;
+extern thread_local Trinity::queryexec_ctx *curRCTX;
 
 #pragma mark DocsSetSpanForPartialMatch
 Trinity::isrc_docid_t Trinity::DocsSetSpanForPartialMatch::process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max)

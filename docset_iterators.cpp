@@ -1,6 +1,6 @@
 #include "docset_iterators.h"
 #include "codecs.h"
-#include "runtime_ctx.h"
+#include "queryexec_ctx.h"
 
 // see reorder_execnode_impl()
 uint64_t Trinity::DocsSetIterators::Iterator::cost()

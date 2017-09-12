@@ -9,7 +9,7 @@ namespace Trinity
         // 64bytes alignment seems to yield good results, but crashes if optimizer is enabled (i.e struct alignas(64) exec_node {})
         // (this is because we use simple_allocator::New<> which doesn't respect the specified alignment. Not sure
         // if we should implement support for alignment allocations in simple_allocator)
-        struct runtime_ctx;
+        struct queryexec_ctx;
 
         enum class ENT : uint8_t
         {
@@ -60,7 +60,7 @@ namespace Trinity
                 uint16_t curDocSeq{UINT16_MAX};
                 term_hits *termHits{nullptr};
 
-                candidate_document(runtime_ctx *const rctx);
+                candidate_document(queryexec_ctx *const rctx);
 
                 ~candidate_document()
                 {
@@ -68,7 +68,7 @@ namespace Trinity
                         delete[] termHits;
                 }
 
-                term_hits *materialize_term_hits(runtime_ctx *, Codecs::PostingsListIterator *, const exec_term_id_t termID);
+                term_hits *materialize_term_hits(queryexec_ctx *, Codecs::PostingsListIterator *, const exec_term_id_t termID);
 
                 inline void retain()
                 {
@@ -143,7 +143,7 @@ namespace Trinity
 
         // This is initialized by the compiler
         // and used by the VM
-        struct runtime_ctx final
+        struct queryexec_ctx final
         {
                 const bool documentsOnly, accumScoreMode;
                 IndexSource *const idxsrc;
@@ -223,12 +223,12 @@ namespace Trinity
                         phrase *phrases[0];
                 };
 
-                runtime_ctx(IndexSource *src, const bool documentsOnly_, const bool accumScoreMode_)
+                queryexec_ctx(IndexSource *src, const bool documentsOnly_, const bool accumScoreMode_)
                     : documentsOnly{documentsOnly_}, accumScoreMode{accumScoreMode_}, idxsrc{src}
                 {
                 }
 
-                ~runtime_ctx();
+                ~queryexec_ctx();
 
                 void capture_matched_term(Codecs::PostingsListIterator *);
 
@@ -245,7 +245,7 @@ namespace Trinity
                         return tctxMap[termID].first;
                 }
 
-                // Resolves a term to a termID relative to the runtime_ctx
+                // Resolves a term to a termID relative to the queryexec_ctx
                 // This id is meaningless outside this execution context
                 // and we use it because its easier to track/use integers than strings
                 // See Termspaces in CONCEPTS.md
@@ -279,7 +279,7 @@ namespace Trinity
 
                 // Instead of having a virtual DocsSetIterators::Iterator::~Iterator()
                 // which means we would need another entry in the vtable, which means an higher chance for cache misses, for no really good reason
-                // we just track all created DocsSetIterators::Iterators along with its type, and in ~runtime_ctx() we consider the type, cast and delete it
+                // we just track all created DocsSetIterators::Iterators along with its type, and in ~queryexec_ctx() we consider the type, cast and delete it
                 DocsSetIterators::Iterator *reg_docset_it(DocsSetIterators::Iterator *it);
 
                 Codecs::PostingsListIterator *reg_pli(Codecs::PostingsListIterator *it);

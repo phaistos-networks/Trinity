@@ -1,9 +1,9 @@
-#include "runtime_ctx.h"
+#include "queryexec_ctx.h"
 #include "docset_iterators.h"
 
 using namespace Trinity;
 
-Codecs::PostingsListIterator *Trinity::runtime_ctx::reg_pli(Codecs::PostingsListIterator *it)
+Codecs::PostingsListIterator *Trinity::queryexec_ctx::reg_pli(Codecs::PostingsListIterator *it)
 {
 	if (accumScoreMode)
 		wrap_iterator(this, it);
@@ -12,7 +12,7 @@ Codecs::PostingsListIterator *Trinity::runtime_ctx::reg_pli(Codecs::PostingsList
 	return it;
 }
 
-DocsSetIterators::Iterator *Trinity::runtime_ctx::reg_docset_it(DocsSetIterators::Iterator *it)
+DocsSetIterators::Iterator *Trinity::queryexec_ctx::reg_docset_it(DocsSetIterators::Iterator *it)
 {
 	auto res{it};
 
@@ -27,7 +27,7 @@ DocsSetIterators::Iterator *Trinity::runtime_ctx::reg_docset_it(DocsSetIterators
 	return res;
 }
 
-bool runtime_ctx::termsrun::operator==(const termsrun &o) const noexcept
+bool queryexec_ctx::termsrun::operator==(const termsrun &o) const noexcept
 {
         if (size == o.size)
         {
@@ -42,7 +42,7 @@ bool runtime_ctx::termsrun::operator==(const termsrun &o) const noexcept
                 return false;
 }
 
-bool runtime_ctx::termsrun::is_set(const exec_term_id_t id) const noexcept
+bool queryexec_ctx::termsrun::is_set(const exec_term_id_t id) const noexcept
 {
         for (uint32_t i{0}; i != size; ++i)
         {
@@ -52,7 +52,7 @@ bool runtime_ctx::termsrun::is_set(const exec_term_id_t id) const noexcept
         return false;
 }
 
-bool runtime_ctx::termsrun::erase(const exec_term_id_t id) noexcept
+bool queryexec_ctx::termsrun::erase(const exec_term_id_t id) noexcept
 {
         for (uint32_t i{0}; i != size; ++i)
         {
@@ -66,7 +66,7 @@ bool runtime_ctx::termsrun::erase(const exec_term_id_t id) noexcept
         return false;
 }
 
-bool runtime_ctx::termsrun::erase(const termsrun &o)
+bool queryexec_ctx::termsrun::erase(const termsrun &o)
 {
         // Fast scalar intersection scheme designed by N.Kurz.
         // lemire/SIMDCompressionAndIntersection.cpp
@@ -118,7 +118,7 @@ bool runtime_ctx::termsrun::erase(const termsrun &o)
         }
 }
 
-uint8_t runtime_ctx::phrase::intersection(const termsrun *const tr, exec_term_id_t *const out) const noexcept
+uint8_t queryexec_ctx::phrase::intersection(const termsrun *const tr, exec_term_id_t *const out) const noexcept
 {
         uint16_t n{0};
 
@@ -130,7 +130,7 @@ uint8_t runtime_ctx::phrase::intersection(const termsrun *const tr, exec_term_id
         return n;
 }
 
-uint8_t runtime_ctx::phrase::disjoint_union(const termsrun *const tr, exec_term_id_t *const out) const noexcept
+uint8_t queryexec_ctx::phrase::disjoint_union(const termsrun *const tr, exec_term_id_t *const out) const noexcept
 {
         uint16_t n{0};
         const auto cnt = tr->size;
@@ -143,7 +143,7 @@ uint8_t runtime_ctx::phrase::disjoint_union(const termsrun *const tr, exec_term_
         return n;
 }
 
-bool runtime_ctx::phrase::intersected_by(const termsrun *const tr) const noexcept
+bool queryexec_ctx::phrase::intersected_by(const termsrun *const tr) const noexcept
 {
         if (tr->size >= size)
         {
@@ -158,7 +158,7 @@ bool runtime_ctx::phrase::intersected_by(const termsrun *const tr) const noexcep
                 return false;
 }
 
-bool runtime_ctx::phrase::operator==(const phrase &o) const noexcept
+bool queryexec_ctx::phrase::operator==(const phrase &o) const noexcept
 {
         if (size == o.size)
         {
@@ -173,7 +173,7 @@ bool runtime_ctx::phrase::operator==(const phrase &o) const noexcept
                 return false;
 }
 
-bool runtime_ctx::phrase::is_set(const exec_term_id_t *const l, const uint8_t n) const noexcept
+bool queryexec_ctx::phrase::is_set(const exec_term_id_t *const l, const uint8_t n) const noexcept
 {
         if (n <= size)
         {
@@ -194,7 +194,7 @@ bool runtime_ctx::phrase::is_set(const exec_term_id_t *const l, const uint8_t n)
         return false;
 }
 
-bool runtime_ctx::phrase::is_set(const exec_term_id_t id) const noexcept
+bool queryexec_ctx::phrase::is_set(const exec_term_id_t id) const noexcept
 {
         for (uint32_t i{0}; i != size; ++i)
         {
@@ -204,7 +204,7 @@ bool runtime_ctx::phrase::is_set(const exec_term_id_t id) const noexcept
         return false;
 }
 
-runtime_ctx::~runtime_ctx()
+queryexec_ctx::~queryexec_ctx()
 {
 #ifdef USE_BANKS
         while (banks.size())
@@ -292,7 +292,7 @@ runtime_ctx::~runtime_ctx()
                 std::free(reusableCDS.data);
 }
 
-void runtime_ctx::prepare_decoder(exec_term_id_t termID)
+void queryexec_ctx::prepare_decoder(exec_term_id_t termID)
 {
         decode_ctx.check(termID);
 
@@ -307,7 +307,7 @@ void runtime_ctx::prepare_decoder(exec_term_id_t termID)
         require(decode_ctx.decoders[termID]);
 }
 
-exec_term_id_t runtime_ctx::resolve_term(const str8_t term)
+exec_term_id_t queryexec_ctx::resolve_term(const str8_t term)
 {
         exec_term_id_t *ptr;
 
@@ -337,7 +337,7 @@ exec_term_id_t runtime_ctx::resolve_term(const str8_t term)
         return *ptr;
 }
 
-runtime_ctx::phrase *runtime_ctx::register_phrase(const Trinity::phrase *p)
+queryexec_ctx::phrase *queryexec_ctx::register_phrase(const Trinity::phrase *p)
 {
         auto ptr = (phrase *)allocator.Alloc(sizeof(phrase) + sizeof(exec_term_id_t) * p->size);
 
@@ -353,7 +353,7 @@ runtime_ctx::phrase *runtime_ctx::register_phrase(const Trinity::phrase *p)
         return ptr;
 }
 
-void runtime_ctx::decode_ctx_struct::check(const uint16_t idx)
+void queryexec_ctx::decode_ctx_struct::check(const uint16_t idx)
 {
         if (idx >= capacity)
         {
@@ -365,7 +365,7 @@ void runtime_ctx::decode_ctx_struct::check(const uint16_t idx)
         }
 }
 
-runtime_ctx::decode_ctx_struct::~decode_ctx_struct()
+queryexec_ctx::decode_ctx_struct::~decode_ctx_struct()
 {
         for (uint32_t i{0}; i != capacity; ++i)
                 delete decoders[i];
@@ -374,7 +374,7 @@ runtime_ctx::decode_ctx_struct::~decode_ctx_struct()
                 std::free(decoders);
 }
 
-Trinity::term_hits *candidate_document::materialize_term_hits(runtime_ctx *rctx, Codecs::PostingsListIterator *const it, const exec_term_id_t termID)
+Trinity::term_hits *candidate_document::materialize_term_hits(queryexec_ctx *rctx, Codecs::PostingsListIterator *const it, const exec_term_id_t termID)
 {
         auto *const __restrict__ th = termHits + termID;
         const auto did = it->curDocument.id;
@@ -402,7 +402,7 @@ Trinity::term_hits *candidate_document::materialize_term_hits(runtime_ctx *rctx,
         return th;
 }
 
-Trinity::candidate_document::candidate_document(runtime_ctx *const rctx)
+Trinity::candidate_document::candidate_document(queryexec_ctx *const rctx)
 {
         const auto maxQueryTermIDPlus1 = rctx->termsDict.size() + 1;
 
@@ -411,7 +411,7 @@ Trinity::candidate_document::candidate_document(runtime_ctx *const rctx)
         matchedDocument.matchedTerms = (matched_query_term *)rctx->allocator.Alloc(sizeof(matched_query_term) * maxQueryTermIDPlus1);
 }
 
-void runtime_ctx::_reusable_cds::push_back(candidate_document *const d)
+void queryexec_ctx::_reusable_cds::push_back(candidate_document *const d)
 {
         if (unlikely(size_ == capacity))
         {
@@ -602,7 +602,7 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
         }
 }
 
-void Trinity::runtime_ctx::prepare_match(Trinity::candidate_document *const doc)
+void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const doc)
 {
         auto &md = doc->matchedDocument;
         const auto did = doc->id;
@@ -655,7 +655,7 @@ void Trinity::runtime_ctx::prepare_match(Trinity::candidate_document *const doc)
         }
 }
 
-void Trinity::runtime_ctx::forget_document(candidate_document *const doc)
+void Trinity::queryexec_ctx::forget_document(candidate_document *const doc)
 {
 #ifdef USE_BANKS
         forget_document_inbank(doc);
@@ -664,7 +664,7 @@ void Trinity::runtime_ctx::forget_document(candidate_document *const doc)
 
 static constexpr bool traceBindings{false};
 
-Trinity::candidate_document *Trinity::runtime_ctx::lookup_document(const isrc_docid_t id)
+Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document(const isrc_docid_t id)
 {
 #ifdef USE_BANKS
         return lookup_document_inbank(id);
@@ -704,7 +704,7 @@ Trinity::candidate_document *Trinity::runtime_ctx::lookup_document(const isrc_do
 #endif
 }
 
-void Trinity::runtime_ctx::unbind_document(candidate_document *&dt)
+void Trinity::queryexec_ctx::unbind_document(candidate_document *&dt)
 {
         // you are expected to have checked if (p->lastMaterializedDoc) before invoking this method
         if (traceBindings)
@@ -727,7 +727,7 @@ void Trinity::runtime_ctx::unbind_document(candidate_document *&dt)
         dt = nullptr;
 }
 
-void Trinity::runtime_ctx::bind_document(candidate_document *&dt, candidate_document *const doc)
+void Trinity::queryexec_ctx::bind_document(candidate_document *&dt, candidate_document *const doc)
 {
         if (auto prev = dt)
         {
@@ -762,7 +762,7 @@ void Trinity::runtime_ctx::bind_document(candidate_document *&dt, candidate_docu
 }
 
 #ifdef USE_BANKS
-Trinity::docstracker_bank *Trinity::runtime_ctx::new_bank(const Trinity::isrc_docid_t base)
+Trinity::docstracker_bank *Trinity::queryexec_ctx::new_bank(const Trinity::isrc_docid_t base)
 {
         if (reusableBanks.size())
         {
@@ -799,7 +799,7 @@ Trinity::docstracker_bank *Trinity::runtime_ctx::new_bank(const Trinity::isrc_do
         return b;
 }
 
-void Trinity::runtime_ctx::forget_document_inbank(Trinity::candidate_document *const doc)
+void Trinity::queryexec_ctx::forget_document_inbank(Trinity::candidate_document *const doc)
 {
         const auto id = doc->id;
         auto b = bank_for(id);
@@ -834,7 +834,7 @@ void Trinity::runtime_ctx::forget_document_inbank(Trinity::candidate_document *c
         }
 }
 
-Trinity::candidate_document *Trinity::runtime_ctx::lookup_document_inbank(const isrc_docid_t id)
+Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document_inbank(const isrc_docid_t id)
 {
         if (const auto b = bank_for(id))
         {
@@ -849,7 +849,7 @@ Trinity::candidate_document *Trinity::runtime_ctx::lookup_document_inbank(const 
         return nullptr;
 }
 
-void Trinity::runtime_ctx::track_document_inbank(Trinity::candidate_document *const d)
+void Trinity::queryexec_ctx::track_document_inbank(Trinity::candidate_document *const d)
 {
         const auto id = d->id;
         auto b = bank_for(id);

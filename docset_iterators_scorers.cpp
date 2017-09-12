@@ -1,11 +1,11 @@
 #include "docset_iterators.h"
 #include "similarity.h"
-#include "runtime_ctx.h"
+#include "queryexec_ctx.h"
 
 using namespace Trinity;
 using namespace Trinity::DocsSetIterators;
 
-static IteratorScorer *default_wrapper(runtime_ctx *const rctx, DocsSetIterators::Iterator *const it)
+static IteratorScorer *default_wrapper(queryexec_ctx *const rctx, DocsSetIterators::Iterator *const it)
 {
         switch (it->type)
         {
@@ -17,7 +17,7 @@ static IteratorScorer *default_wrapper(runtime_ctx *const rctx, DocsSetIterators
                                 Similarity::IndexSourceTermsScorer *const scorer;
 				Similarity::ScorerWeight *weight;
 
-                                Wrapper(Iterator *const it, runtime_ctx *const rctx)
+                                Wrapper(Iterator *const it, queryexec_ctx *const rctx)
                                     : IteratorScorer{it}, scorer{rctx->scorer}
                                 {
                                         const auto termID = static_cast<Codecs::PostingsListIterator *>(it)->decoder()->execCtxTermID;
@@ -237,7 +237,7 @@ static IteratorScorer *default_wrapper(runtime_ctx *const rctx, DocsSetIterators
                                 Similarity::IndexSourceTermsScorer *const scorer;
 				Similarity::ScorerWeight *weight;
 
-                                Wrapper(Iterator *it, runtime_ctx *const rctx)
+                                Wrapper(Iterator *it, queryexec_ctx *const rctx)
                                     : IteratorScorer{it}, scorer{rctx->scorer}
                                 {
 					auto p = static_cast<DocsSetIterators::Phrase *>(it);
@@ -279,7 +279,7 @@ static IteratorScorer *default_wrapper(runtime_ctx *const rctx, DocsSetIterators
         return nullptr;
 }
 
-DocsSetIterators::Iterator *DocsSetIterators::wrap_iterator(runtime_ctx *const rctx, DocsSetIterators::Iterator *it)
+DocsSetIterators::Iterator *DocsSetIterators::wrap_iterator(queryexec_ctx *const rctx, DocsSetIterators::Iterator *it)
 {
         it->rdp = default_wrapper(rctx, it);
         return it;

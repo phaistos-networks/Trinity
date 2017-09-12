@@ -394,7 +394,7 @@ static ast_node *parse_unary(ast_parser &ctx)
 {
         ctx.skip_ws();
 
-#if 1
+#if 0
         // enable this for debugging
         if (ctx.content.StripPrefix(_S("<")))
         {
@@ -1798,6 +1798,8 @@ std::vector<ast_node *> &query::nodes(ast_node *root, std::vector<ast_node *> *c
 
 bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *, const bool), const uint32_t parseFlags)
 {
+	allocator.reuse();
+
         ast_parser ctx{in, allocator, tp, parseFlags};
 
         tokensParser = tp; // May come in handy later

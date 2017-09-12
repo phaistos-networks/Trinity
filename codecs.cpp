@@ -1,7 +1,7 @@
 #include "codecs.h"
 #include "terms.h"
 #include "utils.h"
-#include "runtime_ctx.h"
+#include "queryexec_ctx.h"
 
 void Trinity::Codecs::IndexSession::flush_index(int fd)
 {

@@ -12,7 +12,7 @@
 
 namespace Trinity
 {
-        struct runtime_ctx;
+        struct queryexec_ctx;
         struct candidate_document;
 
         namespace Codecs
@@ -36,7 +36,7 @@ namespace Trinity
 		// to perhaps augment ast_node with data that can be used by the exec.engine to materialize those wrappers.
 		//
 		// Besides, we do not expect most Trinity applications will use the ExecFlags::AccumulatedScoreScheme mode.
-		Iterator *wrap_iterator(runtime_ctx *, Iterator *);
+		Iterator *wrap_iterator(queryexec_ctx *, Iterator *);
 
 
                 // This is Lucene's MinShouldMatchSumScorer.java port
@@ -431,14 +431,14 @@ namespace Trinity
 			uint16_t matchCnt{0};
 
                       private:
-                        runtime_ctx *const rctxRef;
+                        queryexec_ctx *const rctxRef;
                         isrc_docid_t next_impl(isrc_docid_t id);
 
                       public:
                         isrc_docid_t lastUncofirmedDID{DocIDsEND};
 
                       public:
-                        Phrase(runtime_ctx *r, Codecs::PostingsListIterator **iterators, const uint16_t cnt, const bool trackCnt)
+                        Phrase(queryexec_ctx *r, Codecs::PostingsListIterator **iterators, const uint16_t cnt, const bool trackCnt)
                             : Iterator{Type::Phrase}, its((Codecs::PostingsListIterator **)malloc(sizeof(Codecs::PostingsListIterator *) * cnt)), size{cnt}, maxMatchCnt{ uint16_t(trackCnt ? std::numeric_limits<uint16_t>::max() : 1) }, rctxRef{r}
                         {
                                 require(cnt);

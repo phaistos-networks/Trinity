@@ -21,7 +21,7 @@ else
 	SWITCH_OBJS:=Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/bitpacking.cpp.o Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.o Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.o Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.o Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.o Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.o Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/varintdecode.c.o Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/streamvbyte.c.o
 endif
 
-OBJS:=similarity.o docset_iterators_scorers.o google_codec.o docset_spans.o lucene_codec.o runtime_ctx.o docset_iterators.o utils.o codecs.o queries.o exec.o docidupdates.o indexer.o docwordspace.o terms.o segment_index_source.o index_source.o merge.o intersect.o
+OBJS:=similarity.o docset_iterators_scorers.o google_codec.o docset_spans.o lucene_codec.o queryexec_ctx.o docset_iterators.o utils.o codecs.o queries.o exec.o docidupdates.o indexer.o docwordspace.o terms.o segment_index_source.o index_source.o merge.o intersect.o
 
 ifeq ($(HOST), origin)
 all : lib #app

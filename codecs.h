@@ -9,7 +9,7 @@
 namespace Trinity
 {
 	struct candidate_document;
-	struct runtime_ctx;
+	struct queryexec_ctx;
 
         // Information about a term's posting list and number of documents it matches.
         // We track the number of documents because it may be useful(and it is) to some codecs, and also
@@ -285,7 +285,7 @@ namespace Trinity
 
 			// use set_exec() to set those
                         exec_term_id_t execCtxTermID{0};
-			runtime_ctx *rctx{nullptr};
+			queryexec_ctx *rctx{nullptr};
 
                         constexpr auto exec_ctx_termid() const noexcept
                         {
@@ -309,7 +309,7 @@ namespace Trinity
                         {
                         }
 
-			void set_exec(exec_term_id_t tid, runtime_ctx *const r)
+			void set_exec(exec_term_id_t tid, queryexec_ctx *const r)
 			{
 				execCtxTermID = tid;
 				rctx = r;

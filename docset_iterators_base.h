@@ -1,5 +1,5 @@
 // Keep Trinity::DocsSetIterators::Iterator separate, so that we can
-// include just this file, and not docset_iterators.h, which "pollutes" Trinity namespace with a forward decl of runtime_ctx
+// include just this file, and not docset_iterators.h, which "pollutes" Trinity namespace with a forward decl of queryexec_ctx
 // in case some application needs it and would result in amiguous reference errors
 #pragma once
 #include "relevant_documents.h"
