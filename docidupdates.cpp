@@ -83,7 +83,7 @@ Trinity::updated_documents Trinity::unpack_updates(const range_base<const uint8_
 
 bool Trinity::updated_documents_scanner::test(const docid_t id) noexcept
 {
-        static constexpr bool trace{false};
+        static constexpr bool trace{false}, traceAdvances{false};
 
         if (trace)
                 SLog(ansifmt::bold, "Check for ", id, ", curBankRange = ", curBankRange, ", contains ", curBankRange.Contains(id), ansifmt::reset, "\n");
@@ -104,62 +104,44 @@ bool Trinity::updated_documents_scanner::test(const docid_t id) noexcept
                 }
                 else
                 {
-                        // skip ahead using binary search
-                        // Look for the first element in the skiplist that is <= `id`
-                        int32_t top{int32_t(end - skiplistBase) - 1};
+                        int32_t btm{0};
 
-                        for (int32_t btm{0}; btm <= top;)
+                        if (traceAdvances)
+                                SLog("Binary search FOR ", id, " ", curBankRange, " ", curBankRange.size(), ", maxDocID = ", maxDocID, "\n");
+
+                        // binary search highest bank, where id < bank.end
+                        // There's no need to check for success, we already checked for (id > maxDocID)
+                        for (int32_t top{int32_t(end - skiplistBase) - 1}; btm <= top;)
                         {
                                 const auto mid = (btm + top) / 2;
-                                const auto v = skiplistBase[mid];
+                                const auto end = skiplistBase[mid] + bankSize;
 
-                                if (id < v)
+                                if (id < end)
                                         top = mid - 1;
-                                else if (id == v)
-                                {
-                                        top = mid;
-                                        break;
-                                }
                                 else
                                         btm = mid + 1;
                         }
 
-                        if (unlikely(top == -1))
+                        skiplistBase += btm;
+                        curBankRange.Set(*skiplistBase, bankSize);
+                        curBank = udBanks + ((skiplistBase - udSkipList) * (bankSize / 8));
+
+                        if (trace || traceAdvances)
+                                SLog("Now at ", skiplistBase - udSkipList, " => ", curBankRange, " ", curBankRange.Contains(id), "\n");
+
+                        if (curBankRange.Contains(id))
                         {
                                 if (trace)
-                                        SLog("Definitely not here because top = -1\n");
+                                        SLog("REL = ", id - curBankRange.offset, "\n");
 
-                                reset();
-                                return false;
+                                return SwitchBitOps::Bitmap<uint64_t>::IsSet((uint64_t *)curBank, id - curBankRange.offset);
                         }
                         else
                         {
-                                skiplistBase += top;
-                                curBankRange.Set(*skiplistBase, bankSize);
-                                curBank = udBanks + ((skiplistBase - udSkipList) * (bankSize / 8));
-
                                 if (trace)
-                                        SLog("Now at ", skiplistBase - udSkipList, " => ", curBankRange, "\n");
+                                        SLog("id ", id, " out of range of ", curBankRange, "\n");
 
-                                if (curBankRange.Contains(id))
-                                {
-                                        // this is is important
-                                        // imagine if cur bank range is [1, 65) and second bank is [150, 215)
-                                        // and id is 68
-                                        // then we 'd skip to [150, 215) bank but
-                                        // that's ahead of our target(68)
-                                        if (trace)
-                                                SLog("REL = ", id - curBankRange.offset, "\n");
-
-                                        return SwitchBitOps::Bitmap<uint64_t>::IsSet((uint64_t *)curBank, id - curBankRange.offset);
-                                }
-                                else
-                                {
-                                        if (trace)
-                                                SLog("id ", id, " out of range of ", curBankRange, "\n");
-
-                                        return false;
-                                }
+                                return false;
                         }
                 }
         }

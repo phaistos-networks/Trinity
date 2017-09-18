@@ -20,6 +20,21 @@ namespace Trinity
         struct phrase;
 
         // A query is an ASTree
+	//
+	// Choice of AST vs Lucene's Query Interface:
+	// Lucene's use of the Query interface, which is to say, building the actual queries by subclassing the Query abstract class, provides some benefits, but gives up
+	// some useful properties in the process.
+	// Specifically, it doesn't capture sequence and context. That is to say, for example, the use of BooleanQuery as a container of BooleanClauses can't be used
+	// to determine that term A is before term B, because clauses order is not necessarily taken into account 
+	// (you pack clauses of type Occur.MUST, Occur.FILTER, Occur.SHOULD ) in a list, and furthermore BooleanQuery::rewrite() alters that list
+	// and doesn't preserve any logical order. It shouldn't be too hard for someone to update the respective Lucene classes to account for that and properly
+	// track state and context, but in general Lucuene does not care for the query structure.
+	// Trinity's default query execution mode relies on capturing that state and passing information about matched terms and their context in the orignal query
+	// to the callback.
+	//
+	// On the other hand, it's simpler to to just create a BooleanQuery and push BooleanClause's in to it. It's also easier to subclass Query and implement
+	// the various abstract methods in your Lucene application, whereas in Trinity you 'd need to define a new ast_node::Type in the Trinity codebase and
+	// implement whatever's required.
         struct ast_node final
         {
                 union {
