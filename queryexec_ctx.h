@@ -29,6 +29,10 @@ namespace Trinity
                 logicalnot,
                 logicalor,
 		matchsome,
+		// matchallnodes and matchanynodes are handled by the compiler/optimizer, though
+		// no exec. nodes of that type are generated during compilation.
+		matchallnodes,
+		matchanynodes,
                 SPECIALIMPL_COLLECTION_LOGICALOR,
                 SPECIALIMPL_COLLECTION_LOGICALAND,
         };
@@ -165,6 +169,12 @@ namespace Trinity
 		{
 			uint16_t size;
 			uint16_t min;
+			exec_node nodes[0];
+		};
+
+		struct nodes_group final
+		{
+			uint16_t size;
 			exec_node nodes[0];
 		};
 
@@ -439,6 +449,7 @@ namespace Trinity
 #endif
                         maxTrackedDocumentID = std::max(maxTrackedDocumentID, doc->id);
                 }
+
         };
 }
 

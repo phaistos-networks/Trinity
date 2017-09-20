@@ -97,6 +97,14 @@ static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, queryexec_ctx
                         reorder_execnode(pm->nodes[i], updates, rctx);
                 return UINT64_MAX - 1;
         }
+        else if (n.fp == ENT::matchallnodes || n.fp == ENT::matchanynodes)
+        {
+                auto g = static_cast<queryexec_ctx::nodes_group *>(n.ptr);
+
+                for (uint32_t i{0}; i != g->size; ++i)
+                        reorder_execnode(g->nodes[i], updates, rctx);
+                return UINT64_MAX - 1;
+        }
         else if (n.fp == ENT::matchallterms)
         {
                 const auto run = static_cast<const queryexec_ctx::termsrun *>(n.ptr);
@@ -350,6 +358,10 @@ static auto impl_repr(const ENT fp) noexcept
                 return "const true expr"_s8;
         else if (fp == ENT::matchsome)
                 return "[matchsome]"_s8;
+        else if (fp == ENT::matchallnodes)
+                return "[matchallnodes]"_s8;
+        else if (fp == ENT::matchanynodes)
+                return "[matchanynodes]"_s8;
         else if (fp == ENT::constfalse)
                 return "false"_s8;
         else if (fp == ENT::dummyop)
@@ -553,6 +565,100 @@ static bool same(const exec_node &a, const exec_node &b) noexcept
         return false;
 }
 
+static void group_execnodes(exec_node &n, simple_allocator &a)
+{
+        if (n.fp == ENT::logicaland)
+        {
+                auto ctx = (queryexec_ctx::binop_ctx *)n.ptr;
+
+                group_execnodes(ctx->lhs, a);
+                group_execnodes(ctx->rhs, a);
+
+                range_base<exec_node *, std::uint16_t> r1, r2;
+
+                r1.Set(&ctx->lhs, 1);
+                r2.Set(&ctx->rhs, 1);
+
+                if (ctx->lhs.fp == ENT::matchallnodes)
+                {
+                        auto g = static_cast<queryexec_ctx::nodes_group *>(ctx->lhs.ptr);
+
+                        r1.Set(g->nodes, g->size);
+                }
+
+                if (ctx->rhs.fp == ENT::matchallnodes)
+                {
+                        auto g = static_cast<queryexec_ctx::nodes_group *>(ctx->rhs.ptr);
+
+                        r2.Set(g->nodes, g->size);
+                }
+
+                auto g = (queryexec_ctx::nodes_group *)a.Alloc(sizeof(queryexec_ctx::nodes_group) + sizeof(exec_node) * (r1.size() + r2.size()));
+
+                g->size = r1.size() + r2.size();
+                memcpy(g->nodes, r1.offset, r1.size() * sizeof(exec_node));
+                memcpy(g->nodes + r1.size(), r2.offset, r2.size() * sizeof(exec_node));
+
+                n.fp = ENT::matchallnodes;
+                n.ptr = g;
+        }
+        else if (n.fp == ENT::logicalor)
+        {
+                auto ctx = (queryexec_ctx::binop_ctx *)n.ptr;
+
+		group_execnodes(ctx->lhs, a);
+		group_execnodes(ctx->rhs, a);
+
+                range_base<exec_node *, std::uint16_t> r1, r2;
+
+                r1.Set(&ctx->lhs, 1);
+                r2.Set(&ctx->rhs, 1);
+
+                if (ctx->lhs.fp == ENT::matchanynodes)
+                {
+                        auto g = static_cast<queryexec_ctx::nodes_group *>(ctx->lhs.ptr);
+
+                        r1.Set(g->nodes, g->size);
+                }
+
+                if (ctx->rhs.fp == ENT::matchanynodes)
+                {
+                        auto g = static_cast<queryexec_ctx::nodes_group *>(ctx->rhs.ptr);
+
+                        r2.Set(g->nodes, g->size);
+                }
+
+                auto g = (queryexec_ctx::nodes_group *)a.Alloc(sizeof(queryexec_ctx::nodes_group) + sizeof(exec_node) * (r1.size() + r2.size()));
+
+                g->size = r1.size() + r2.size();
+                memcpy(g->nodes, r1.offset, r1.size() * sizeof(exec_node));
+                memcpy(g->nodes + r1.size(), r2.offset, r2.size() * sizeof(exec_node));
+
+                n.fp = ENT::matchanynodes;
+                n.ptr = g;
+        }
+        else if (n.fp == ENT::logicalnot)
+        {
+                auto ctx = (queryexec_ctx::binop_ctx *)n.ptr;
+
+		group_execnodes(ctx->lhs, a);
+		group_execnodes(ctx->rhs, a);
+        }
+        else if (n.fp == ENT::unaryand || n.fp == ENT::unarynot || n.fp == ENT::consttrueexpr)
+        {
+                auto *const ctx = static_cast<queryexec_ctx::unaryop_ctx *>(n.ptr);
+
+                group_execnodes(ctx->expr, a);
+        }
+        else if (n.fp == ENT::matchsome)
+        {
+                auto pm = static_cast<queryexec_ctx::partial_match_ctx *>(n.ptr);
+
+                for (uint32_t i{0}; i != pm->size; ++i)
+                        group_execnodes(pm->nodes[i], a);
+        }
+}
+
 static void collapse_node(exec_node &n, queryexec_ctx &rctx, simple_allocator &a, std::vector<exec_term_id_t> &terms, std::vector<const queryexec_ctx::phrase *> &phrases, std::vector<exec_node> &stack)
 {
         if (n.fp == ENT::consttrueexpr || n.fp == ENT::unaryand || n.fp == ENT::unarynot)
@@ -567,6 +673,13 @@ static void collapse_node(exec_node &n, queryexec_ctx &rctx, simple_allocator &a
 
                 for (uint32_t i{0}; i != pm->size; ++i)
                         collapse_node(pm->nodes[i], rctx, a, terms, phrases, stack);
+        }
+        else if (n.fp == ENT::matchallnodes || n.fp == ENT::matchanynodes)
+        {
+                auto g = static_cast<queryexec_ctx::nodes_group *>(n.ptr);
+
+                for (uint32_t i{0}; i != g->size; ++i)
+                        collapse_node(g->nodes[i], rctx, a, terms, phrases, stack);
         }
         else if (n.fp == ENT::logicaland || n.fp == ENT::logicalor || n.fp == ENT::logicalnot)
         {
@@ -743,6 +856,13 @@ static void expand_node(exec_node &n, queryexec_ctx &rctx, simple_allocator &a, 
 
                 for (uint32_t i{0}; i != ctx->size; ++i)
                         expand_node(ctx->nodes[i], rctx, a, terms, phrases, stack);
+        }
+        else if (n.fp == ENT::matchallnodes || n.fp == ENT::matchanynodes)
+        {
+                auto g = static_cast<queryexec_ctx::nodes_group *>(n.ptr);
+
+                for (uint32_t i{0}; i != g->size; ++i)
+                        expand_node(g->nodes[i], rctx, a, terms, phrases, stack);
         }
         else if (n.fp == ENT::logicaland || n.fp == ENT::logicalor || n.fp == ENT::logicalnot)
         {
@@ -967,6 +1087,16 @@ static exec_node optimize_node(exec_node n, queryexec_ctx &rctx, simple_allocato
                         set_dirty();
                 }
         }
+	else if (n.fp == ENT::matchallnodes || n.fp == ENT::matchanynodes)
+	{
+		auto g = static_cast<queryexec_ctx::nodes_group *>(n.ptr);
+
+		if (0 == g->size)
+		{
+			n.fp = ENT::constfalse;
+			set_dirty();
+		}
+	}
         else if (n.fp == ENT::matchsome)
         {
                 auto ctx = static_cast<queryexec_ctx::partial_match_ctx *>(n.ptr);
@@ -1901,10 +2031,6 @@ static exec_node compile(const ast_node *const n, queryexec_ctx &rctx, simple_al
         // NOW, prepare decoders
         // No need to have done so if we could have determined that the query would have failed anyway
         // This could take some time - for 52 distinct terms it takes 0.002s (>1ms)
-        //
-        // TODO: well, no need to prepare decoders for every distinct term we resolved
-        // because 1+ of them may not be referenced in the final execution nodes tree (because may have been dropped by the optimizer, etc)
-        // Instead, just identify the distinct termIds from all execution nodes of type (ENT::matchterm, ENT::matchphrase, ENT::matchallphrases, ENT::matchanyphrases, ENT::matchanyterms, ENT::matchallterms)
         before = Timings::Microseconds::Tick();
         for (const auto &kv : rctx.tctxMap)
         {
@@ -1915,6 +2041,7 @@ static exec_node compile(const ast_node *const n, queryexec_ctx &rctx, simple_al
 
         if (traceMetrics)
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " ", Timings::Microseconds::ToMillis(Timings::Microseconds::Since(before)), " ms  to initialize all decoders ", rctx.tctxMap.size(), "\n");
+
 
         return root;
 }
@@ -2117,6 +2244,32 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                                                  ? static_cast<DocsSetIterators::Iterator *>(new DocsSetIterators::ConjuctionAllPLI(its.data(), its.size()))
                                                  : static_cast<DocsSetIterators::Iterator *>(new DocsSetIterators::Conjuction(its.data(), its.size())));
                 }
+        }
+	else if (n.fp == ENT::matchallnodes)
+        {
+                std::vector<DocsSetIterators::Iterator *> its;
+                const auto g = static_cast<const queryexec_ctx::nodes_group *>(n.ptr);
+
+                its.reserve(g->size);
+                for (uint32_t i{0}; i != g->size; ++i)
+                        its.push_back(build_iterator(g->nodes[i], execFlags));
+
+                return reg_docset_it(all_pli(its)
+                                         ? static_cast<DocsSetIterators::Iterator *>(new DocsSetIterators::ConjuctionAllPLI(its.data(), its.size()))
+                                         : static_cast<DocsSetIterators::Iterator *>(new DocsSetIterators::Conjuction(its.data(), its.size())));
+        }
+	else if (n.fp == ENT::matchanynodes)
+        {
+                std::vector<DocsSetIterators::Iterator *> its;
+                const auto g = static_cast<const queryexec_ctx::nodes_group *>(n.ptr);
+
+                its.reserve(g->size);
+                for (uint32_t i{0}; i != g->size; ++i)
+                        its.push_back(build_iterator(g->nodes[i], execFlags));
+
+                return reg_docset_it(all_pli(its)
+                                         ? static_cast<DocsSetIterators::Iterator *>(new DocsSetIterators::DisjunctionAllPLI(its.data(), its.size()))
+                                         : static_cast<DocsSetIterators::Iterator *>(new DocsSetIterators::Disjunction(its.data(), its.size())));
         }
         else if (n.fp == ENT::logicalnot)
         {
@@ -2354,13 +2507,24 @@ void Trinity::exec_query(const query &in,
         if (traceCompile)
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " to compile, ", duration_repr(Timings::Microseconds::Since(_start)), " since start\n");
 
-        if (unlikely(rootExecNode.fp == ENT::constfalse))
+        if (unlikely(rootExecNode.fp == ENT::dummyop || rootExecNode.fp == ENT::constfalse))
         {
                 if (traceCompile)
                         SLog("Nothing to do\n");
 
                 return;
         }
+
+	// Now that we have compiled the AST into an execution nodes tree, we could
+	// group nodes into matchallnodes and matchanynodes groups.
+	// There is really no need to do it now, but for a Percolator like scheme, where
+	// you want to attempt to matchd documents against queries, it would be very handy.
+	// 
+	// TODO: we need to move some state out of queryexec_ctx, to e.g a compilation_ctx
+	// which can exist independently of a queryexec_ctx, so that we can use it for a perconalation impl.
+	// group_execnodes(rootExecNode, rctx.allocator);	
+
+
 
         // see query_index_terms and MatchedIndexDocumentsFilter::prepare() comments
         query_index_terms **queryIndicesTerms;

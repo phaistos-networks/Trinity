@@ -394,7 +394,7 @@ static ast_node *parse_unary(ast_parser &ctx)
 {
         ctx.skip_ws();
 
-#if 1
+#if 0
         // enable this for debugging
         if (ctx.content.StripPrefix(_S("<")))
         {
