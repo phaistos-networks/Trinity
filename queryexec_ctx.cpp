@@ -27,182 +27,6 @@ DocsSetIterators::Iterator *Trinity::queryexec_ctx::reg_docset_it(DocsSetIterato
 	return res;
 }
 
-bool queryexec_ctx::termsrun::operator==(const termsrun &o) const noexcept
-{
-        if (size == o.size)
-        {
-                for (uint32_t i{0}; i != size; ++i)
-                {
-                        if (terms[i] != o.terms[i])
-                                return false;
-                }
-                return true;
-        }
-        else
-                return false;
-}
-
-bool queryexec_ctx::termsrun::is_set(const exec_term_id_t id) const noexcept
-{
-        for (uint32_t i{0}; i != size; ++i)
-        {
-                if (terms[i] == id)
-                        return true;
-        }
-        return false;
-}
-
-bool queryexec_ctx::termsrun::erase(const exec_term_id_t id) noexcept
-{
-        for (uint32_t i{0}; i != size; ++i)
-        {
-                if (terms[i] == id)
-                {
-                        memmove(terms + i, terms + i + 1, (--size - i) * sizeof(terms[0]));
-                        return true;
-                }
-        }
-
-        return false;
-}
-
-bool queryexec_ctx::termsrun::erase(const termsrun &o)
-{
-        // Fast scalar intersection scheme designed by N.Kurz.
-        // lemire/SIMDCompressionAndIntersection.cpp
-        const auto *A = terms, *B = o.terms;
-        const auto endA = terms + size;
-        const auto endB = o.terms + o.size;
-        auto out{terms};
-
-        for (;;)
-        {
-                while (*A < *B)
-                {
-                l1:
-                        *out++ = *A;
-                        if (++A == endA)
-                        {
-                        l2:
-                                if (const auto n = out - terms; n == size)
-                                        return false;
-                                else
-                                {
-                                        size = n;
-                                        return true;
-                                }
-                        }
-                }
-
-                while (*A > *B)
-                {
-                        if (++B == endB)
-                        {
-                                while (A != endA)
-                                        *out++ = *A++;
-                                goto l2;
-                        }
-                }
-
-                if (*A == *B)
-                {
-                        if (++A == endA || ++B == endB)
-                        {
-                                while (A != endA)
-                                        *out++ = *A++;
-                                goto l2;
-                        }
-                }
-                else
-                        goto l1;
-        }
-}
-
-uint8_t queryexec_ctx::phrase::intersection(const termsrun *const tr, exec_term_id_t *const out) const noexcept
-{
-        uint16_t n{0};
-
-        for (uint32_t i{0}; i != size; ++i)
-        {
-                if (const auto id = termIDs[i]; tr->is_set(id))
-                        out[n++] = id;
-        }
-        return n;
-}
-
-uint8_t queryexec_ctx::phrase::disjoint_union(const termsrun *const tr, exec_term_id_t *const out) const noexcept
-{
-        uint16_t n{0};
-        const auto cnt = tr->size;
-
-        for (uint32_t i{0}; i != cnt; ++i)
-        {
-                if (const auto id = tr->terms[i]; !is_set(id))
-                        out[n++] = id;
-        }
-        return n;
-}
-
-bool queryexec_ctx::phrase::intersected_by(const termsrun *const tr) const noexcept
-{
-        if (tr->size >= size)
-        {
-                for (uint32_t i{0}; i != size; ++i)
-                {
-                        if (!tr->is_set(termIDs[i]))
-                                return false;
-                }
-                return true;
-        }
-        else
-                return false;
-}
-
-bool queryexec_ctx::phrase::operator==(const phrase &o) const noexcept
-{
-        if (size == o.size)
-        {
-                for (uint32_t i{0}; i != size; ++i)
-                {
-                        if (termIDs[i] != o.termIDs[i])
-                                return false;
-                }
-                return true;
-        }
-        else
-                return false;
-}
-
-bool queryexec_ctx::phrase::is_set(const exec_term_id_t *const l, const uint8_t n) const noexcept
-{
-        if (n <= size)
-        {
-                const auto upto = size - n;
-
-                for (uint32_t i{0}; i != upto; ++i)
-                {
-                        uint32_t k;
-
-                        for (k = 0; k != n && l[k] == termIDs[i + k]; ++k)
-                                continue;
-
-                        if (k == n)
-                                return true;
-                }
-        }
-
-        return false;
-}
-
-bool queryexec_ctx::phrase::is_set(const exec_term_id_t id) const noexcept
-{
-        for (uint32_t i{0}; i != size; ++i)
-        {
-                if (termIDs[i] == id)
-                        return true;
-        }
-        return false;
-}
 
 queryexec_ctx::~queryexec_ctx()
 {
@@ -309,49 +133,28 @@ void queryexec_ctx::prepare_decoder(exec_term_id_t termID)
 
 exec_term_id_t queryexec_ctx::resolve_term(const str8_t term)
 {
-        exec_term_id_t *ptr;
+	const auto res = termsDict.insert({ term, 0 });
 
-#ifndef LEAN_SWITCH
-        if (termsDict.Add(term, 0, &ptr))
-#else
-        auto p = termsDict.insert({term, 0});
+	if (res.second)
+	{
+		auto ptr = &res.first->second;
+		const auto tctx = idxsrc->term_ctx(term);
 
-        ptr = &p.first->second;
-        if (p.second)
-#endif
-        {
-                const auto tctx = idxsrc->term_ctx(term);
+		if (tctx.documents == 0)
+		{
+			// matches no documents, unknown
+			*ptr = 0;
+		}
+		else
+		{
+			*ptr = termsDict.size();
+			tctxMap.insert({*ptr, {tctx, term}});
+		}
+	}
 
-                if (tctx.documents == 0)
-                {
-                        // matches no documents, unknown
-                        *ptr = 0;
-                }
-                else
-                {
-                        *ptr = termsDict.size();
-                        tctxMap.insert({*ptr, {tctx, term}});
-                }
-        }
-
-        return *ptr;
+	return res.first->second;
 }
 
-queryexec_ctx::phrase *queryexec_ctx::register_phrase(const Trinity::phrase *p)
-{
-        auto ptr = (phrase *)allocator.Alloc(sizeof(phrase) + sizeof(exec_term_id_t) * p->size);
-
-        ptr->size = p->size;
-        for (uint32_t i{0}; i != p->size; ++i)
-        {
-                if (const auto id = resolve_term(p->terms[i].token))
-                        ptr->termIDs[i] = id;
-                else
-                        return nullptr;
-        }
-
-        return ptr;
-}
 
 void queryexec_ctx::decode_ctx_struct::check(const uint16_t idx)
 {

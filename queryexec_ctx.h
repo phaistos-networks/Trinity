@@ -3,6 +3,7 @@
 #include "exec.h"
 #include "matches.h"
 #include "similarity.h"
+#include "compilation_ctx.h"
 
 namespace Trinity
 {
@@ -10,47 +11,6 @@ namespace Trinity
         // (this is because we use simple_allocator::New<> which doesn't respect the specified alignment. Not sure
         // if we should implement support for alignment allocations in simple_allocator)
         struct queryexec_ctx;
-
-        enum class ENT : uint8_t
-        {
-                matchterm = 0,
-                constfalse,
-                consttrue,
-                dummyop,
-                matchallterms,
-                matchanyterms,
-                unaryand,
-                unarynot,
-                matchanyphrases,
-                matchallphrases,
-                matchphrase,
-                consttrueexpr,
-                logicaland,
-                logicalnot,
-                logicalor,
-		matchsome,
-		// matchallnodes and matchanynodes are handled by the compiler/optimizer, though
-		// no exec. nodes of that type are generated during compilation.
-		matchallnodes,
-		matchanynodes,
-                SPECIALIMPL_COLLECTION_LOGICALOR,
-                SPECIALIMPL_COLLECTION_LOGICALAND,
-        };
-
-        struct exec_node final
-        {
-                ENT fp;
-
-                union {
-                        void *ptr;
-                        uint32_t u32;
-                        uint16_t u16;
-                };
-
-                // cost is computed by reorder_execnode()
-                // and we keep track of this here so that we can make some higher level optimizations later
-                uint64_t cost;
-        };
 
         // This is more aking to a short-memory implemented as a stack-sort-of system
         struct candidate_document final
@@ -152,86 +112,7 @@ namespace Trinity
                 const bool documentsOnly, accumScoreMode;
                 IndexSource *const idxsrc;
                 iterators_collector collectedIts;
-		Similarity::IndexSourceTermsScorer *scorer{nullptr};
-
-                struct binop_ctx final
-                {
-                        exec_node lhs;
-                        exec_node rhs;
-                };
-
-                struct unaryop_ctx final
-                {
-                        exec_node expr;
-                };
-
-		struct partial_match_ctx final
-		{
-			uint16_t size;
-			uint16_t min;
-			exec_node nodes[0];
-		};
-
-		struct nodes_group final
-		{
-			uint16_t size;
-			exec_node nodes[0];
-		};
-
-                struct termsrun final
-                {
-                        uint16_t size;
-                        exec_term_id_t terms[0];
-
-                        static_assert(std::numeric_limits<decltype(size)>::max() >= Limits::MaxTermLength);
-
-                        bool operator==(const termsrun &o) const noexcept;
-
-                        bool is_set(const exec_term_id_t id) const noexcept;
-
-                        bool erase(const exec_term_id_t id) noexcept;
-
-                        bool erase(const termsrun &o);
-
-                        auto empty() const noexcept
-                        {
-                                return !size;
-                        }
-                };
-
-                struct phrase final
-                {
-                        uint8_t size;
-                        exec_term_id_t termIDs[0];
-
-                        static_assert(std::numeric_limits<decltype(size)>::max() >= Trinity::Limits::MaxPhraseSize);
-
-                        uint8_t intersection(const termsrun *const tr, exec_term_id_t *const out) const noexcept;
-
-                        // returns terms found in run, but missing from this phrase
-                        uint8_t disjoint_union(const termsrun *const tr, exec_term_id_t *const out) const noexcept;
-
-                        bool intersected_by(const termsrun *const tr) const noexcept;
-
-                        bool operator==(const phrase &o) const noexcept;
-
-                        bool is_set(const exec_term_id_t id) const noexcept;
-
-                        bool is_set(const exec_term_id_t *const l, const uint8_t n) const noexcept;
-                };
-
-                struct cacheable_termsrun
-                {
-                        isrc_docid_t lastConsideredDID;
-                        const termsrun *run;
-                        bool res;
-                };
-
-                struct phrasesrun final
-                {
-                        uint16_t size;
-                        phrase *phrases[0];
-                };
+                Similarity::IndexSourceTermsScorer *scorer{nullptr};
 
                 queryexec_ctx(IndexSource *src, const bool documentsOnly_, const bool accumScoreMode_)
                     : documentsOnly{documentsOnly_}, accumScoreMode{accumScoreMode_}, idxsrc{src}
@@ -251,7 +132,6 @@ namespace Trinity
 
                 inline term_index_ctx term_ctx(const exec_term_id_t termID)
                 {
-                        // we should have resolve_term() anyway
                         return tctxMap[termID].first;
                 }
 
@@ -260,30 +140,6 @@ namespace Trinity
                 // and we use it because its easier to track/use integers than strings
                 // See Termspaces in CONCEPTS.md
                 exec_term_id_t resolve_term(const str8_t term);
-
-                binop_ctx *register_binop(const exec_node lhs, const exec_node rhs)
-                {
-                        auto ptr = ctxAllocator.New<binop_ctx>();
-
-                        ptr->lhs = lhs;
-                        ptr->rhs = rhs;
-                        return ptr;
-                }
-
-                unaryop_ctx *register_unaryop(const exec_node expr)
-                {
-                        auto ptr = ctxAllocator.New<unaryop_ctx>();
-
-                        ptr->expr = expr;
-                        return ptr;
-                }
-
-                inline uint16_t register_token(const Trinity::phrase *p)
-                {
-                        return resolve_term(p->terms[0].token);
-                }
-
-                phrase *register_phrase(const Trinity::phrase *p);
 
                 DocsSetIterators::Iterator *build_iterator(const exec_node n, const uint32_t execFlags);
 
@@ -357,14 +213,14 @@ namespace Trinity
                         res->id = id;
                         res->dwsInUse = false;
 
-			if (!documentsOnly)
+                        if (!documentsOnly)
                         {
                                 if (unlikely(res->curDocSeq == UINT16_MAX))
                                 {
-        				const auto maxQueryTermIDPlus1 = termsDict.size() + 1;
+                                        const auto maxQueryTermIDPlus1 = termsDict.size() + 1;
 
-					memset(res->curDocQueryTokensCaptured, 0, sizeof(isrc_docid_t) * maxQueryTermIDPlus1);
-					res->curDocSeq = 1;
+                                        memset(res->curDocQueryTokensCaptured, 0, sizeof(isrc_docid_t) * maxQueryTermIDPlus1);
+                                        res->curDocSeq = 1;
                                 }
                                 else
                                         ++(res->curDocSeq);
@@ -375,7 +231,7 @@ namespace Trinity
 
                 void forget_document(candidate_document *);
 
-                Switch::unordered_map<str8_t, exec_term_id_t> termsDict;
+                ska::flat_hash_map<str8_t, exec_term_id_t> termsDict;
                 // TODO: determine suitable allocator bank size based on some meaningful metric
                 // e.g total distinct tokens in the query, otherwise we may just end up allocating more memory than
                 // we need and for environments where memory pressure is a concern, this may be important.
@@ -383,7 +239,6 @@ namespace Trinity
                 // We should also track allocated (from allocators) memory that is no longer needed so that we can reuse it
                 // Maybe we just need a method for allocating arbitrary amount of memory and releasing it back to the runtime ctx
                 simple_allocator allocator{4096 * 6};
-                simple_allocator runsAllocator{4096}, ctxAllocator{4096};
                 ska::flat_hash_map<exec_term_id_t, std::pair<term_index_ctx, str8_t>> tctxMap;
                 std::vector<DocsSetIterators::Iterator *> docsetsIterators;
                 std::vector<Codecs::PostingsListIterator *> allIterators;
@@ -412,8 +267,8 @@ namespace Trinity
                                 return lastBank;
                         else
                         {
-				// consider using counting linear search
-				// may make more sense because it's going to be branchless
+                                // consider using counting linear search
+                                // may make more sense because it's going to be branchless
                                 for (auto b : banks)
                                 {
                                         if (b->base == base)
@@ -449,7 +304,6 @@ namespace Trinity
 #endif
                         maxTrackedDocumentID = std::max(maxTrackedDocumentID, doc->id);
                 }
-
         };
 }
 
