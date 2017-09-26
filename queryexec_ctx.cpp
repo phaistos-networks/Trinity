@@ -245,20 +245,21 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
                 break;
 
                 case DocsSetIterators::Type::DisjunctionSome:
-                {
-                        auto d = static_cast<DocsSetIterators::DisjunctionSome *>(it);
+		{
+			auto const d = static_cast<DocsSetIterators::DisjunctionSome *>(it);
 
-                        d->update_matched_cnt();
-                        for (auto i{d->lead}; i; i = i->next)
+			d->update_matched_cnt();
+			if (d->allPLI)
 			{
-				// TODO: in constructor set allPLI = true if all its are postilings lists
-				// so that we can avoid if in the loop
-				if (i->it->type == DocsSetIterators::Type::PostingsListIterator)
+				for (auto i{d->lead}; i; i = i->next)
 					out->data[out->cnt++] = reinterpret_cast<Codecs::PostingsListIterator *>(i->it);
-				else
-	                                collect_doc_matching_terms(i->it, docID, out);
 			}
-                }
+			else
+			{
+				for (auto i{d->lead}; i; i = i->next)
+					collect_doc_matching_terms(i->it, docID, out);
+			}
+		}
                 break;
 
                 case DocsSetIterators::Type::PostingsListIterator:
@@ -267,7 +268,7 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
 
                 case DocsSetIterators::Type::Optional:
                 {
-                        auto *const opt = reinterpret_cast<DocsSetIterators::Optional *>(it);
+                        auto *const opt = reinterpret_cast<const DocsSetIterators::Optional *>(it);
                         auto optCur = opt->opt->current();
 
                         collect_doc_matching_terms(opt->main, docID, out);
@@ -280,12 +281,12 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
                 break;
 
                 case DocsSetIterators::Type::Filter:
-                        collect_doc_matching_terms(reinterpret_cast<DocsSetIterators::Filter *>(it)->req, docID, out);
+                        collect_doc_matching_terms(reinterpret_cast<const DocsSetIterators::Filter *>(it)->req, docID, out);
                         break;
 
                 case DocsSetIterators::Type::Conjuction:
                 {
-                        const auto I = static_cast<DocsSetIterators::Conjuction *>(it);
+                        const auto I = static_cast<const DocsSetIterators::Conjuction *>(it);
                         const auto n = I->size;
                         auto its = I->its;
 

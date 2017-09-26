@@ -176,7 +176,9 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
 
 str8_t SegmentIndexSession::term(const uint32_t id)
 {
-        return invDict[id];
+        const auto it = invDict.find(id);
+
+        return it != invDict.end() ? it->second : str8_t();
 }
 
 uint32_t SegmentIndexSession::term_id(const str8_t term)

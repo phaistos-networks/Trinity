@@ -1454,13 +1454,14 @@ void Trinity::exec_query(const query &in,
                                                                         auto doc = ctx->document_by_id(id);
 
                                                                         ctx->prepare_match(doc);
-                                                                        ctx->cds_release(doc);
 
                                                                         auto &matchedDocument = doc->matchedDocument;
 
                                                                         matchedDocument.id = globalDocID;
                                                                         matchesFilter->consider(matchedDocument);
                                                                         ++n;
+
+                                                                        ctx->cds_release(doc);
                                                                 }
                                                         }
 
@@ -1496,13 +1497,14 @@ void Trinity::exec_query(const query &in,
                                                                         auto doc = ctx->document_by_id(id);
 
                                                                         ctx->prepare_match(doc);
-                                                                        ctx->cds_release(doc);
 
                                                                         auto &matchedDocument = doc->matchedDocument;
 
                                                                         matchedDocument.id = globalDocID;
                                                                         matchesFilter->consider(matchedDocument);
                                                                         ++n;
+
+                                                                        ctx->cds_release(doc);
                                                                 }
                                                         }
 
@@ -1539,13 +1541,14 @@ void Trinity::exec_query(const query &in,
                                                                 auto doc = ctx->document_by_id(id);
 
                                                                 ctx->prepare_match(doc);
-                                                                ctx->cds_release(doc);
 
                                                                 auto &matchedDocument = doc->matchedDocument;
 
                                                                 matchedDocument.id = globalDocID;
                                                                 matchesFilter->consider(matchedDocument);
                                                                 ++n;
+
+                                                                ctx->cds_release(doc);
                                                         }
                                                 }
 
@@ -1577,13 +1580,14 @@ void Trinity::exec_query(const query &in,
                                                         auto doc = ctx->document_by_id(id);
 
                                                         ctx->prepare_match(doc);
-                                                        ctx->cds_release(doc);
 
                                                         auto &matchedDocument = doc->matchedDocument;
 
                                                         matchedDocument.id = globalDocID;
                                                         matchesFilter->consider(matchedDocument);
                                                         ++n;
+
+                                                        ctx->cds_release(doc);
                                                 }
 
                                                 Handler(queryexec_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)

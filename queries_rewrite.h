@@ -3,7 +3,7 @@
 // be extremely concpet, many 100s of nodes in size, so you need to compromise and accept tradeoffs.
 #pragma once
 #include "queries.h"
-#include <set>
+#include <unordered_set>
 
 namespace Trinity
 {
@@ -224,7 +224,7 @@ namespace Trinity
                 // (we shoudn't use a single std::vector<flow *> for all allocated flows and for tracking because
                 // we really only need to track 'useful' flows)
                 std::vector<flow *> allocatedFlows, flows, flows_1, flows_2;
-                std::set<flow *> S[2];
+                std::unordered_set<flow *> S[2];
 
                 ~gen_ctx()
                 {
@@ -605,7 +605,7 @@ namespace Trinity
                         maxStop = std::max<uint32_t>(stop, maxStop);
                 };
                 // Fast-simple way to identify the common ancestor among a list of flows[]
-                // TODO: we can probably avoid using std::set<> here which would make sense, but let's consider alternatives later
+                // TODO: we can probably avoid using std::unordered_set<> here which would make sense, but let's consider alternatives later
                 [[maybe_unused]] const auto common_anchestor = [&](flow **const flows, const size_t cnt, const bool oneFlowUseParent = false) -> flow * {
                         if (cnt == 0)
                                 return nullptr;

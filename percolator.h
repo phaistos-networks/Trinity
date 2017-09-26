@@ -33,6 +33,8 @@
 // match() will in turn return true if the document is matched, false otherwise. That's it.
 // 
 // It relies on the compilation backend of Trinity and takes advantage of the optimizer which results in very fast query evaluation
+// You could, of course, just use the AST directly, which is easy and it works perfectly fine. However, by compiling to the execution tree, you take
+// advantage of the various many optimizations already implemented.
 #include "common.h"
 #include "compilation_ctx.h"
 #include "queries.h"
@@ -94,7 +96,6 @@ namespace Trinity
                 {
                         if (!q)
                         {
-				SLog("here\n");
                                 root.fp = ENT::constfalse;
                                 return;
                         }

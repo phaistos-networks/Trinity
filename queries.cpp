@@ -1,6 +1,6 @@
 #include "queries.h"
 #include <unordered_map>
-#include <set>
+#include <unordered_set>
 #include <mutex>
 
 using namespace Trinity;
@@ -1533,7 +1533,7 @@ static thread_local std::vector<ast_node *> stackTLS;
 bool query::can_intersect() const
 {
         auto &stack{stackTLS};
-        std::set<str8_t> tokens;
+        std::unordered_set<str8_t> tokens;
 
         stack.clear();
         if (root)
@@ -1954,11 +1954,14 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
         {
                 // Acronyms with punctuations
                 // is it e.g I.B.M, or U.S.A. ?
+		//
+		// UPDATE: tokens past the 2nd consumed can be over 1 character long, e.g M.P.ACT
                 const auto threshold = out + Trinity::Limits::MaxTermLength + 1;
                 auto o{out};
 
                 *o++ = p[0];
                 *o++ = p[2];
+#if 0
                 *o++ = p[4];
 
                 for (p += 5;;)
@@ -1972,7 +1975,7 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
                                         break;
                                 else if (_isalpha(*p))
                                 {
-                                        if (unlikely(o != threshold))
+                                        if (likely(o != threshold))
                                         {
                                                 if (likely(o != oEnd))
                                                         *o++ = *p;
@@ -1992,6 +1995,29 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
                 }
 
                 return {p - content.data(), o - out};
+#else
+		for (const auto *it{p + 4}; ;)
+		{
+			while (it < e && _isalpha(*it))
+			{
+				if (likely(o != threshold))
+					*(o++)= *it;
+				++it;
+			}
+
+			if (it == e)
+				return {it - content.data(), o - out};
+			else if (*it == '.')
+				++it;
+			else if (_isdigit(*it))
+				goto l20;
+			else if (!_isalpha(*it))
+				return {it - content.data(), o - out};
+			else
+				goto l20;
+		}
+
+#endif
         }
 
 l20:
@@ -2012,7 +2038,7 @@ l20:
 
                         goto l10;
                 }
-                else if (p + 2 < e && p - content.data() == 1 && *p == '\'' && _isalpha(p[1]))
+                else if (p + 2 < e && p - content.data() == 1 && (*p == '\'' || *p == '¢') && _isalpha(p[1]))
                 {
                         // L'Oreal Revitalift
                         // Go figure

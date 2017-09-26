@@ -836,10 +836,14 @@ Trinity::DocsSetIterators::DisjunctionSome::DisjunctionSome(Trinity::DocsSetIter
         expect(minMatch);
 
         trackersStorage = (it_tracker *)malloc(sizeof(it_tracker) * (cnt + 1));
+	allPLI = true;
 
         for (uint32_t i{0}; i != cnt; ++i)
         {
                 auto t = trackersStorage + i;
+
+		if (iterators[i]->type != DocsSetIterators::Type::PostingsListIterator)
+                        allPLI = false;
 
                 t->it = iterators[i];
                 t->cost = t->it->cost();

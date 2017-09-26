@@ -4,7 +4,7 @@
 using namespace Trinity;
 
 void Trinity::intersect_impl(const uint64_t stopwordsMask,
-                             const std::vector<std::set<str8_t>> &tokens,
+                             const std::vector<std::unordered_set<str8_t>> &tokens,
                              IndexSource *__restrict__ const src, masked_documents_registry *const __restrict__ maskedDocumentsRegistry, std::vector<std::pair<uint64_t, uint32_t>> *const out)
 {
 
@@ -209,7 +209,7 @@ l10:
         }
 }
 
-std::vector<std::pair<uint64_t, uint32_t>> Trinity::intersect(const uint64_t stopwordsMask, const std::vector<std::set<str8_t>> &tokens, IndexSourcesCollection *collection)
+std::vector<std::pair<uint64_t, uint32_t>> Trinity::intersect(const uint64_t stopwordsMask, const std::vector<std::unordered_set<str8_t>> &tokens, IndexSourcesCollection *collection)
 {
         std::vector<std::pair<uint64_t, uint32_t>> out;
         const auto n = collection->sources.size();
@@ -276,7 +276,7 @@ std::vector<std::pair<range_base<str8_t *, uint8_t>, std::pair<uint8_t, std::siz
 
         // This works because Trinity::rewrite_query() sets rewrite_ctx for each token/phrase
         std::vector<Trinity::phrase *> v;
-        std::set<str8_t> seen;
+        std::unordered_set<str8_t> seen;
 
         for (const auto n : q.nodes())
         {
@@ -289,12 +289,12 @@ std::vector<std::pair<range_base<str8_t *, uint8_t>, std::pair<uint8_t, std::siz
         });
 
         // Collect offset => set(tokens)
-        std::vector<std::set<str8_t>> V;
+        std::vector<std::unordered_set<str8_t>> V;
 
         for (const auto *p = v.data(), *const e = p + v.size(); p != e;)
         {
                 const auto idx = (*p)->rewrite_ctx.range.offset;
-                std::set<str8_t> S;
+                std::unordered_set<str8_t> S;
 
 		// The first token for an index is the original token (and any other for that index
 		// were expanded from that token)

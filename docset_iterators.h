@@ -76,6 +76,7 @@ namespace Trinity
                                 isrc_docid_t id; // we could just use it->current(), but this simplifies processing somewhat
                                 it_tracker *next;
                         } * lead{nullptr};
+			bool allPLI;
 
                       public:
                         const uint16_t matchThreshold;

@@ -3,14 +3,14 @@
 #include "index_source.h"
 #include "matches.h"
 #include "queries.h"
-#include <set>
+#include <unordered_set>
 #include <switch_bitops.h>
 
 // This only works(currently) if IndexSource::translate_docid() is an identify function
 // because we are merge-sorting expecting the order of IDs to be be monotonically ascending
 namespace Trinity
 {
-        // tokens is a std::vector<> of std::set<> where each set represents the list of synonymous tokens (e.g ball, balls)
+        // tokens is a std::vector<> of std::unordered_set<> where each set represents the list of synonymous tokens (e.g ball, balls)
         // that std::vector<> size cannot exceed 64(because sizeof(uint64_t)*3 == 64)
 
         // If you want to ignore intersections here (as opposed to later when you process the results), by checking if the first or last token
@@ -23,9 +23,9 @@ namespace Trinity
         // if we don't, we 'll return (world of warcraft, of gears war, of war)
         // neither of them is optimal, but then again, there is not much we do around this except perhaps
         // consider past queries compsied of those tokens and figure out which is the most popular arrangement of tokens
-        void intersect_impl(const uint64_t stopwordsMask, const std::vector<std::set<str8_t>> &tokens, IndexSource *src, masked_documents_registry *, std::vector<std::pair<uint64_t, uint32_t>> *);
+        void intersect_impl(const uint64_t stopwordsMask, const std::vector<std::unordered_set<str8_t>> &tokens, IndexSource *src, masked_documents_registry *, std::vector<std::pair<uint64_t, uint32_t>> *);
 
-        inline std::vector<std::pair<uint64_t, uint32_t>> intersect(const uint64_t stopwordsMask, const std::vector<std::set<str8_t>> &tokens, IndexSource *src, masked_documents_registry *reg)
+        inline std::vector<std::pair<uint64_t, uint32_t>> intersect(const uint64_t stopwordsMask, const std::vector<std::unordered_set<str8_t>> &tokens, IndexSource *src, masked_documents_registry *reg)
         {
                 std::vector<std::pair<uint64_t, uint32_t>> res;
 
@@ -35,7 +35,7 @@ namespace Trinity
 
         // Should just merge from the collection and then return that
         std::vector<std::pair<uint64_t, uint32_t>> intersect(const uint64_t stopwordsMask,
-                                                             const std::vector<std::set<str8_t>> &tokens,
+                                                             const std::vector<std::unordered_set<str8_t>> &tokens,
                                                              IndexSourcesCollection *collection);
 
 	// Returns the index (bits offsets in bitmap)

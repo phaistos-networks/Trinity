@@ -6,7 +6,7 @@
 #include <emmintrin.h> // for _mm_prefetch() intrinsic . We could have also used __builtin_prefetch()
 #endif
 
-#define TRINITY_VERSION (2 * 10 + 1) 
+#define TRINITY_VERSION (2 * 10 + 2) 
 
 // Define if you want to read in the contents of the index instead of memory mapping it to the process space
 // You probably don't want to do that though

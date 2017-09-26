@@ -1,6 +1,6 @@
 #include "merge.h"
 #include "docwordspace.h"
-#include <set>
+#include <unordered_set>
 #include <text.h>
 
 void Trinity::MergeCandidatesCollection::commit()
@@ -418,7 +418,7 @@ l1:;
 std::vector<std::pair<uint64_t, Trinity::MergeCandidatesCollection::IndexSourceRetention>>
 Trinity::MergeCandidatesCollection::consider_tracked_sources(std::vector<uint64_t> trackedSources)
 {
-        std::set<uint64_t> candidatesGens;
+        std::unordered_set<uint64_t> candidatesGens;
         std::vector<std::pair<uint64_t, IndexSourceRetention>> res;
         const auto cnt = trackedSources.size();
         uint32_t lastNotCandidateIdx{UINT32_MAX};
