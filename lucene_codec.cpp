@@ -2,7 +2,10 @@
 #include "utils.h"
 #include <ansifmt.h>
 #include <switch_bitops.h>
-#ifdef LUCENE_USE_MASKEDVBYTE
+#ifdef LUCENE_USE_STREAMVBYTE
+#include <ext/streamvbyte/include/streamvbyte.h>
+#include <ext/streamvbyte/include/streamvbytedelta.h>
+#elif defined(LUCENE_USE_MASKEDVBYTE)
 #include <ext/MaskedVByte/include/varintdecode.h>
 #include <ext/MaskedVByte/include/varintencode.h>
 #endif
@@ -33,7 +36,15 @@ static void pfor_encode(FastPForLib::FastPFor<4> &forUtil, const uint32_t *value
                 return;
         }
 
-#ifdef LUCENE_USE_MASKEDVBYTE
+#ifdef LUCENE_USE_STREAMVBYTE
+	out.reserve(n * 8 + 256);
+	out.pack(uint8_t(1));
+
+	const auto len = streamvbyte_encode(const_cast<uint32_t *>(values), n, reinterpret_cast<uint8_t *>(out.end()));
+
+	out.advance_size(len);
+
+#elif defined(LUCENE_USE_MASKEDVBYTE)
         out.reserve(n * 8);
         out.pack(uint8_t(1));
 
@@ -69,7 +80,9 @@ static const uint8_t *pfor_decode(FastPForLib::FastPFor<4> &forUtil, const uint8
         }
         else
         {
-#if defined(LUCENE_USE_MASKEDVBYTE)
+#ifdef LUCENE_USE_STREAMVBYTE
+		p += streamvbyte_decode(p, values, Trinity::Codecs::Lucene::BLOCK_SIZE);
+#elif defined(LUCENE_USE_MASKEDVBYTE)
                 p += masked_vbyte_decode(p, values, Trinity::Codecs::Lucene::BLOCK_SIZE);
 #else
                 size_t n{Trinity::Codecs::Lucene::BLOCK_SIZE};

@@ -4,6 +4,26 @@
 
 static_assert(sizeof(Trinity::isrc_docid_t) <= sizeof(uint32_t));
 
+// You should edit Makefile accordingly. That is, Makefile's LUCENE_ENCODING_SCHEME should set in accordance with the LUCENE_USE_X macro set here
+// You should probably use streaming vbyte, by defining LUCENE_USE_STREAMVBYTE and setting LUCENE_ENCODING_SCHEME to streamvbyte
+// It's not the default here because you may have Lucene indices created alread using Lucene codec and PFOR encoding scheme.
+
+#if 0
+// Faster than both PFOR and masked vbyte
+// https://github.com/lemire/streamvbyte
+// Results in larger indices compared to pfor though
+#define LUCENE_USE_STREAMVBYTE 1
+#elif 0
+// Slower than both PFOR and streaming vbyte
+// http://maskedvbyte.org
+#define LUCENE_USE_MASKEDVBYTE 1
+#else
+// Smaller indices in terms of size, but slower than stream vbyte
+// https://github.com/lemire/FastPFor
+#endif
+
+
+
 namespace Trinity
 {
         namespace Codecs
@@ -19,9 +39,7 @@ namespace Trinity
 // is (1<<31) + 15, this will fail. However, see IndexSource::translate_docid() for how that would work with docIDs translations
 //#define LUCENE_ENCODE_FREQ1_DOCDELTA 1
 
-// this doesn't seem to be helping much
-// however, we are not using masked_vbyte_select_delta()/masked_vbyte_search_delta() which could been useful
-//#define LUCENE_USE_MASKEDVBYTE 1
+
 #ifdef LUCENE_USE_MASKEDVBYTE
                         static constexpr size_t BLOCK_SIZE{64};
 #else
