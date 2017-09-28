@@ -24,7 +24,11 @@ static bool all_equal(const uint32_t *const __restrict__ values, const size_t n)
         return true;
 }
 
+#ifdef LUCENE_USE_FASTPFOR
 static void pfor_encode(FastPForLib::FastPFor<4> &forUtil, const uint32_t *values, const size_t n, IOBuffer &out)
+#else
+static void pfor_encode(const uint32_t *values, const size_t n, IOBuffer &out)
+#endif
 {
         if (all_equal(values, n))
         {
@@ -37,12 +41,12 @@ static void pfor_encode(FastPForLib::FastPFor<4> &forUtil, const uint32_t *value
         }
 
 #ifdef LUCENE_USE_STREAMVBYTE
-	out.reserve(n * 8 + 256);
-	out.pack(uint8_t(1));
+        out.reserve(n * 8 + 256);
+        out.pack(uint8_t(1));
 
-	const auto len = streamvbyte_encode(const_cast<uint32_t *>(values), n, reinterpret_cast<uint8_t *>(out.end()));
+        const auto len = streamvbyte_encode(const_cast<uint32_t *>(values), n, reinterpret_cast<uint8_t *>(out.end()));
 
-	out.advance_size(len);
+        out.advance_size(len);
 
 #elif defined(LUCENE_USE_MASKEDVBYTE)
         out.reserve(n * 8);
@@ -63,7 +67,11 @@ static void pfor_encode(FastPForLib::FastPFor<4> &forUtil, const uint32_t *value
 #endif
 }
 
+#ifdef LUCENE_USE_FASTPFOR
 static const uint8_t *pfor_decode(FastPForLib::FastPFor<4> &forUtil, const uint8_t *__restrict p, uint32_t *const __restrict values)
+#else
+static const uint8_t *pfor_decode(const uint8_t *__restrict p, uint32_t *const __restrict values)
+#endif
 {
         if (const auto blockSize = *p++; blockSize == 0)
         {
@@ -81,7 +89,7 @@ static const uint8_t *pfor_decode(FastPForLib::FastPFor<4> &forUtil, const uint8
         else
         {
 #ifdef LUCENE_USE_STREAMVBYTE
-		p += streamvbyte_decode(p, values, Trinity::Codecs::Lucene::BLOCK_SIZE);
+                p += streamvbyte_decode(p, values, Trinity::Codecs::Lucene::BLOCK_SIZE);
 #elif defined(LUCENE_USE_MASKEDVBYTE)
                 p += masked_vbyte_decode(p, values, Trinity::Codecs::Lucene::BLOCK_SIZE);
 #else
@@ -204,7 +212,11 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
 
                 const uint8_t *payloadsIt, *payloadsEnd;
 
+#ifdef LUCENE_USE_FASTPFOR
                 void refill_hits(FastPForLib::FastPFor<4> &forUtil)
+#else
+                void refill_hits()
+#endif
                 {
                         uint32_t payloadsChunkLength;
                         auto hdp = positions_chunk.p;
@@ -216,8 +228,13 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
 
                         if (hitsLeft >= BLOCK_SIZE)
                         {
+#ifdef LUCENE_USE_FASTPFOR
                                 hdp = pfor_decode(forUtil, hdp, hitsPositionDeltas);
                                 hdp = pfor_decode(forUtil, hdp, hitsPayloadLengths);
+#else
+                                hdp = pfor_decode(hdp, hitsPositionDeltas);
+                                hdp = pfor_decode(hdp, hitsPayloadLengths);
+#endif
 
                                 varbyte_get32(hdp, payloadsChunkLength);
 
@@ -258,15 +275,24 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                         hitsIndex = 0;
                 }
 
+#ifdef LUCENE_USE_FASTPFOR
                 void refill_documents(FastPForLib::FastPFor<4> &forUtil)
+#else
+                void refill_documents()
+#endif
                 {
                         if (trace)
                                 SLog("Refilling documents ", documentsLeft, "\n");
 
                         if (documentsLeft >= BLOCK_SIZE)
                         {
+#ifdef LUCENE_USE_FASTPFOR
                                 index_chunk.p = pfor_decode(forUtil, index_chunk.p, docDeltas);
                                 index_chunk.p = pfor_decode(forUtil, index_chunk.p, docFreqs);
+#else
+                                index_chunk.p = pfor_decode(index_chunk.p, docDeltas);
+                                index_chunk.p = pfor_decode(index_chunk.p, docFreqs);
+#endif
 
                                 cur_block.size = BLOCK_SIZE;
                                 documentsLeft -= BLOCK_SIZE;
@@ -306,7 +332,11 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                                 SLog(cur_block.i, " ", cur_block.size, "\n");
                 }
 
+#ifdef LUCENE_USE_FASTPFOR
                 void skip_ommitted_hits(FastPForLib::FastPFor<4> &forUtil)
+#else
+                void skip_ommitted_hits()
+#endif
                 {
                         if (trace)
                                 SLog("Skipping omitted hits ", skippedHits, ", bufferedHits = ", bufferedHits, "\n");
@@ -370,7 +400,13 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                                 do
                                 {
                                         if (hitsIndex == bufferedHits)
+                                        {
+#ifdef LUCENE_USE_FASTPFOR
                                                 refill_hits(forUtil);
+#else
+                                                refill_hits();
+#endif
+                                        }
 
                                         const auto step = std::min<uint32_t>(skippedHits, bufferedHits - hitsIndex);
 
@@ -387,7 +423,11 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                         }
                 }
 
+#ifdef LUCENE_USE_FASTPFOR
                 void output_hits(FastPForLib::FastPFor<4> &forUtil, Trinity::Codecs::Lucene::Encoder *__restrict__ enc)
+#else
+                void output_hits(Trinity::Codecs::Lucene::Encoder *__restrict__ enc)
+#endif
                 {
                         auto freq = docFreqs[cur_block.i];
                         uint64_t payload;
@@ -396,7 +436,11 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                         if (trace)
                                 SLog("Will output hits for ", cur_block.i, " ", freq, ", skippedHits = ", skippedHits, "\n");
 
+#ifdef LUCENE_USE_FASTPFOR
                         skip_ommitted_hits(forUtil);
+#else
+                        skip_ommitted_hits();
+#endif
 
                         if (const auto upto = hitsIndex + freq; upto <= bufferedHits)
                         {
@@ -461,7 +505,11 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                                                 if (trace)
                                                         SLog("Will refill hits (Freq now = ", freq, ")\n");
 
+#ifdef LUCENE_USE_FASTPFOR
                                                 refill_hits(forUtil);
+#else
+                                                refill_hits();
+#endif
                                         }
                                         else
                                                 break;
@@ -471,7 +519,11 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                         docFreqs[cur_block.i] = 0; // simplifies processing logic (See next().)
                 }
 
+#ifdef LUCENE_USE_FASTPFOR
                 bool next(FastPForLib::FastPFor<4> &forUtil)
+#else
+                bool next()
+#endif
                 {
                         skippedHits += docFreqs[cur_block.i];
                         lastDocID += docDeltas[cur_block.i++];
@@ -484,11 +536,19 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                                 if (!documentsLeft)
                                         return false;
 
-                                // this is important, because refill_documents()
-                                // will update cur_block
+// this is important, because refill_documents()
+// will update cur_block
+#ifdef LUCENE_USE_FASTPFOR
                                 skip_ommitted_hits(forUtil);
+#else
+                                skip_ommitted_hits();
+#endif
 
+#ifdef LUCENE_USE_FASTPFOR
                                 refill_documents(forUtil);
+#else
+                                refill_documents();
+#endif
                         }
                         else
                         {
@@ -555,7 +615,11 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                         c->index_chunk.e -= skiplistSize * skiplistEntrySize;
                 }
 
+#ifdef LUCENE_USE_FASTPFOR
                 c->refill_documents(forUtil);
+#else
+                c->refill_documents();
+#endif
         }
 
         for (isrc_docid_t prev{0};;)
@@ -586,7 +650,11 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                         [[maybe_unused]] const auto freq = c->current_freq();
 
                         encoder->begin_document(did);
+#ifdef LUCENE_USE_FASTPFOR
                         c->output_hits(forUtil, encoder);
+#else
+                        c->output_hits(encoder);
+#endif
                         encoder->end_document();
                 }
 
@@ -595,7 +663,11 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                         const auto idx = toAdvance[--toAdvanceCnt];
                         auto c = candidates + idx;
 
+#ifdef LUCENE_USE_FASTPFOR
                         if (!c->next(forUtil))
+#else
+                        if (!c->next())
+#endif
                         {
                                 if (!--rem)
                                         goto l1;
@@ -647,8 +719,13 @@ void Trinity::Codecs::Lucene::Encoder::output_block()
 
         auto indexOut = &sess->indexOut;
 
+#ifdef LUCENE_USE_FASTPFOR
         pfor_encode(forUtil, docDeltas, buffered, *indexOut);
         pfor_encode(forUtil, docFreqs, buffered, *indexOut);
+#else
+        pfor_encode(docDeltas, buffered, *indexOut);
+        pfor_encode(docFreqs, buffered, *indexOut);
+#endif
         buffered = 0;
 
         if (trace)
@@ -724,8 +801,13 @@ void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_b
 
                 sumHits += totalHits;
 
+#ifdef LUCENE_USE_FASTPFOR
                 pfor_encode(forUtil, hitPosDeltas, totalHits, *positionsOut);
                 pfor_encode(forUtil, hitPayloadSizes, totalHits, *positionsOut);
+#else
+                pfor_encode(hitPosDeltas, totalHits, *positionsOut);
+                pfor_encode(hitPayloadSizes, totalHits, *positionsOut);
+#endif
 
                 {
                         size_t s{0};
@@ -863,8 +945,13 @@ void Trinity::Codecs::Lucene::Decoder::refill_hits(PostingsListIterator *it)
 
         if (it->hitsLeft >= BLOCK_SIZE)
         {
+#ifdef LUCENE_USE_FASTPFOR
                 it->hdp = pfor_decode(forUtil, it->hdp, it->hitsPositionDeltas);
                 it->hdp = pfor_decode(forUtil, it->hdp, it->hitsPayloadLengths);
+#else
+                it->hdp = pfor_decode(it->hdp, it->hitsPositionDeltas);
+                it->hdp = pfor_decode(it->hdp, it->hitsPayloadLengths);
+#endif
 
                 varbyte_get32(it->hdp, payloadsChunkLength);
                 it->payloadsIt = it->hdp;
@@ -963,8 +1050,14 @@ void Trinity::Codecs::Lucene::Decoder::refill_documents(Trinity::Codecs::Lucene:
 {
         if (it->docsLeft >= BLOCK_SIZE)
         {
+#ifdef LUCENE_USE_FASTPFOR
                 it->p = pfor_decode(forUtil, it->p, it->docDeltas);
                 it->p = pfor_decode(forUtil, it->p, it->docFreqs);
+#else
+                it->p = pfor_decode(it->p, it->docDeltas);
+                it->p = pfor_decode(it->p, it->docFreqs);
+#endif
+
                 it->bufferedDocs = BLOCK_SIZE;
                 it->docsLeft -= BLOCK_SIZE;
         }

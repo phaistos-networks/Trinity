@@ -1,6 +1,5 @@
 #pragma once
 #include "codecs.h"
-#include <ext/FastPFor/headers/fastpfor.h>
 
 static_assert(sizeof(Trinity::isrc_docid_t) <= sizeof(uint32_t));
 
@@ -10,7 +9,7 @@ static_assert(sizeof(Trinity::isrc_docid_t) <= sizeof(uint32_t));
 
 #if 0
 // Faster than both PFOR and masked vbyte
-// https://github.com/lemire/streamvbyte
+// https://github.com/lemire/streamvbyte and https://lemire.me/blog/2017/09/27/stream-vbyte-breaking-new-speed-records-for-integer-compression/
 // Results in larger indices compared to pfor though
 #define LUCENE_USE_STREAMVBYTE 1
 #elif 0
@@ -20,6 +19,8 @@ static_assert(sizeof(Trinity::isrc_docid_t) <= sizeof(uint32_t));
 #else
 // Smaller indices in terms of size, but slower than stream vbyte
 // https://github.com/lemire/FastPFor
+#include <ext/FastPFor/headers/fastpfor.h>
+#define LUCENE_USE_FASTPFOR 1
 #endif
 
 
@@ -50,7 +51,10 @@ namespace Trinity
                         struct IndexSession final
                             : public Trinity::Codecs::IndexSession
                         {
+#ifdef LUCENE_USE_FASTPFOR
                                 FastPForLib::FastPFor<4> forUtil; // handy for merge()
+#endif
+
 
                                 // TODO: support for periodic flushing
                                 // i.e in either Encoder::end_term() or Encoder::end_document()
@@ -120,7 +124,9 @@ namespace Trinity
                                 uint32_t termDocuments;
                                 tokenpos_t lastPosition;
                                 uint32_t termIndexOffset, termPositionsOffset;
+#ifdef LUCENE_USE_FASTPFOR
                                 FastPForLib::FastPFor<4> forUtil;
+#endif
                                 IOBuffer payloadsBuf;
                                 uint32_t skiplistCountdown, lastHitsBlockOffset, lastHitsBlockTotalHits;
                                 skiplist_entry cur_block;
@@ -229,7 +235,11 @@ namespace Trinity
 #ifdef LUCENE_LAZY_SKIPLIST_INIT
                                 uint16_t skiplistSize;
 #endif
+
+#ifdef LUCENE_USE_FASTPFOR
                                 FastPForLib::FastPFor<4> forUtil;
+#endif
+
                                 struct skiplist_struct
                                 {
                                         skiplist_entry *data;
