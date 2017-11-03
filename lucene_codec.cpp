@@ -25,9 +25,9 @@ static bool all_equal(const uint32_t *const __restrict__ values, const size_t n)
 }
 
 #ifdef LUCENE_USE_FASTPFOR
-static void pfor_encode(FastPForLib::FastPFor<4> &forUtil, const uint32_t *values, const size_t n, IOBuffer &out)
+static void ints_encode(FastPForLib::FastPFor<4> &forUtil, const uint32_t *values, const size_t n, IOBuffer &out)
 #else
-static void pfor_encode(const uint32_t *values, const size_t n, IOBuffer &out)
+static void ints_encode(const uint32_t *values, const size_t n, IOBuffer &out)
 #endif
 {
         if (all_equal(values, n))
@@ -68,9 +68,9 @@ static void pfor_encode(const uint32_t *values, const size_t n, IOBuffer &out)
 }
 
 #ifdef LUCENE_USE_FASTPFOR
-static const uint8_t *pfor_decode(FastPForLib::FastPFor<4> &forUtil, const uint8_t *__restrict p, uint32_t *const __restrict values)
+static const uint8_t *ints_decode(FastPForLib::FastPFor<4> &forUtil, const uint8_t *__restrict p, uint32_t *const __restrict values)
 #else
-static const uint8_t *pfor_decode(const uint8_t *__restrict p, uint32_t *const __restrict values)
+static const uint8_t *ints_decode(const uint8_t *__restrict p, uint32_t *const __restrict values)
 #endif
 {
         if (const auto blockSize = *p++; blockSize == 0)
@@ -229,11 +229,11 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                         if (hitsLeft >= BLOCK_SIZE)
                         {
 #ifdef LUCENE_USE_FASTPFOR
-                                hdp = pfor_decode(forUtil, hdp, hitsPositionDeltas);
-                                hdp = pfor_decode(forUtil, hdp, hitsPayloadLengths);
+                                hdp = ints_decode(forUtil, hdp, hitsPositionDeltas);
+                                hdp = ints_decode(forUtil, hdp, hitsPayloadLengths);
 #else
-                                hdp = pfor_decode(hdp, hitsPositionDeltas);
-                                hdp = pfor_decode(hdp, hitsPayloadLengths);
+                                hdp = ints_decode(hdp, hitsPositionDeltas);
+                                hdp = ints_decode(hdp, hitsPayloadLengths);
 #endif
 
                                 varbyte_get32(hdp, payloadsChunkLength);
@@ -287,11 +287,11 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
                         if (documentsLeft >= BLOCK_SIZE)
                         {
 #ifdef LUCENE_USE_FASTPFOR
-                                index_chunk.p = pfor_decode(forUtil, index_chunk.p, docDeltas);
-                                index_chunk.p = pfor_decode(forUtil, index_chunk.p, docFreqs);
+                                index_chunk.p = ints_decode(forUtil, index_chunk.p, docDeltas);
+                                index_chunk.p = ints_decode(forUtil, index_chunk.p, docFreqs);
 #else
-                                index_chunk.p = pfor_decode(index_chunk.p, docDeltas);
-                                index_chunk.p = pfor_decode(index_chunk.p, docFreqs);
+                                index_chunk.p = ints_decode(index_chunk.p, docDeltas);
+                                index_chunk.p = ints_decode(index_chunk.p, docFreqs);
 #endif
 
                                 cur_block.size = BLOCK_SIZE;
@@ -720,11 +720,11 @@ void Trinity::Codecs::Lucene::Encoder::output_block()
         auto indexOut = &sess->indexOut;
 
 #ifdef LUCENE_USE_FASTPFOR
-        pfor_encode(forUtil, docDeltas, buffered, *indexOut);
-        pfor_encode(forUtil, docFreqs, buffered, *indexOut);
+        ints_encode(forUtil, docDeltas, buffered, *indexOut);
+        ints_encode(forUtil, docFreqs, buffered, *indexOut);
 #else
-        pfor_encode(docDeltas, buffered, *indexOut);
-        pfor_encode(docFreqs, buffered, *indexOut);
+        ints_encode(docDeltas, buffered, *indexOut);
+        ints_encode(docFreqs, buffered, *indexOut);
 #endif
         buffered = 0;
 
@@ -802,11 +802,11 @@ void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_b
                 sumHits += totalHits;
 
 #ifdef LUCENE_USE_FASTPFOR
-                pfor_encode(forUtil, hitPosDeltas, totalHits, *positionsOut);
-                pfor_encode(forUtil, hitPayloadSizes, totalHits, *positionsOut);
+                ints_encode(forUtil, hitPosDeltas, totalHits, *positionsOut);
+                ints_encode(forUtil, hitPayloadSizes, totalHits, *positionsOut);
 #else
-                pfor_encode(hitPosDeltas, totalHits, *positionsOut);
-                pfor_encode(hitPayloadSizes, totalHits, *positionsOut);
+                ints_encode(hitPosDeltas, totalHits, *positionsOut);
+                ints_encode(hitPayloadSizes, totalHits, *positionsOut);
 #endif
 
                 {
@@ -946,11 +946,11 @@ void Trinity::Codecs::Lucene::Decoder::refill_hits(PostingsListIterator *it)
         if (it->hitsLeft >= BLOCK_SIZE)
         {
 #ifdef LUCENE_USE_FASTPFOR
-                it->hdp = pfor_decode(forUtil, it->hdp, it->hitsPositionDeltas);
-                it->hdp = pfor_decode(forUtil, it->hdp, it->hitsPayloadLengths);
+                it->hdp = ints_decode(forUtil, it->hdp, it->hitsPositionDeltas);
+                it->hdp = ints_decode(forUtil, it->hdp, it->hitsPayloadLengths);
 #else
-                it->hdp = pfor_decode(it->hdp, it->hitsPositionDeltas);
-                it->hdp = pfor_decode(it->hdp, it->hitsPayloadLengths);
+                it->hdp = ints_decode(it->hdp, it->hitsPositionDeltas);
+                it->hdp = ints_decode(it->hdp, it->hitsPayloadLengths);
 #endif
 
                 varbyte_get32(it->hdp, payloadsChunkLength);
@@ -1051,11 +1051,11 @@ void Trinity::Codecs::Lucene::Decoder::refill_documents(Trinity::Codecs::Lucene:
         if (it->docsLeft >= BLOCK_SIZE)
         {
 #ifdef LUCENE_USE_FASTPFOR
-                it->p = pfor_decode(forUtil, it->p, it->docDeltas);
-                it->p = pfor_decode(forUtil, it->p, it->docFreqs);
+                it->p = ints_decode(forUtil, it->p, it->docDeltas);
+                it->p = ints_decode(forUtil, it->p, it->docFreqs);
 #else
-                it->p = pfor_decode(it->p, it->docDeltas);
-                it->p = pfor_decode(it->p, it->docFreqs);
+                it->p = ints_decode(it->p, it->docDeltas);
+                it->p = ints_decode(it->p, it->docFreqs);
 #endif
 
                 it->bufferedDocs = BLOCK_SIZE;

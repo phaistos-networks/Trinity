@@ -2,17 +2,17 @@
 
 using namespace Trinity;
 
-bool percolator_query::match()
+bool percolator_query::match(percolator_document_proxy &src)
 {
-	return exec(root);
+	return exec(root, src);
 }
 
-bool percolator_query::exec(const exec_node n)
+bool percolator_query::exec(const exec_node n, percolator_document_proxy &src)
 {
         switch (n.fp)
         {
 		case ENT::matchterm:
-			return match_term(n.u16);
+			return src.match_term(n.u16);
 
                 case ENT::constfalse:
                         return false;
@@ -26,7 +26,7 @@ bool percolator_query::exec(const exec_node n)
 
                         for (uint32_t i{0}; i != run->size; ++i)
                         {
-                                if (!match_term(run->terms[i]))
+                                if (!src.match_term(run->terms[i]))
                                         return false;
                         }
 
@@ -40,7 +40,7 @@ bool percolator_query::exec(const exec_node n)
 
                         for (uint32_t i{0}; i != run->size; ++i)
                         {
-                                if (match_term(run->terms[i]))
+                                if (src.match_term(run->terms[i]))
                                         return true;
                         }
 
@@ -49,10 +49,10 @@ bool percolator_query::exec(const exec_node n)
                 break;
 
                 case ENT::unaryand:
-                        return exec(static_cast<const compilation_ctx::unaryop_ctx *>(n.ptr)->expr);
+                        return exec(static_cast<const compilation_ctx::unaryop_ctx *>(n.ptr)->expr, src);
 
                 case ENT::unarynot:
-                        return !exec(static_cast<const compilation_ctx::unaryop_ctx *>(n.ptr)->expr);
+                        return !exec(static_cast<const compilation_ctx::unaryop_ctx *>(n.ptr)->expr, src);
 
                 case ENT::matchanyphrases:
                 {
@@ -62,7 +62,7 @@ bool percolator_query::exec(const exec_node n)
                         {
                                 const auto p = run->phrases[i];
 
-                                if (match_phrase(p->termIDs, p->size))
+                                if (src.match_phrase(p->termIDs, p->size))
                                         return true;
                         }
 
@@ -77,7 +77,7 @@ bool percolator_query::exec(const exec_node n)
                         {
                                 const auto p = run->phrases[i];
 
-                                if (!match_phrase(p->termIDs, p->size))
+                                if (!src.match_phrase(p->termIDs, p->size))
                                         return false;
                         }
 
@@ -88,28 +88,28 @@ bool percolator_query::exec(const exec_node n)
                 {
                         const auto p = static_cast<const compilation_ctx::phrase *>(n.ptr);
 
-                        return match_phrase(p->termIDs, p->size);
+                        return src.match_phrase(p->termIDs, p->size);
                 }
 
                 case ENT::logicaland:
                 {
                         const auto b = static_cast<const compilation_ctx::binop_ctx *>(n.ptr);
 
-                        return exec(b->lhs) && exec(b->rhs);
+                        return exec(b->lhs, src) && exec(b->rhs, src);
                 }
 
                 case ENT::logicalnot:
                 {
                         const auto b = static_cast<const compilation_ctx::binop_ctx *>(n.ptr);
 
-                        return exec(b->lhs) && !exec(b->rhs);
+                        return exec(b->lhs, src) && !exec(b->rhs, src);
                 }
 
                 case ENT::logicalor:
                 {
                         const auto b = static_cast<const compilation_ctx::binop_ctx *>(n.ptr);
 
-                        return exec(b->lhs) || exec(b->rhs);
+                        return exec(b->lhs, src) || exec(b->rhs, src);
                 }
 
                 case ENT::matchsome:
@@ -119,7 +119,7 @@ bool percolator_query::exec(const exec_node n)
 
                         for (uint32_t i{0}; i != pm->size; ++i)
                         {
-                                if (exec(pm->nodes[i]) && ++matched == pm->min)
+                                if (exec(pm->nodes[i], src) && ++matched == pm->min)
                                         return true;
                         }
                         return false;
@@ -131,7 +131,7 @@ bool percolator_query::exec(const exec_node n)
 
                         for (uint32_t i{0}; i != g->size; ++i)
                         {
-                                if (!exec(g->nodes[i]))
+                                if (!exec(g->nodes[i], src))
                                         return false;
                         }
                         return true;
@@ -143,7 +143,7 @@ bool percolator_query::exec(const exec_node n)
 
                         for (uint32_t i{0}; i != g->size; ++i)
                         {
-                                if (exec(g->nodes[i]))
+                                if (exec(g->nodes[i], src))
                                         return true;
                         }
                         return false;

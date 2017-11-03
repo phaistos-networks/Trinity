@@ -1,40 +1,6 @@
-// This is inspired by Elastic Search's Percolator functionality.
-// You can register queries, and then you can feed documents to ES(that don't necessarily need to be indexed)
-// and ES will index the document in-memory(temp.index) and run all registered queries against it, determining which match.
-// This is useful for e.g alerts and subscriptions. See https://speakerdeck.com/javanna/whats-new-in-percolator
-//
-// Trinity provides a similar aux. class/interface for building a percolator like service or anything that requires matching a query
-// against a 'document' quickly. 
-// You can subclass Trinity::percolator_query, and override match_term() and match_phrase() to return true if the term or phrase respectivally match.
-// The idea is that you can use it like so:
-// {
-// 	Trinity::query q("lucene OR trinity OR google NOT duckduckgo");
-//
-// 	struct MyServicePercolatorQuery final
-// 		: public Trinity::percolator_query
-// 	{
-//		bool match_term(const uint16_t term) override final { ... };
-//		bool match_phrase(const uint16_t *phraseTerms, const uint16_t phraseTermsCnt) override final { ... };
-//		
-//		MyServicePercolatorQuery(const Trinity::query &q)
-//			: percolator_query{q}
-//		{
-//		}
-//	};
-//
-//	MyServicePercolatorQuery percolatorQuery(q);
-//
-//	const auto matched = percolatorQuery.match();
-// }
-// 	
-// Before invoking match(), you should, for example, 'reset' percolatorQuery to track the terms of a new document; either all terms, or
-// all distinct terms involved in the query. You can access those via percolatorQuery.distinct_terms()
-// your match_term() and match_phrase() impl. can then just use that information to return true or false.
-// match() will in turn return true if the document is matched, false otherwise. That's it.
-// 
-// It relies on the compilation backend of Trinity and takes advantage of the optimizer which results in very fast query evaluation
-// You could, of course, just use the AST directly, which is easy and it works perfectly fine. However, by compiling to the execution tree, you take
-// advantage of the various many optimizations already implemented.
+// See https://www.youtube.com/watch?v=f4lqBb1d7no&list=PLcGKfGEEONaDzd0Hkn2f1talsTu1HLDYu&index=21
+//  Describes the Predicate Index Twitter employs to reduce number of distinct rules to 
+// attempt to match against a new tweet.
 #include "common.h"
 #include "compilation_ctx.h"
 #include "queries.h"
@@ -42,7 +8,18 @@
 
 namespace Trinity
 {
-        class percolator_query
+	struct percolator_document_proxy
+	{
+		// Just override those two methods
+		// You can access the actual term via term_by_index(idx)
+		// 
+		// You can e.g reset state, and then match()
+                virtual bool match_term(const uint16_t term) = 0;
+
+                virtual bool match_phrase(const uint16_t *, const uint16_t cnt) = 0;
+	};
+
+        class percolator_query final
         {
               protected:
                 struct CCTX final
@@ -72,10 +49,11 @@ namespace Trinity
                 exec_node root;
 
               protected:
-                bool exec(const exec_node);
+                bool exec(const exec_node, percolator_document_proxy &);
 
-		auto term_by_index(const uint16_t idx)
-		{
+              public:
+                auto term_by_index(const uint16_t idx)
+                {
 			return comp_ctx.allTerms[idx - 1];
 		}
 
@@ -107,19 +85,16 @@ namespace Trinity
                                 group_execnodes(root, comp_ctx.allocator);
                 }
 
+		percolator_query()
+		{
+			root.fp = ENT::constfalse;
+		}
+
                 operator bool() const noexcept
                 {
                         return root.fp != ENT::constfalse && root.fp != ENT::dummyop;
                 }
 
-                bool match();
-
-		// Just override those two methods
-		// You can access the actual term via term_by_index(idx)
-		// 
-		// You can e.g reset state, and then match()
-                virtual bool match_term(const uint16_t term) = 0;
-
-                virtual bool match_phrase(const uint16_t *, const uint16_t cnt) = 0;
+                bool match(percolator_document_proxy &);
         };
 }

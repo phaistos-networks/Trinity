@@ -6,7 +6,6 @@
 #include <switch_dictionary.h>
 #include <switch_mallocators.h>
 #include <switch_refcnt.h>
-#include <unordered_map>
 
 namespace Trinity
 {

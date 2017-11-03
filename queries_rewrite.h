@@ -257,13 +257,15 @@ namespace Trinity
 
                 void clear(const uint8_t _k)
                 {
-                        allocator.reuse();
                         while (allocatedFlows.size())
                         {
                                 allocatedFlows.back()->~flow();
                                 allocatedFlows.pop_back();
                         }
+
+                        allocator.reuse();
                         flowsAllocator.reuse();
+
                         flows.clear();
                         flows_1.clear();
                         flows_2.clear();

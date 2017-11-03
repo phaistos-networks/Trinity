@@ -1,6 +1,6 @@
 #include "queries.h"
-#include <unordered_map>
 #include <unordered_set>
+#include <ext/flat_hash_map.h>
 #include <mutex>
 
 using namespace Trinity;
@@ -1833,7 +1833,7 @@ bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str
 void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a)
 {
         std::vector<ast_node *> stack;
-        std::unordered_map<str8_t, char_t *> map;
+        ska::flat_hash_map<str8_t, char_t *> map;
 
         stack.push_back(n);
         do

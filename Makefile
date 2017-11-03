@@ -14,11 +14,9 @@ ifeq ($(HOST), origin)
 
 	ifeq ($(LUCENE_ENCODING_SCHEME),streamvbyte)
 		SWITCH_OBJS += $(SWITCH_BASE)/ext/streamvbyte/streamvbyte.o $(SWITCH_BASE)/ext/streamvbyte/streamvbytedelta.o
+	else ifeq ($(LUCENE_ENCODING_SCHEME),maskedvbyte)
+		# make sure you link against maskedvybte; -lmaskedvbyte
 	else
-		ifeq ($(LUCENE_ENCODING_SCHEME),maskedvbyte)
-			# make sure you link against maskedvybte; -lmaskedvbyte
-		endif
-
 		SWITCH_OBJS:=$(SWITCH_BASE)/ext/FastPFor/libFastPFor.a
 		SWITCH_OBJS:=$(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/bitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/varintdecode.c.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/streamvbyte.c.o
 	endif
@@ -36,11 +34,9 @@ else
 
 	ifeq ($(LUCENE_ENCODING_SCHEME),streamvbyte)
 		SWITCH_OBJS += Switch/ext/streamvbyte/streamvbyte.o Switch/ext/streamvbyte/streamvbytedelta.o
+	else ifeq ($(LUCENE_ENCODING_SCHEME),maskedvbyte)
+		# make sure you link against maskedvybte; -lmaskedvbyte
 	else
-		ifeq ($(LUCENE_ENCODING_SCHEME),maskedvbyte)
-			# make sure you link against maskedvybte; -lmaskedvbyte
-		endif
-
 		SWITCH_OBJS:=Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/bitpacking.cpp.o Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.o Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.o Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.o Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.o Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.o Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/varintdecode.c.o Switch/ext/FastPFor/CMakeFiles/FastPFor.dir/src/streamvbyte.c.o
 	endif	
 endif
