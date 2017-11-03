@@ -428,8 +428,8 @@ namespace Trinity
                         Codecs::PostingsListIterator **const its;
                         uint16_t size;
 			const uint16_t maxMatchCnt;
-                        candidate_document *boundDocument{nullptr};
 			uint16_t matchCnt{0};
+			const bool release_docrefs;
 
                       private:
                         queryexec_ctx *const rctxRef;
@@ -439,8 +439,8 @@ namespace Trinity
                         isrc_docid_t lastUncofirmedDID{DocIDsEND};
 
                       public:
-                        Phrase(queryexec_ctx *r, Codecs::PostingsListIterator **iterators, const uint16_t cnt, const bool trackCnt)
-                            : Iterator{Type::Phrase}, its((Codecs::PostingsListIterator **)malloc(sizeof(Codecs::PostingsListIterator *) * cnt)), size{cnt}, maxMatchCnt{ uint16_t(trackCnt ? std::numeric_limits<uint16_t>::max() : 1) }, rctxRef{r}
+                        Phrase(queryexec_ctx *r, Codecs::PostingsListIterator **iterators, const uint16_t cnt, const bool trackCnt, const bool docsOnly_)
+                            : Iterator{Type::Phrase}, its((Codecs::PostingsListIterator **)malloc(sizeof(Codecs::PostingsListIterator *) * cnt)), size{cnt}, maxMatchCnt{uint16_t(trackCnt ? std::numeric_limits<uint16_t>::max() : 1)}, rctxRef{r}, release_docrefs{ docsOnly_ }
                         {
                                 require(cnt);
                                 memcpy(its, iterators, sizeof(iterators[0]) * cnt);

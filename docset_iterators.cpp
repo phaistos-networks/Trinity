@@ -86,6 +86,8 @@ bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
         const auto firstTermFreq = th->freq;
         const auto firstTermHits = th->all;
 
+	require(curDocument.id == doc->id);
+
         // On one hand, we care for documents where we have CAPTURED terms, and so we only need to bind
         // this phrase to a document if all terms match.
         // On the other hand though, we don't want to materialize a term's hits more than once.
@@ -101,7 +103,6 @@ bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
         {
                 auto it = its[i];
 
-                //require(did == it->current());
                 doc->materialize_term_hits(&rctx, it, it->decoder()->exec_ctx_termid());
         }
 
@@ -125,7 +126,19 @@ bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
 
                                         if (++matchCnt == maxMatchCnt)
                                         {
-                                                rctx.cds_release(doc);
+                                                if (release_docrefs)
+						{
+                                                        rctx.cds_release(doc);
+						}
+						else
+						{
+							// If this matches a PHRASE, and we will need this
+							// for prepare_match()
+							// then this may be an issue -- we need to otherwise
+							// retain this document and GC it later
+							rctx.track_docref(doc);
+						}
+
                                                 return true;
                                         }
                                         else
@@ -143,7 +156,15 @@ bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
                 }
         }
 
-        rctx.cds_release(doc);
+        if (release_docrefs)
+	{
+                rctx.cds_release(doc);
+	}
+	else
+	{
+		rctx.track_docref(doc);
+	}
+
         return matchCnt;
 }
 
@@ -185,10 +206,6 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Phrase::advance(const isrc_doci
                 if (unlikely(id == DocIDsEND))
                 {
                         size = 0;
-
-                        if (boundDocument)
-                                rctxRef->unbind_document(boundDocument);
-
                         return curDocument.id = DocIDsEND;
                 }
 
@@ -197,10 +214,6 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Phrase::advance(const isrc_doci
                         if (unlikely(id == DocIDsEND))
                         {
                                 size = 0;
-
-                                if (boundDocument)
-                                        rctxRef->unbind_document(boundDocument);
-
                                 return curDocument.id = DocIDsEND;
                         }
                         else if (consider_phrase_match())
@@ -221,9 +234,6 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Phrase::next()
                 {
                         size = 0;
 
-                        if (boundDocument)
-                                rctxRef->unbind_document(boundDocument);
-
                         return curDocument.id = DocIDsEND;
                 }
 
@@ -232,10 +242,6 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Phrase::next()
                         if (unlikely(id == DocIDsEND))
                         {
                                 size = 0;
-
-                                if (boundDocument)
-                                        rctxRef->unbind_document(boundDocument);
-
                                 return curDocument.id = DocIDsEND;
                         }
                         else if (consider_phrase_match())

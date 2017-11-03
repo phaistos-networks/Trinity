@@ -15,11 +15,11 @@ namespace Trinity
         // This is more aking to a short-memory implemented as a stack-sort-of system
         struct candidate_document final
         {
-                isrc_docid_t id;
+                isrc_docid_t id{0};
                 uint16_t rc{1};
                 uint16_t bindCnt{0};
                 matched_document matchedDocument;
-                bool dwsInUse{false};
+                bool dwsInUse{false};	 // we are only going to reset if we are going to use it
                 isrc_docid_t *curDocQueryTokensCaptured;
                 uint16_t curDocSeq{UINT16_MAX};
                 term_hits *termHits{nullptr};
@@ -163,6 +163,14 @@ namespace Trinity
                         ~decode_ctx_struct();
                 } decode_ctx;
 
+		struct 
+		{
+			candidate_document **data{nullptr};
+			uint16_t size{0};
+			uint16_t capacity{0};
+		} tracked_docrefs;
+
+
                 struct _reusable_cds
                 {
                         candidate_document **data{nullptr};
@@ -189,10 +197,18 @@ namespace Trinity
                 {
                         if (1 == d->rc--)
                         {
+                                if (auto th = d->termHits)
+                                        th->set_docid(0);
+
                                 d->rc = 1;
+				d->id = 0;
                                 reusableCDS.push_back(d);
                         }
                 }
+
+                void gc_retained_docs(const isrc_docid_t);
+
+		void track_docref(candidate_document *);
 
                 void bind_document(candidate_document *&, candidate_document *);
 
@@ -205,11 +221,16 @@ namespace Trinity
                         if (id <= maxTrackedDocumentID)
                         {
                                 if (auto ptr = lookup_document_inbank(id))
+				{
+					require(ptr->id == id);
                                         return ptr->retained();
+				}
                         }
 
                         auto *const res = reusableCDS.pop_one() ?: new candidate_document(this);
 
+
+			require(res->id == 0);
                         res->id = id;
                         res->dwsInUse = false;
 

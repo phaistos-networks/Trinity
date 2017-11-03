@@ -12,6 +12,7 @@
 
 static constexpr bool trace{false};
 
+
 static bool all_equal(const uint32_t *const __restrict__ values, const size_t n) noexcept
 {
         const auto v = values[0];
@@ -170,515 +171,6 @@ range32_t Trinity::Codecs::Lucene::IndexSession::append_index_chunk(const Trinit
         indexOut.serialize(p, end - p);
 
         return {uint32_t(o), srcTCTX.indexChunk.size()};
-}
-
-void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __restrict__ participants, const uint16_t participantsCnt, Trinity::Codecs::Encoder *const __restrict__ enc_)
-{
-        // This is somewhat complicated
-        static constexpr bool trace{false};
-
-        struct candidate
-        {
-                isrc_docid_t lastDocID;
-                isrc_docid_t docDeltas[BLOCK_SIZE];
-                uint32_t docFreqs[BLOCK_SIZE];
-                uint32_t hitsPayloadLengths[BLOCK_SIZE];
-                uint32_t hitsPositionDeltas[BLOCK_SIZE];
-                masked_documents_registry *maskedDocsReg;
-
-                uint32_t documentsLeft;
-                uint32_t hitsLeft;
-                uint32_t skippedHits;
-                uint16_t bufferedHits;
-                uint16_t hitsIndex;
-
-                struct
-                {
-                        const uint8_t *p;
-                        const uint8_t *e;
-                } index_chunk;
-
-                struct
-                {
-                        const uint8_t *p;
-                        const uint8_t *e;
-                } positions_chunk;
-
-                struct
-                {
-                        uint8_t i;
-                        uint8_t size;
-                } cur_block;
-
-                const uint8_t *payloadsIt, *payloadsEnd;
-
-#ifdef LUCENE_USE_FASTPFOR
-                void refill_hits(FastPForLib::FastPFor<4> &forUtil)
-#else
-                void refill_hits()
-#endif
-                {
-                        uint32_t payloadsChunkLength;
-                        auto hdp = positions_chunk.p;
-
-                        if (trace)
-                                SLog(ansifmt::bold, "REFILLING NOW, hitsLeft = ", hitsLeft, ", hitsIndex = ", hitsIndex, ", bufferedHits = ", bufferedHits, ansifmt::reset, "\n");
-
-                        require(hitsIndex == 0 || hitsIndex == BLOCK_SIZE);
-
-                        if (hitsLeft >= BLOCK_SIZE)
-                        {
-#ifdef LUCENE_USE_FASTPFOR
-                                hdp = ints_decode(forUtil, hdp, hitsPositionDeltas);
-                                hdp = ints_decode(forUtil, hdp, hitsPayloadLengths);
-#else
-                                hdp = ints_decode(hdp, hitsPositionDeltas);
-                                hdp = ints_decode(hdp, hitsPayloadLengths);
-#endif
-
-                                varbyte_get32(hdp, payloadsChunkLength);
-
-                                payloadsIt = hdp;
-                                hdp += payloadsChunkLength;
-                                payloadsEnd = hdp;
-
-                                bufferedHits = BLOCK_SIZE;
-                                hitsLeft -= BLOCK_SIZE;
-                        }
-                        else
-                        {
-                                uint32_t v;
-                                uint8_t payloadLen{0};
-
-                                payloadsChunkLength = 0;
-                                for (uint32_t i{0}; i != hitsLeft; ++i)
-                                {
-                                        varbyte_get32(hdp, v);
-
-                                        if (v & 1)
-                                                payloadLen = *hdp++;
-
-                                        hitsPositionDeltas[i] = v >> 1;
-                                        hitsPayloadLengths[i] = payloadLen;
-                                        payloadsChunkLength += payloadLen;
-                                }
-
-                                payloadsIt = hdp;
-                                hdp += payloadsChunkLength;
-                                payloadsEnd = hdp;
-
-                                bufferedHits = hitsLeft;
-                                hitsLeft = 0;
-                        }
-
-                        positions_chunk.p = hdp;
-                        hitsIndex = 0;
-                }
-
-#ifdef LUCENE_USE_FASTPFOR
-                void refill_documents(FastPForLib::FastPFor<4> &forUtil)
-#else
-                void refill_documents()
-#endif
-                {
-                        if (trace)
-                                SLog("Refilling documents ", documentsLeft, "\n");
-
-                        if (documentsLeft >= BLOCK_SIZE)
-                        {
-#ifdef LUCENE_USE_FASTPFOR
-                                index_chunk.p = ints_decode(forUtil, index_chunk.p, docDeltas);
-                                index_chunk.p = ints_decode(forUtil, index_chunk.p, docFreqs);
-#else
-                                index_chunk.p = ints_decode(index_chunk.p, docDeltas);
-                                index_chunk.p = ints_decode(index_chunk.p, docFreqs);
-#endif
-
-                                cur_block.size = BLOCK_SIZE;
-                                documentsLeft -= BLOCK_SIZE;
-                        }
-                        else
-                        {
-                                uint32_t v;
-                                auto p = index_chunk.p;
-
-                                for (uint32_t i{0}; i != documentsLeft; ++i)
-                                {
-                                        varbyte_get32(p, v);
-
-#if defined(LUCENE_ENCODE_FREQ1_DOCDELTA)
-                                        docDeltas[i] = v >> 1;
-                                        if (v & 1)
-                                                docFreqs[i] = 1;
-                                        else
-                                        {
-                                                varbyte_get32(p, v);
-                                                docFreqs[i] = v;
-                                        }
-#else
-                                        docDeltas[i] = v;
-                                        varbyte_get32(p, v);
-                                        docFreqs[i] = v;
-#endif
-                                }
-                                index_chunk.p = p;
-
-                                cur_block.size = documentsLeft;
-                                documentsLeft = 0;
-                        }
-                        cur_block.i = 0;
-
-                        if (trace)
-                                SLog(cur_block.i, " ", cur_block.size, "\n");
-                }
-
-#ifdef LUCENE_USE_FASTPFOR
-                void skip_ommitted_hits(FastPForLib::FastPFor<4> &forUtil)
-#else
-                void skip_ommitted_hits()
-#endif
-                {
-                        if (trace)
-                                SLog("Skipping omitted hits ", skippedHits, ", bufferedHits = ", bufferedHits, "\n");
-
-                        if (!skippedHits)
-                        {
-                                // There was a silly fast-path optimization here
-                                //
-                                // if (!skipppedHits) return;
-                                // else if (bufferedHits == skippedHits){ skippedHits = 0; bufferedHits = 0; hitsIndex = 0; payloadsIt = payloadsEnd; return;}
-                                // else { ... }
-                                //
-                                // which was causing all kinds of random problems(missing positions/payloads etc)
-                                // I should be able to figure out exactly what's wrong here, but just dropping this fixed everything and it's also simpler to reason about the state anyway. Better off without it
-                                return;
-                        }
-                        else
-                        {
-#if 0
-				// This is somewhat faster, but let's go withthe somewhat slower impl. because
-				// it matches Lucene::Decoder::skip_hits() and it's simpler to understand
-                                if (trace)
-                                        SLog("Slow path (bufferedHits = ", bufferedHits, ", hitsIndex = ", hitsIndex, ", rem = ", bufferedHits - hitsIndex, ") \n");
-
-                                require(hitsIndex <= bufferedHits);
-
-                                if (const auto rem = bufferedHits - hitsIndex; skippedHits >= rem)
-                                {
-					// to end of the block
-                                        skippedHits -= rem;
-                                        bufferedHits = 0;
-                                        hitsIndex = 0;
-
-					// whichever other we can skip
-                                        const auto n = skippedHits / BLOCK_SIZE;
-
-                                        for (uint32_t i{0}; i != n; ++i)
-                                                refill_hits(forUtil);
-
-                                        skippedHits -= n * BLOCK_SIZE;
-                                        payloadsIt = payloadsEnd;
-                                }
-
-                                if (skippedHits)
-                                {
-                                        uint32_t sum{0};
-
-                                        if (!bufferedHits)
-                                                refill_hits(forUtil);
-
-                                        require(hitsIndex + skippedHits <= bufferedHits);
-
-                                        for (uint32_t i{0}; i != skippedHits; ++i)
-                                                sum += hitsPayloadLengths[hitsIndex++];
-
-                                        skippedHits = 0;
-                                        payloadsIt += sum;
-                                }
-#else
-
-                                do
-                                {
-                                        if (hitsIndex == bufferedHits)
-                                        {
-#ifdef LUCENE_USE_FASTPFOR
-                                                refill_hits(forUtil);
-#else
-                                                refill_hits();
-#endif
-                                        }
-
-                                        const auto step = std::min<uint32_t>(skippedHits, bufferedHits - hitsIndex);
-
-                                        for (uint32_t i{0}; i != step; ++i)
-                                        {
-                                                const auto pl = hitsPayloadLengths[hitsIndex++];
-
-                                                payloadsIt += pl;
-                                        }
-
-                                        skippedHits -= step;
-                                } while (skippedHits);
-#endif
-                        }
-                }
-
-#ifdef LUCENE_USE_FASTPFOR
-                void output_hits(FastPForLib::FastPFor<4> &forUtil, Trinity::Codecs::Lucene::Encoder *__restrict__ enc)
-#else
-                void output_hits(Trinity::Codecs::Lucene::Encoder *__restrict__ enc)
-#endif
-                {
-                        auto freq = docFreqs[cur_block.i];
-                        uint64_t payload;
-                        tokenpos_t pos{0};
-
-                        if (trace)
-                                SLog("Will output hits for ", cur_block.i, " ", freq, ", skippedHits = ", skippedHits, "\n");
-
-#ifdef LUCENE_USE_FASTPFOR
-                        skip_ommitted_hits(forUtil);
-#else
-                        skip_ommitted_hits();
-#endif
-
-                        if (const auto upto = hitsIndex + freq; upto <= bufferedHits)
-                        {
-                                if (trace)
-                                        SLog("fast-path hitsIndex = ", hitsIndex, ", upto = ", upto, "\n");
-
-                                while (hitsIndex != upto)
-                                {
-                                        pos += hitsPositionDeltas[hitsIndex];
-
-                                        const auto pl = hitsPayloadLengths[hitsIndex];
-
-                                        if (pl)
-                                        {
-                                                memcpy(&payload, payloadsIt, pl);
-                                                payloadsIt += pl;
-                                        }
-                                        else
-                                                payload = 0;
-
-                                        enc->new_hit(pos, {(uint8_t *)&payload, uint8_t(pl)});
-
-                                        ++hitsIndex;
-                                }
-                        }
-                        else
-                        {
-                                if (trace)
-                                        SLog("SLOW path\n");
-
-                                for (;;)
-                                {
-                                        const auto n = std::min<uint32_t>(bufferedHits - hitsIndex, freq);
-                                        const auto upto = hitsIndex + n;
-
-                                        if (trace)
-                                                SLog("upto = ", upto, ", bufferedHits = ", bufferedHits, ", hitsIndex = ", hitsIndex, "\n");
-
-                                        while (hitsIndex != upto)
-                                        {
-                                                pos += hitsPositionDeltas[hitsIndex];
-
-                                                const auto pl = hitsPayloadLengths[hitsIndex];
-
-                                                if (pl)
-                                                {
-                                                        memcpy(&payload, payloadsIt, pl);
-                                                        payloadsIt += pl;
-                                                }
-                                                else
-                                                        payload = 0;
-
-                                                enc->new_hit(pos, {(uint8_t *)&payload, uint8_t(pl)});
-
-                                                ++hitsIndex;
-                                        }
-
-                                        freq -= n;
-
-                                        if (freq)
-                                        {
-                                                if (trace)
-                                                        SLog("Will refill hits (Freq now = ", freq, ")\n");
-
-#ifdef LUCENE_USE_FASTPFOR
-                                                refill_hits(forUtil);
-#else
-                                                refill_hits();
-#endif
-                                        }
-                                        else
-                                                break;
-                                }
-                        }
-
-                        docFreqs[cur_block.i] = 0; // simplifies processing logic (See next().)
-                }
-
-#ifdef LUCENE_USE_FASTPFOR
-                bool next(FastPForLib::FastPFor<4> &forUtil)
-#else
-                bool next()
-#endif
-                {
-                        skippedHits += docFreqs[cur_block.i];
-                        lastDocID += docDeltas[cur_block.i++];
-
-                        if (cur_block.i == cur_block.size)
-                        {
-                                if (trace)
-                                        SLog("End of block, documentsLeft = ", documentsLeft, "\n");
-
-                                if (!documentsLeft)
-                                        return false;
-
-// this is important, because refill_documents()
-// will update cur_block
-#ifdef LUCENE_USE_FASTPFOR
-                                skip_ommitted_hits(forUtil);
-#else
-                                skip_ommitted_hits();
-#endif
-
-#ifdef LUCENE_USE_FASTPFOR
-                                refill_documents(forUtil);
-#else
-                                refill_documents();
-#endif
-                        }
-                        else
-                        {
-                                if (trace)
-                                        SLog("NOW at ", cur_block.i, "\n");
-                        }
-
-                        return true;
-                }
-
-                constexpr auto current() noexcept
-                {
-                        return lastDocID + docDeltas[cur_block.i];
-                }
-
-                constexpr auto current_freq() noexcept
-                {
-                        return docFreqs[cur_block.i];
-                }
-        };
-
-        candidate candidates[participantsCnt];
-        uint16_t rem{participantsCnt};
-        uint16_t toAdvance[participantsCnt];
-        auto encoder = static_cast<Trinity::Codecs::Lucene::Encoder *>(enc_);
-
-        for (uint32_t i{0}; i != participantsCnt; ++i)
-        {
-                auto c = candidates + i;
-                const auto ap = static_cast<const Trinity::Codecs::Lucene::AccessProxy *>(participants[i].ap);
-                const auto *p = ap->indexPtr + participants[i].tctx.indexChunk.offset;
-
-                c->index_chunk.e = p + participants[i].tctx.indexChunk.size();
-                c->maskedDocsReg = participants[i].maskedDocsReg;
-                c->documentsLeft = participants[i].tctx.documents;
-                c->lastDocID = 0;
-                c->skippedHits = 0;
-                c->hitsIndex = 0;
-                c->bufferedHits = 0;
-                c->payloadsIt = c->payloadsEnd = nullptr;
-
-                const auto hitsDataOffset = *(uint32_t *)p;
-                p += sizeof(uint32_t);
-                const auto sumHits = *(uint32_t *)p;
-                p += sizeof(uint32_t);
-                const auto posChunkSize = *(uint32_t *)p;
-                p += sizeof(uint32_t);
-                [[maybe_unused]] const auto skiplistSize = *(uint16_t *)p;
-                p += sizeof(uint16_t);
-
-                c->index_chunk.p = p;
-                c->positions_chunk.p = ap->hitsDataPtr + hitsDataOffset;
-                c->positions_chunk.e = c->positions_chunk.p + posChunkSize;
-                c->hitsLeft = sumHits;
-
-                if (trace)
-                        SLog("participant ", i, " ", c->documentsLeft, " ", c->hitsLeft, ", skiplistSize = ", skiplistSize, "\n");
-
-                // Skip past skiplist
-                if (skiplistSize)
-                {
-                        static constexpr size_t skiplistEntrySize{sizeof(uint32_t) * 5 + sizeof(uint16_t)};
-
-                        c->index_chunk.e -= skiplistSize * skiplistEntrySize;
-                }
-
-#ifdef LUCENE_USE_FASTPFOR
-                c->refill_documents(forUtil);
-#else
-                c->refill_documents();
-#endif
-        }
-
-        for (isrc_docid_t prev{0};;)
-        {
-                uint16_t toAdvanceCnt{1};
-                auto did = candidates[0].current();
-
-                toAdvance[0] = 0;
-                for (uint32_t i{1}; i != rem; ++i)
-                {
-                        if (const auto id = candidates[i].current(); id == did)
-                                toAdvance[toAdvanceCnt++] = i;
-                        else if (id < did)
-                        {
-                                did = id;
-                                toAdvanceCnt = 1;
-                                toAdvance[0] = i;
-                        }
-                }
-
-                require(did > prev);
-                prev = did;
-
-                const auto c = candidates + toAdvance[0]; // always choose the first because they are sorted in-order
-
-                if (!c->maskedDocsReg->test(did))
-                {
-                        [[maybe_unused]] const auto freq = c->current_freq();
-
-                        encoder->begin_document(did);
-#ifdef LUCENE_USE_FASTPFOR
-                        c->output_hits(forUtil, encoder);
-#else
-                        c->output_hits(encoder);
-#endif
-                        encoder->end_document();
-                }
-
-                do
-                {
-                        const auto idx = toAdvance[--toAdvanceCnt];
-                        auto c = candidates + idx;
-
-#ifdef LUCENE_USE_FASTPFOR
-                        if (!c->next(forUtil))
-#else
-                        if (!c->next())
-#endif
-                        {
-                                if (!--rem)
-                                        goto l1;
-
-                                memmove(candidates + idx, candidates + idx + 1, (rem - idx) * sizeof(candidates[0]));
-                        }
-
-                } while (toAdvanceCnt);
-        }
-
-l1:;
 }
 
 void Trinity::Codecs::Lucene::Encoder::begin_term()
@@ -999,7 +491,7 @@ void Trinity::Codecs::Lucene::Decoder::refill_hits(PostingsListIterator *it)
                 {
                         if (it->hitsIndex + rem == it->bufferedHits)
                         {
-                                // fast-path TODO: verify me
+                                // fast-path TODO: verify me(this works, but hm.)
                                 it->skippedHits -= rem;
                                 it->hitsIndex = 0;
                                 it->bufferedHits = 0;
@@ -1334,6 +826,7 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(PostingsListIterator *it
         auto freq = it->docFreqs[it->docsIndex];
         auto outPtr = out;
 
+
         if (const auto skippedHits = it->skippedHits)
                 skip_hits(it, skippedHits);
 
@@ -1342,6 +835,7 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(PostingsListIterator *it
         auto &hitsPayloadLengths{it->hitsPayloadLengths};
         auto &hitsPositionDeltas{it->hitsPositionDeltas};
         const auto bufferedHits{it->bufferedHits};
+
 
         if (const auto upto = hitsIndex + freq; upto <= bufferedHits)
         {
@@ -1354,6 +848,7 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(PostingsListIterator *it
                         pos += hitsPositionDeltas[hitsIndex];
                         outPtr->pos = pos;
                         outPtr->payloadLen = pl;
+
 
                         if (pos)
                                 dws->set(termID, pos);
@@ -1378,6 +873,7 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(PostingsListIterator *it
                 {
                         const auto n = std::min<uint32_t>(it->bufferedHits - hitsIndex, freq);
                         const auto upto = hitsIndex + n;
+
 
                         while (hitsIndex != upto)
                         {
@@ -1522,3 +1018,470 @@ Trinity::Codecs::Lucene::AccessProxy::AccessProxy(const char *bp, const uint8_t 
                         close(fd);
         }
 }
+
+void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __restrict__ participants, const uint16_t participantsCnt, Trinity::Codecs::Encoder *const __restrict__ enc_)
+{
+        // This is somewhat complicated
+        static constexpr bool trace{false};
+
+        struct candidate
+        {
+                isrc_docid_t lastDocID;
+                isrc_docid_t docDeltas[BLOCK_SIZE];
+                uint32_t docFreqs[BLOCK_SIZE];
+                uint32_t hitsPayloadLengths[BLOCK_SIZE];
+                uint32_t hitsPositionDeltas[BLOCK_SIZE];
+                masked_documents_registry *maskedDocsReg;
+
+                uint32_t documentsLeft;
+                uint32_t hitsLeft;
+                uint32_t skippedHits;
+                uint16_t bufferedHits;
+                uint16_t hitsIndex;
+
+                struct
+                {
+                        const uint8_t *p;
+                        const uint8_t *e;
+                } index_chunk;
+
+                struct
+                {
+                        const uint8_t *p;
+                        const uint8_t *e;
+                } positions_chunk;
+
+                struct
+                {
+                        uint8_t i;
+                        uint8_t size;
+                } cur_block;
+
+                const uint8_t *payloadsIt, *payloadsEnd;
+
+#ifdef LUCENE_USE_FASTPFOR
+                void refill_hits(FastPForLib::FastPFor<4> &forUtil)
+#else
+                void refill_hits()
+#endif
+                {
+                        uint32_t payloadsChunkLength;
+                        auto hdp = positions_chunk.p;
+
+                        if (trace)
+                                SLog(ansifmt::bold, "REFILLING NOW, hitsLeft = ", hitsLeft, ", hitsIndex = ", hitsIndex, ", bufferedHits = ", bufferedHits, ansifmt::reset, "\n");
+
+                        require(hitsIndex == 0 || hitsIndex == BLOCK_SIZE);
+
+                        if (hitsLeft >= BLOCK_SIZE)
+                        {
+#ifdef LUCENE_USE_FASTPFOR
+                                hdp = ints_decode(forUtil, hdp, hitsPositionDeltas);
+                                hdp = ints_decode(forUtil, hdp, hitsPayloadLengths);
+#else
+                                hdp = ints_decode(hdp, hitsPositionDeltas);
+                                hdp = ints_decode(hdp, hitsPayloadLengths);
+#endif
+
+                                varbyte_get32(hdp, payloadsChunkLength);
+
+                                payloadsIt = hdp;
+                                hdp += payloadsChunkLength;
+                                payloadsEnd = hdp;
+
+                                bufferedHits = BLOCK_SIZE;
+                                hitsLeft -= BLOCK_SIZE;
+                        }
+                        else
+                        {
+                                uint32_t v;
+                                uint8_t payloadLen{0};
+
+                                payloadsChunkLength = 0;
+                                for (uint32_t i{0}; i != hitsLeft; ++i)
+                                {
+                                        varbyte_get32(hdp, v);
+
+                                        if (v & 1)
+                                                payloadLen = *hdp++;
+
+                                        hitsPositionDeltas[i] = v >> 1;
+                                        hitsPayloadLengths[i] = payloadLen;
+                                        payloadsChunkLength += payloadLen;
+                                }
+
+                                payloadsIt = hdp;
+                                hdp += payloadsChunkLength;
+                                payloadsEnd = hdp;
+
+                                bufferedHits = hitsLeft;
+                                hitsLeft = 0;
+                        }
+
+                        positions_chunk.p = hdp;
+                        hitsIndex = 0;
+                }
+
+#ifdef LUCENE_USE_FASTPFOR
+                void refill_documents(FastPForLib::FastPFor<4> &forUtil)
+#else
+                void refill_documents()
+#endif
+                {
+                        if (trace)
+                                SLog("Refilling documents ", documentsLeft, "\n");
+
+                        if (documentsLeft >= BLOCK_SIZE)
+                        {
+#ifdef LUCENE_USE_FASTPFOR
+                                index_chunk.p = ints_decode(forUtil, index_chunk.p, docDeltas);
+                                index_chunk.p = ints_decode(forUtil, index_chunk.p, docFreqs);
+#else
+                                index_chunk.p = ints_decode(index_chunk.p, docDeltas);
+                                index_chunk.p = ints_decode(index_chunk.p, docFreqs);
+#endif
+
+                                cur_block.size = BLOCK_SIZE;
+                                documentsLeft -= BLOCK_SIZE;
+                        }
+                        else
+                        {
+                                uint32_t v;
+                                auto p = index_chunk.p;
+
+                                for (uint32_t i{0}; i != documentsLeft; ++i)
+                                {
+                                        varbyte_get32(p, v);
+
+#if defined(LUCENE_ENCODE_FREQ1_DOCDELTA)
+                                        docDeltas[i] = v >> 1;
+                                        if (v & 1)
+                                                docFreqs[i] = 1;
+                                        else
+                                        {
+                                                varbyte_get32(p, v);
+                                                docFreqs[i] = v;
+                                        }
+#else
+                                        docDeltas[i] = v;
+                                        varbyte_get32(p, v);
+                                        docFreqs[i] = v;
+#endif
+                                }
+                                index_chunk.p = p;
+
+                                cur_block.size = documentsLeft;
+                                documentsLeft = 0;
+                        }
+                        cur_block.i = 0;
+
+                        if (trace)
+                                SLog(cur_block.i, " ", cur_block.size, "\n");
+                }
+
+#ifdef LUCENE_USE_FASTPFOR
+                void skip_ommitted_hits(FastPForLib::FastPFor<4> &forUtil)
+#else
+                void skip_ommitted_hits()
+#endif
+                {
+                        if (trace)
+                                SLog("Skipping omitted hits ", skippedHits, ", bufferedHits = ", bufferedHits, "\n");
+
+                        if (!skippedHits)
+                        {
+                                // There was a silly fast-path optimization here
+                                //
+                                // if (!skipppedHits) return;
+                                // else if (bufferedHits == skippedHits){ skippedHits = 0; bufferedHits = 0; hitsIndex = 0; payloadsIt = payloadsEnd; return;}
+                                // else { ... }
+                                //
+                                // which was causing all kinds of random problems(missing positions/payloads etc)
+                                // I should be able to figure out exactly what's wrong here, but just dropping this fixed everything and it's also simpler to reason about the state anyway. Better off without it
+                                return;
+                        }
+                        else
+                        {
+                                do
+                                {
+                                        if (hitsIndex == bufferedHits)
+                                        {
+#ifdef LUCENE_USE_FASTPFOR
+                                                refill_hits(forUtil);
+#else
+                                                refill_hits();
+#endif
+                                        }
+
+                                        const auto step = std::min<uint32_t>(skippedHits, bufferedHits - hitsIndex);
+
+                                        for (uint32_t i{0}; i != step; ++i)
+                                        {
+                                                const auto pl = hitsPayloadLengths[hitsIndex++];
+
+                                                payloadsIt += pl;
+                                        }
+
+                                        skippedHits -= step;
+                                } while (skippedHits);
+                        }
+                }
+
+#ifdef LUCENE_USE_FASTPFOR
+                void output_hits(FastPForLib::FastPFor<4> &forUtil, Trinity::Codecs::Lucene::Encoder *__restrict__ enc)
+#else
+                void output_hits(Trinity::Codecs::Lucene::Encoder *__restrict__ enc)
+#endif
+                {
+                        auto freq = docFreqs[cur_block.i];
+                        uint64_t payload;
+                        tokenpos_t pos{0};
+
+                        if (trace)
+                                SLog("Will output hits for ", cur_block.i, " ", freq, ", skippedHits = ", skippedHits, "\n");
+
+#ifdef LUCENE_USE_FASTPFOR
+                        skip_ommitted_hits(forUtil);
+#else
+                        skip_ommitted_hits();
+#endif
+
+                        if (const auto upto = hitsIndex + freq; upto <= bufferedHits)
+                        {
+                                if (trace)
+                                        SLog("fast-path hitsIndex = ", hitsIndex, ", upto = ", upto, "\n");
+
+                                while (hitsIndex != upto)
+                                {
+                                        pos += hitsPositionDeltas[hitsIndex];
+
+                                        const auto pl = hitsPayloadLengths[hitsIndex];
+
+                                        if (pl)
+                                        {
+                                                memcpy(&payload, payloadsIt, pl);
+                                                payloadsIt += pl;
+                                        }
+                                        else
+                                                payload = 0;
+
+                                        enc->new_hit(pos, {(uint8_t *)&payload, uint8_t(pl)});
+
+                                        ++hitsIndex;
+                                }
+                        }
+                        else
+                        {
+                                if (trace)
+                                        SLog("SLOW path\n");
+
+                                for (;;)
+                                {
+                                        const auto n = std::min<uint32_t>(bufferedHits - hitsIndex, freq);
+                                        const auto upto = hitsIndex + n;
+
+                                        if (trace)
+                                                SLog("upto = ", upto, ", bufferedHits = ", bufferedHits, ", hitsIndex = ", hitsIndex, "\n");
+
+                                        while (hitsIndex != upto)
+                                        {
+                                                pos += hitsPositionDeltas[hitsIndex];
+
+                                                const auto pl = hitsPayloadLengths[hitsIndex];
+
+                                                if (pl)
+                                                {
+                                                        memcpy(&payload, payloadsIt, pl);
+                                                        payloadsIt += pl;
+                                                }
+                                                else
+                                                        payload = 0;
+
+                                                enc->new_hit(pos, {(uint8_t *)&payload, uint8_t(pl)});
+
+                                                ++hitsIndex;
+                                        }
+
+                                        freq -= n;
+
+                                        if (freq)
+                                        {
+                                                if (trace)
+                                                        SLog("Will refill hits (Freq now = ", freq, ")\n");
+
+#ifdef LUCENE_USE_FASTPFOR
+                                                refill_hits(forUtil);
+#else
+                                                refill_hits();
+#endif
+                                        }
+                                        else
+                                                break;
+                                }
+                        }
+
+                        docFreqs[cur_block.i] = 0; // simplifies processing logic (See next().)
+                }
+
+#ifdef LUCENE_USE_FASTPFOR
+                bool next(FastPForLib::FastPFor<4> &forUtil)
+#else
+                bool next()
+#endif
+                {
+                        skippedHits += docFreqs[cur_block.i];
+                        lastDocID += docDeltas[cur_block.i++];
+
+                        if (cur_block.i == cur_block.size)
+                        {
+                                if (trace)
+                                        SLog("End of block, documentsLeft = ", documentsLeft, "\n");
+
+                                if (!documentsLeft)
+                                        return false;
+
+// this is important, because refill_documents()
+// will update cur_block
+#ifdef LUCENE_USE_FASTPFOR
+                                skip_ommitted_hits(forUtil);
+#else
+                                skip_ommitted_hits();
+#endif
+
+#ifdef LUCENE_USE_FASTPFOR
+                                refill_documents(forUtil);
+#else
+                                refill_documents();
+#endif
+                        }
+                        else
+                        {
+                                if (trace)
+                                        SLog("NOW at ", cur_block.i, "\n");
+                        }
+
+                        return true;
+                }
+
+                constexpr auto current() noexcept
+                {
+                        return lastDocID + docDeltas[cur_block.i];
+                }
+
+                constexpr auto current_freq() noexcept
+                {
+                        return docFreqs[cur_block.i];
+                }
+        };
+
+        candidate candidates[participantsCnt];
+        uint16_t rem{participantsCnt};
+        uint16_t toAdvance[participantsCnt];
+        auto encoder = static_cast<Trinity::Codecs::Lucene::Encoder *>(enc_);
+
+        for (uint32_t i{0}; i != participantsCnt; ++i)
+        {
+                auto c = candidates + i;
+                const auto ap = static_cast<const Trinity::Codecs::Lucene::AccessProxy *>(participants[i].ap);
+                const auto *p = ap->indexPtr + participants[i].tctx.indexChunk.offset;
+
+                c->index_chunk.e = p + participants[i].tctx.indexChunk.size();
+                c->maskedDocsReg = participants[i].maskedDocsReg;
+                c->documentsLeft = participants[i].tctx.documents;
+                c->lastDocID = 0;
+                c->skippedHits = 0;
+                c->hitsIndex = 0;
+                c->bufferedHits = 0;
+                c->payloadsIt = c->payloadsEnd = nullptr;
+
+                const auto hitsDataOffset = *(uint32_t *)p;
+                p += sizeof(uint32_t);
+                const auto sumHits = *(uint32_t *)p;
+                p += sizeof(uint32_t);
+                const auto posChunkSize = *(uint32_t *)p;
+                p += sizeof(uint32_t);
+                [[maybe_unused]] const auto skiplistSize = *(uint16_t *)p;
+                p += sizeof(uint16_t);
+
+                c->index_chunk.p = p;
+                c->positions_chunk.p = ap->hitsDataPtr + hitsDataOffset;
+                c->positions_chunk.e = c->positions_chunk.p + posChunkSize;
+                c->hitsLeft = sumHits;
+
+                if (trace)
+                        SLog("participant ", i, " ", c->documentsLeft, " ", c->hitsLeft, ", skiplistSize = ", skiplistSize, "\n");
+
+                // Skip past skiplist
+                if (skiplistSize)
+                {
+                        static constexpr size_t skiplistEntrySize{sizeof(uint32_t) * 5 + sizeof(uint16_t)};
+
+                        c->index_chunk.e -= skiplistSize * skiplistEntrySize;
+                }
+
+#ifdef LUCENE_USE_FASTPFOR
+                c->refill_documents(forUtil);
+#else
+                c->refill_documents();
+#endif
+        }
+
+        for (isrc_docid_t prev{0};;)
+        {
+                uint16_t toAdvanceCnt{1};
+                auto did = candidates[0].current();
+
+                toAdvance[0] = 0;
+                for (uint32_t i{1}; i != rem; ++i)
+                {
+                        if (const auto id = candidates[i].current(); id == did)
+                                toAdvance[toAdvanceCnt++] = i;
+                        else if (id < did)
+                        {
+                                did = id;
+                                toAdvanceCnt = 1;
+                                toAdvance[0] = i;
+                        }
+                }
+
+                require(did > prev);
+                prev = did;
+
+                const auto c = candidates + toAdvance[0]; // always choose the first because they are sorted in-order
+
+                if (!c->maskedDocsReg->test(did))
+                {
+                        [[maybe_unused]] const auto freq = c->current_freq();
+
+                        encoder->begin_document(did);
+#ifdef LUCENE_USE_FASTPFOR
+                        c->output_hits(forUtil, encoder);
+#else
+                        c->output_hits(encoder);
+#endif
+                        encoder->end_document();
+                }
+
+                do
+                {
+                        const auto idx = toAdvance[--toAdvanceCnt];
+                        auto c = candidates + idx;
+
+#ifdef LUCENE_USE_FASTPFOR
+                        if (!c->next(forUtil))
+#else
+                        if (!c->next())
+#endif
+                        {
+                                if (!--rem)
+                                        goto l1;
+
+                                memmove(candidates + idx, candidates + idx + 1, (rem - idx) * sizeof(candidates[0]));
+                        }
+
+                } while (toAdvanceCnt);
+        }
+
+l1:;
+}
+

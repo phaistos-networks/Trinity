@@ -341,7 +341,7 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                         its[i] = reg_pli(decode_ctx.decoders[p->termIDs[i]]->new_iterator());
                 }
 
-                return reg_docset_it(new DocsSetIterators::Phrase(this, its, p->size, execFlags & unsigned(ExecFlags::AccumulatedScoreScheme)));
+                return reg_docset_it(new DocsSetIterators::Phrase(this, its, p->size, execFlags & unsigned(ExecFlags::AccumulatedScoreScheme),  execFlags & unsigned(ExecFlags::DocumentsOnly)));
         }
         else if (n.fp == ENT::matchanyphrases)
         {
@@ -356,7 +356,7 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                         for (uint32_t i{0}; i != p->size; ++i)
                                 tits[i] = reg_pli(decode_ctx.decoders[p->termIDs[i]]->new_iterator());
 
-                        its[pit] = reg_docset_it(new DocsSetIterators::Phrase(this, tits, p->size, execFlags & unsigned(ExecFlags::AccumulatedScoreScheme)));
+                        its[pit] = reg_docset_it(new DocsSetIterators::Phrase(this, tits, p->size, execFlags & unsigned(ExecFlags::AccumulatedScoreScheme), execFlags & unsigned(ExecFlags::DocumentsOnly)));
                 }
 
                 return reg_docset_it(new DocsSetIterators::Disjunction(its, run->size));
@@ -374,7 +374,7 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                         for (uint32_t i{0}; i != p->size; ++i)
                                 tits[i] = reg_pli(decode_ctx.decoders[p->termIDs[i]]->new_iterator());
 
-                        its[pit] = reg_docset_it(new DocsSetIterators::Phrase(this, tits, p->size, execFlags & unsigned(ExecFlags::AccumulatedScoreScheme)));
+                        its[pit] = reg_docset_it(new DocsSetIterators::Phrase(this, tits, p->size, execFlags & unsigned(ExecFlags::AccumulatedScoreScheme), execFlags & unsigned(ExecFlags::DocumentsOnly)));
                 }
 
                 return reg_docset_it(new DocsSetIterators::Conjuction(its, run->size));
@@ -1462,6 +1462,7 @@ void Trinity::exec_query(const query &in,
                                                                         ++n;
 
                                                                         ctx->cds_release(doc);
+									ctx->gc_retained_docs(id);
                                                                 }
                                                         }
 
@@ -1505,6 +1506,7 @@ void Trinity::exec_query(const query &in,
                                                                         ++n;
 
                                                                         ctx->cds_release(doc);
+									ctx->gc_retained_docs(id);
                                                                 }
                                                         }
 
@@ -1549,6 +1551,7 @@ void Trinity::exec_query(const query &in,
                                                                 ++n;
 
                                                                 ctx->cds_release(doc);
+                                                                ctx->gc_retained_docs(id);
                                                         }
                                                 }
 
@@ -1588,6 +1591,7 @@ void Trinity::exec_query(const query &in,
                                                         ++n;
 
                                                         ctx->cds_release(doc);
+                                                        ctx->gc_retained_docs(id);
                                                 }
 
                                                 Handler(queryexec_ctx *const c, IndexSource *const src, MatchedIndexDocumentsFilter *mf)

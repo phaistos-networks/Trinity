@@ -1,7 +1,47 @@
 #include "queryexec_ctx.h"
 #include "docset_iterators.h"
+#include <unordered_set>
 
 using namespace Trinity;
+
+// This is required to support phrases, and its important for working around a bug that manifests very rarely
+// but it does nonetheless.
+// 
+// To replicate [xbox one x] on BP, and consider score for 2155079078, where
+// we fail to properly materialize the hists. This is because the iterator for (XBOX), (ONE) were already
+// asked to materialize the hits for that document earlier to process a phrase. We are now
+// tracking materialized documents required Phrase::consider_phrase_match() and that solved the problem at the potential expense
+// of some overhead for track_docref() and gc_retained_docs()
+// TODO: quantify that overhead
+void Trinity::queryexec_ctx::track_docref(candidate_document *doc)
+{
+        track_document(doc);
+
+        if (tracked_docrefs.size == tracked_docrefs.capacity)
+        {
+                tracked_docrefs.capacity = (tracked_docrefs.capacity * 2) + 2;
+                tracked_docrefs.data = (candidate_document **)realloc(tracked_docrefs.data,
+                                                                      sizeof(candidate_document *) * tracked_docrefs.capacity);
+        }
+
+        tracked_docrefs.data[tracked_docrefs.size++] = doc;
+}
+
+void Trinity::queryexec_ctx::gc_retained_docs(const isrc_docid_t base)
+{
+        while (tracked_docrefs.size)
+        {
+                if (auto r = tracked_docrefs.data[0]; base > r->id)
+                {
+                        forget_document(r);
+                        cds_release(r);
+
+                        memmove(tracked_docrefs.data + 0, tracked_docrefs.data + 1, (--tracked_docrefs.size) * sizeof(candidate_document *));
+                }
+                else
+                        break;
+        }
+}
 
 Codecs::PostingsListIterator *Trinity::queryexec_ctx::reg_pli(Codecs::PostingsListIterator *it)
 {
@@ -30,6 +70,9 @@ DocsSetIterators::Iterator *Trinity::queryexec_ctx::reg_docset_it(DocsSetIterato
 
 queryexec_ctx::~queryexec_ctx()
 {
+	while (tracked_docrefs.size)
+		cds_release(tracked_docrefs.data[--tracked_docrefs.size]);
+
 #ifdef USE_BANKS
         while (banks.size())
         {
@@ -177,27 +220,71 @@ queryexec_ctx::decode_ctx_struct::~decode_ctx_struct()
                 std::free(decoders);
 }
 
+
+#if 0 // SOLVED
+static void will_materialize(void *ptr, const isrc_docid_t did, const uint32_t ref, Trinity::candidate_document *cd)
+{
+        static ska::flat_hash_map<uintptr_t, std::unique_ptr<std::unordered_set<isrc_docid_t>>> map;
+        auto res = map.emplace(uintptr_t(ptr), std::unique_ptr<std::unordered_set<isrc_docid_t>>{});
+	static void *tracked{nullptr};
+	static void *tracked_cd{nullptr};
+
+	if (tracked_cd && did != 2155079078)
+	{
+		SLog("TRACKED CD already and now ", did, " ", ref, "\n");
+	}
+
+        if (res.second)
+                res.first->second.reset(new std::unordered_set<isrc_docid_t>());
+
+        auto s = res.first->second.get();
+
+        if (!s->insert(did).second)
+	{
+		Print("ALREADY materialized hits for ", ptr_repr(ptr), " ", did, ", ref = ", ref, "\n");
+		exit(1);
+	}
+
+	if (did == 2155079078)
+	{
+		SLog("OK materialized now at ", ref, "\n");
+		tracked = ptr;
+		tracked_cd = cd;
+	}
+	else if (tracked == ptr)
+	{
+		SLog("TRACKED now set to ", did, "\n");
+	}
+}
+#endif
+
+// In practice, this is only used by DocsSetIterators::Phrase::consider_phrase_match()
 Trinity::term_hits *candidate_document::materialize_term_hits(queryexec_ctx *rctx, Codecs::PostingsListIterator *const it, const exec_term_id_t termID)
 {
         auto *const __restrict__ th = termHits + termID;
         const auto did = it->curDocument.id;
 
-        if (th->docID != did)
+        if (th->doc_id != did)
         {
                 const auto docHits = it->freq;
 
-                th->docID = did;
+		//will_materialize(it, did, __LINE__, this);
+
+                th->set_docid(did);
                 th->set_freq(docHits);
 
                 if (!matchedDocument.dws)
+		{
                         matchedDocument.dws = new DocWordsSpace(rctx->idxsrc->max_indexed_position());
+		}
 
                 if (!dwsInUse)
                 {
                         // deferred until we will need to do this
                         matchedDocument.dws->reset();
-                        dwsInUse = true;
+                        dwsInUse = true; 	// in use now
                 }
+
 
                 it->materialize_hits(matchedDocument.dws, th->all);
         }
@@ -406,11 +493,19 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
         }
 }
 
+
+
 void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const doc)
 {
         auto &md = doc->matchedDocument;
         const auto did = doc->id;
         auto dws = md.dws;
+	static constexpr const bool trace{false};
+	//const bool trace = doc->id == 2155079078 || doc->id == 2154380143;
+
+	if (trace)
+		SLog(ansifmt::bold, ansifmt::color_blue, "Preparing match for ", doc->id, ansifmt::reset, " ", ptr_repr(doc), "\n");
+
 
         collectedIts.cnt = 0;
         collect_doc_matching_terms(rootIterator, doc->id, &collectedIts);
@@ -419,23 +514,49 @@ void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const do
         //SLog("collectedIts.size() = ", collectedIts.size(), "\n");
 
         if (!dws)
+	{
+		if (trace)
+			SLog("dws == nullptr\n");
+
                 dws = md.dws = new DocWordsSpace(idxsrc->max_indexed_position());
+	}
+	else if (trace)
+	{
+		SLog("Already have dws inuse = ", doc->dwsInUse, "\n");
+	}
+	
 
         if (!doc->dwsInUse)
+	{
+		// wasn't already reset
                 dws->reset();
+	}
         else
+	{
+		// force reset later
                 doc->dwsInUse = false;
+	}
 
         const auto cnt = collectedIts.cnt;
         auto *const data = collectedIts.data;
+
+	if (trace)
+		SLog("collected iterators ", cnt, "\n");
 
         for (uint32_t i{0}; i != cnt; ++i)
         {
                 auto *const it = data[i];
                 const auto tid = it->decoder()->exec_ctx_termid();
 
+
+		if (trace)
+			SLog(ansifmt::color_green, "term id ", tid, ansifmt::reset, "\n");
+
                 if (const auto *const qti = originalQueryTermCtx[tid]) // not in a NOT branch
                 {
+			if (trace)
+				SLog("YES, qti ", doc->curDocQueryTokensCaptured[tid], " ", doc->curDocSeq, "\n");
+
                         if (doc->curDocQueryTokensCaptured[tid] != doc->curDocSeq)
                         {
                                 auto *const p = md.matchedTerms + md.matchedTermsCnt++;
@@ -445,16 +566,27 @@ void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const do
                                 p->queryCtx = qti;
                                 p->hits = th;
 
-                                if (th->docID != did)
+				if (trace)
+					SLog("th->docID = ", th->doc_id, "  ", did, "\n");
+
+                                if (th->doc_id != did)
                                 {
                                         // could have been materialized earlier for a phrase check
                                         const auto docHits = it->freq;
-					
-                                        th->docID = did;
+
+					if (trace)
+						SLog(ansifmt::bold, ansifmt::color_green, "YES, need to materialize freq = ", docHits, ansifmt::reset, " ", ptr_repr(it), "\n");
+
+					//will_materialize(it, did, __LINE__, doc);
+
+
+                                        th->set_docid(did);
                                         th->set_freq(docHits);
                                         it->materialize_hits(dws, th->all);
                                 }
                         }
+			else if (trace)
+				SLog("Already have materialized hits for (", doc->id, ", ", tid, ")\n");
                 }
         }
 }

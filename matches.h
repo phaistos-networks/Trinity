@@ -48,8 +48,13 @@ namespace Trinity
                 uint16_t allCapacity{0};
                 union {
                         uint16_t docSeq{0};
-                        isrc_docid_t docID;
+                        isrc_docid_t doc_id;
                 };
+
+		void set_docid(const isrc_docid_t id)
+		{
+			doc_id = id;
+		}
 
                 void set_freq(const tokenpos_t newFreq)
                 {
