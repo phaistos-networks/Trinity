@@ -2,12 +2,12 @@
 
 using namespace Trinity;
 
-bool percolator_query::match(percolator_document_proxy &src)
+bool percolator_query::match(percolator_document_proxy &src) const
 {
 	return exec(root, src);
 }
 
-bool percolator_query::exec(const exec_node n, percolator_document_proxy &src)
+bool percolator_query::exec(const exec_node n, percolator_document_proxy &src) const
 {
         switch (n.fp)
         {

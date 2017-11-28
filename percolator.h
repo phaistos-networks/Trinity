@@ -49,10 +49,10 @@ namespace Trinity
                 exec_node root;
 
               protected:
-                bool exec(const exec_node, percolator_document_proxy &);
+                bool exec(const exec_node, percolator_document_proxy &) const;
 
               public:
-                auto term_by_index(const uint16_t idx)
+                auto term_by_index(const uint16_t idx) const
                 {
 			return comp_ctx.allTerms[idx - 1];
 		}
@@ -95,6 +95,6 @@ namespace Trinity
                         return root.fp != ENT::constfalse && root.fp != ENT::dummyop;
                 }
 
-                bool match(percolator_document_proxy &);
+                bool match(percolator_document_proxy &) const;
         };
 }

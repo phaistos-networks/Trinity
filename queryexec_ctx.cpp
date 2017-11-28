@@ -72,6 +72,8 @@ queryexec_ctx::~queryexec_ctx()
 {
 	while (tracked_docrefs.size)
 		cds_release(tracked_docrefs.data[--tracked_docrefs.size]);
+	if (tracked_docrefs.data)
+		std::free(tracked_docrefs.data);
 
 #ifdef USE_BANKS
         while (banks.size())
