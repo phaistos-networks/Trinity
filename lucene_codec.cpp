@@ -995,6 +995,15 @@ void Trinity::Codecs::Lucene::Decoder::init(const term_index_ctx &tctx, Trinity:
         hitsBase = ap->hitsDataPtr + hitsDataOffset;
 }
 
+Trinity::Codecs::Lucene::AccessProxy::~AccessProxy()
+{
+	if (hitsDataSize)
+	{
+		// mmmaped()/owned by this AccessProxy
+		munmap((void *)hitsDataPtr, hitsDataSize);
+	}
+}
+
 Trinity::Codecs::Lucene::AccessProxy::AccessProxy(const char *bp, const uint8_t *p, const uint8_t *hd)
     : Trinity::Codecs::AccessProxy{bp, p}, hitsDataPtr{hd}
 {
@@ -1007,15 +1016,19 @@ Trinity::Codecs::Lucene::AccessProxy::AccessProxy(const char *bp, const uint8_t 
                         if (errno != ENOENT)
                                 throw Switch::data_error("Unable to access hits.data");
                 }
-                else if (const auto fileSize = lseek64(fd, 0, SEEK_END))
+                else if (const auto fileSize = lseek64(fd, 0, SEEK_END); fileSize > 0)
                 {
                         hitsDataPtr = reinterpret_cast<const uint8_t *>(mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0));
 
                         close(fd);
                         expect(hitsDataPtr != MAP_FAILED);
+			madvise((void *)hitsDataPtr, fileSize, MADV_DONTDUMP);
+			hitsDataSize = fileSize;
                 }
                 else
+		{
                         close(fd);
+		}
         }
 }
 

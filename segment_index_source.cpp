@@ -26,7 +26,7 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
                 if (errno != ENOENT)
                         throw Switch::system_error("open() failed for updated_documents.ids");
         }
-        else if (const auto fileSize = lseek64(fd, 0, SEEK_END))
+        else if (const auto fileSize = lseek64(fd, 0, SEEK_END); fileSize > 0)
         {
                 auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
 
@@ -34,7 +34,8 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
                 if (unlikely(fileData == MAP_FAILED))
                         throw Switch::data_error("Failed to access ", path, ":", strerror(errno));
 
-                maskedDocuments.fileData.Set((uint8_t *)fileData, fileSize);
+		madvise(fileData, fileSize, MADV_DONTDUMP);
+                maskedDocuments.fileData.Set(reinterpret_cast<uint8_t *>(fileData), fileSize);
                 new (&maskedDocuments.set) updated_documents(unpack_updates(maskedDocuments.fileData));
         }
         else
@@ -80,6 +81,7 @@ Trinity::SegmentIndexSource::SegmentIndexSource(const char *basePath)
                 if (unlikely(fileData == MAP_FAILED))
                         throw Switch::data_error("Failed to acess ", path);
 
+		madvise(fileData, fileSize, MADV_DONTDUMP);
                 index.Set(static_cast<const uint8_t *>(fileData), uint32_t(fileSize));
 #endif
         }

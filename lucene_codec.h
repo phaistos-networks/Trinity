@@ -160,8 +160,11 @@ namespace Trinity
                             : public Trinity::Codecs::AccessProxy
                         {
                                 const uint8_t *hitsDataPtr;
+				uint64_t hitsDataSize{0};
 
                                 AccessProxy(const char *bp, const uint8_t *p, const uint8_t *hd = nullptr);
+
+				~AccessProxy();
 
                                 strwlen8_t codec_identifier() override final
                                 {

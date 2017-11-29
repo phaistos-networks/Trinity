@@ -193,7 +193,7 @@ Trinity::SegmentTerms::SegmentTerms(const char *segmentBasePath)
                 else
                         throw Switch::system_error("Failed to access terms.idx: ", strerror(errno));
         }
-        else if (const auto fileSize = lseek64(fd, 0, SEEK_END))
+        else if (const auto fileSize = lseek64(fd, 0, SEEK_END); fileSize > 0)
         {
                 auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
 
@@ -201,8 +201,11 @@ Trinity::SegmentTerms::SegmentTerms(const char *segmentBasePath)
                 if (unlikely(fileData == MAP_FAILED))
                         throw Switch::data_error("Failed to access terms.idx: ", strerror(errno));
 
-                madvise(fileData, fileSize, MADV_SEQUENTIAL);
+                DEFER({
+                        munmap(fileData, fileSize);
+                });
 
+                madvise(fileData, fileSize, MADV_SEQUENTIAL | MADV_DONTDUMP);
                 unpack_terms_skiplist({static_cast<const uint8_t *>(fileData), uint32_t(fileSize)}, &skiplist, allocator);
         }
         else
@@ -215,7 +218,7 @@ Trinity::SegmentTerms::SegmentTerms(const char *segmentBasePath)
                 throw Switch::system_error("Failed to access terms.data");
         }
 
-        if (const auto fileSize = lseek64(fd, 0, SEEK_END))
+        if (const auto fileSize = lseek64(fd, 0, SEEK_END); fileSize > 0)
         {
                 auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
 
@@ -223,6 +226,7 @@ Trinity::SegmentTerms::SegmentTerms(const char *segmentBasePath)
                 if (unlikely(fileData == MAP_FAILED))
                         throw Switch::data_error("Failed to access ", Buffer{}.append(segmentBasePath, "/terms.data").AsS32(), ": ", strerror(errno));
 
+		madvise(fileData, fileSize, MADV_DONTDUMP);
                 termsData.Set(reinterpret_cast<const uint8_t *>(fileData), fileSize);
         }
         else

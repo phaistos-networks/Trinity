@@ -2,7 +2,7 @@
 
 void Trinity::IndexSourcesCollection::commit()
 {
-        std::sort(sources.begin(), sources.end(), [](const auto a, const auto b) {
+        std::sort(sources.begin(), sources.end(), [](const auto a, const auto b) noexcept {
                 return b->generation() < a->generation();
         });
 
