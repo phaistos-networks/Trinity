@@ -13,34 +13,50 @@ using namespace Trinity;
 // tracking materialized documents required Phrase::consider_phrase_match() and that solved the problem at the potential expense
 // of some overhead for track_docref() and gc_retained_docs()
 // TODO: quantify that overhead
+static constexpr const bool trace_docrefs{false};
+
 void Trinity::queryexec_ctx::track_docref(candidate_document *doc)
 {
         track_document(doc);
 
         if (tracked_docrefs.size == tracked_docrefs.capacity)
         {
-                tracked_docrefs.capacity = (tracked_docrefs.capacity * 2) + 2;
+                tracked_docrefs.capacity = (tracked_docrefs.capacity * 2) + 128;
                 tracked_docrefs.data = (candidate_document **)realloc(tracked_docrefs.data,
                                                                       sizeof(candidate_document *) * tracked_docrefs.capacity);
         }
 
         tracked_docrefs.data[tracked_docrefs.size++] = doc;
+
+	if constexpr (trace_docrefs)
+		SLog("now ", tracked_docrefs.size, " ", doc->id, "\n");
 }
 
 void Trinity::queryexec_ctx::gc_retained_docs(const isrc_docid_t base)
 {
-        while (tracked_docrefs.size)
+	std::size_t n{0};
+
+	while (n < tracked_docrefs.size)
         {
-                if (auto r = tracked_docrefs.data[0]; base > r->id)
+                if (auto r = tracked_docrefs.data[n]; base > r->id)
                 {
                         forget_document(r);
                         cds_release(r);
-
-                        memmove(tracked_docrefs.data + 0, tracked_docrefs.data + 1, (--tracked_docrefs.size) * sizeof(candidate_document *));
+			++n;
                 }
                 else
                         break;
         }
+
+        if constexpr (trace_docrefs)
+                SLog("GC: For base = ", base, " n = ", n, " tracked_docrefs.size = ", tracked_docrefs.size, "\n");
+
+	if (n)
+	{
+		tracked_docrefs.size -= n;
+		memmove(tracked_docrefs.data + 0, tracked_docrefs.data + n, tracked_docrefs.size * sizeof(candidate_document *));
+	}
+
 }
 
 Codecs::PostingsListIterator *Trinity::queryexec_ctx::reg_pli(Codecs::PostingsListIterator *it)
@@ -70,23 +86,33 @@ DocsSetIterators::Iterator *Trinity::queryexec_ctx::reg_docset_it(DocsSetIterato
 
 queryexec_ctx::~queryexec_ctx()
 {
+	if constexpr (trace_docrefs)
+		SLog("Flushing ", tracked_docrefs.size, "\n");
+
 	while (tracked_docrefs.size)
-		cds_release(tracked_docrefs.data[--tracked_docrefs.size]);
-	if (tracked_docrefs.data)
-		std::free(tracked_docrefs.data);
+	{
+		auto d = tracked_docrefs.data[--tracked_docrefs.size];
+
+		if (unlikely(d->rc != 1))
+		{
+			if constexpr (trace_docrefs)
+				SLog(ansifmt::bold, ansifmt::color_blue, "Unexpected rc(", d->rc, ") for ", ptr_repr(d), " (", tracked_docrefs.size, ")", ansifmt::reset, "\n");
+		}
+
+		cds_release(d);
+	}
+
+	if (auto ptr = tracked_docrefs.data)
+		std::free(ptr);
 
 #ifdef USE_BANKS
-        while (banks.size())
-        {
-                delete banks.back();
-                banks.pop_back();
-        }
+	for (auto it : banks)
+		delete it;
+	for (auto it : reusableBanks)
+		delete it;
 
-        while (reusableBanks.size())
-        {
-                delete reusableBanks.back();
-                reusableBanks.pop_back();
-        }
+	reusableBanks.clear();
+	banks.clear();
 #endif
 
         while (allIterators.size())
@@ -600,8 +626,6 @@ void Trinity::queryexec_ctx::forget_document(candidate_document *const doc)
 #endif
 }
 
-static constexpr bool traceBindings{false};
-
 Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document(const isrc_docid_t id)
 {
 #ifdef USE_BANKS
@@ -640,63 +664,6 @@ Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document(const isrc_
         }
         return nullptr;
 #endif
-}
-
-void Trinity::queryexec_ctx::unbind_document(candidate_document *&dt)
-{
-        // you are expected to have checked if (p->lastMaterializedDoc) before invoking this method
-        if (traceBindings)
-                SLog("unbinding ", dt->bindCnt, "\n");
-
-        auto d = dt;
-
-        if (1 == d->bindCnt--)
-        {
-                forget_document(d);
-#ifdef USE_BANKS
-                cds_release(d);
-#endif
-        }
-        else // Will defer release to lookup_document(). Will only release if more bound to that document
-        {
-                cds_release(d);
-        }
-
-        dt = nullptr;
-}
-
-void Trinity::queryexec_ctx::bind_document(candidate_document *&dt, candidate_document *const doc)
-{
-        if (auto prev = dt)
-        {
-                if (unlikely(prev == doc))
-                {
-                        // binding to the same document
-                        // can't forget_document() and track_document()
-                        // because if prev->bindCnt == 1 now, it will forget i.e release
-                        // and then will attempt to track it once it's been released
-                        return;
-                }
-
-                if (1 == prev->bindCnt--)
-                {
-                        forget_document(prev);
-#ifdef USE_BANKS
-                        cds_release(prev);
-#endif
-                }
-                else // Will defer release to lookup_document(). Will only release if more bound to that document
-                {
-                        cds_release(prev);
-                }
-        }
-
-        if (0 == doc->bindCnt++)
-        {
-                track_document(doc);
-        }
-
-        dt = doc->retained();
 }
 
 #ifdef USE_BANKS

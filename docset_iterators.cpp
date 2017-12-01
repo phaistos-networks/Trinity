@@ -136,7 +136,17 @@ bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
 							// for prepare_match()
 							// then this may be an issue -- we need to otherwise
 							// retain this document and GC it later
-							rctx.track_docref(doc);
+							//
+							// UPDATE: if we have multiple phrases for this logical evaluation
+							// we don't want to retain a document again; once would do 
+							if (doc->rc == 1)
+							{
+								rctx.track_docref(doc);
+							}
+							else
+							{
+								rctx.cds_release(doc);
+							}
 						}
 
                                                 return true;
@@ -162,7 +172,15 @@ bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
 	}
 	else
 	{
-		rctx.track_docref(doc);
+		// See earlier comments
+		if (doc->rc == 1)
+		{
+			rctx.track_docref(doc);
+		}
+		else
+		{
+			rctx.cds_release(doc);
+		}
 	}
 
         return matchCnt;

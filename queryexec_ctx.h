@@ -210,10 +210,6 @@ namespace Trinity
 
 		void track_docref(candidate_document *);
 
-                void bind_document(candidate_document *&, candidate_document *);
-
-                void unbind_document(candidate_document *&);
-
                 candidate_document *lookup_document(const isrc_docid_t);
 
                 candidate_document *document_by_id(const isrc_docid_t id)
