@@ -35,28 +35,56 @@ void Trinity::queryexec_ctx::track_docref(candidate_document *doc)
 void Trinity::queryexec_ctx::gc_retained_docs(const isrc_docid_t base)
 {
 	std::size_t n{0};
+	auto cnt{tracked_docrefs.size};
 
-	while (n < tracked_docrefs.size)
+	// Tirim back, and front
+	// this is not optimal because the documents are not ordered by id in tracked_docrefs.data[]
+	// but short of using e.g a binary heap/prio.queue, which would provide this guarantee, at the expense of
+	// higher maintenance, this is an good compromise.
+	/
+	// The only problem is that we are likely tracking too many candidate_document instances
+	// and this could mean more memory pressure.
+	//
+	// TODO: we can eliminate memmove() by using a ring instead (front_index, back_index), and making
+	// ring size a power of a 2. That way, we will only need to manipulate two indices, and not bother
+	// with memmove(), at the expense of higher iteration costs. Need to consider that alternative impl.
+
+	while (cnt)
         {
-                if (auto r = tracked_docrefs.data[n]; base > r->id)
+                if (auto r = tracked_docrefs.data[cnt - 1]; base > r->id)
                 {
                         forget_document(r);
                         cds_release(r);
-			++n;
+                        --cnt;
                 }
                 else
                         break;
         }
 
+        while (n < cnt)
+        {
+                if (auto r = tracked_docrefs.data[n]; base > r->id)
+                {
+                        forget_document(r);
+                        cds_release(r);
+                        ++n;
+                }
+                else
+                        break;
+        }
+
+        tracked_docrefs.size = cnt;
+
         if constexpr (trace_docrefs)
-                SLog("GC: For base = ", base, " n = ", n, " tracked_docrefs.size = ", tracked_docrefs.size, "\n");
+	{
+		SLog("GC: For base = ", base, " n = ", n, " tracked_docrefs.size = ", tracked_docrefs.size, "\n");
+	}
 
 	if (n)
 	{
 		tracked_docrefs.size -= n;
-		memmove(tracked_docrefs.data + 0, tracked_docrefs.data + n, tracked_docrefs.size * sizeof(candidate_document *));
+		memmove(tracked_docrefs.data, tracked_docrefs.data + n, tracked_docrefs.size * sizeof(candidate_document *));
 	}
-
 }
 
 Codecs::PostingsListIterator *Trinity::queryexec_ctx::reg_pli(Codecs::PostingsListIterator *it)
@@ -96,7 +124,9 @@ queryexec_ctx::~queryexec_ctx()
 		if (unlikely(d->rc != 1))
 		{
 			if constexpr (trace_docrefs)
+			{
 				SLog(ansifmt::bold, ansifmt::color_blue, "Unexpected rc(", d->rc, ") for ", ptr_repr(d), " (", tracked_docrefs.size, ")", ansifmt::reset, "\n");
+			}
 		}
 
 		cds_release(d);

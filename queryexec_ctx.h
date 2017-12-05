@@ -166,8 +166,12 @@ namespace Trinity
 		struct 
 		{
 			candidate_document **data{nullptr};
-			uint16_t size{0};
-			uint16_t capacity{0};
+			// FIXED: turns out, we can excheed std::numeric_limits<uint16_t>::max() for some queries
+			// e.g for bestprice:
+			// [ ' apple OR "iphone x" OR "apple iphone x" OR ipod OR "apple ipad" OR "world of warcraft"  OR "world of" OR blizzard OR games OR "apple iphone x" OR "iphone X"  OR "Samsung galaxy" OR "32 GB" OR HTC OR "galaxy s8"  OR "phaistos networks" OR "las vegas" OR cid:806' ]
+			// this query could be used to reproduce the problem
+			uint32_t size{0};
+			uint32_t capacity{0};
 		} tracked_docrefs;
 
 
