@@ -41,7 +41,7 @@ void Trinity::queryexec_ctx::gc_retained_docs(const isrc_docid_t base)
 	// this is not optimal because the documents are not ordered by id in tracked_docrefs.data[]
 	// but short of using e.g a binary heap/prio.queue, which would provide this guarantee, at the expense of
 	// higher maintenance, this is an good compromise.
-	/
+	//
 	// The only problem is that we are likely tracking too many candidate_document instances
 	// and this could mean more memory pressure.
 	//
