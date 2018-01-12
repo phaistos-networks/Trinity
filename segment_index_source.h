@@ -41,6 +41,11 @@ namespace Trinity
 			return accessProxy.get() == nullptr;
 		}
 
+		auto backing_index() const noexcept
+		{
+			return index;
+		}
+
 		auto access_proxy()
 		{
 			return accessProxy.get();

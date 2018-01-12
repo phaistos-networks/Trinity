@@ -405,7 +405,8 @@ namespace Trinity
 
                 bool operator==(const phrase &o) const noexcept
                 {
-                        if (size == o.size)
+                        //WAS: if (size == o.size)
+                        if (size == o.size && flags == o.flags)
                         {
                                 uint8_t i;
 
