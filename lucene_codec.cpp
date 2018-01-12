@@ -311,7 +311,7 @@ void Trinity::Codecs::Lucene::Encoder::new_hit(const uint32_t pos, const range_b
                 }
 
                 if (trace)
-                        SLog("<< pyaloads length:", payloadsBuf.size(), "\n");
+                        SLog("<< payloads length:", payloadsBuf.size(), "\n");
 
                 positionsOut->encode_varbyte32(payloadsBuf.size());
                 positionsOut->serialize(payloadsBuf.data(), payloadsBuf.size());
@@ -446,12 +446,16 @@ void Trinity::Codecs::Lucene::Decoder::refill_hits(PostingsListIterator *it)
 #endif
 
                 varbyte_get32(it->hdp, payloadsChunkLength);
+
+
                 it->payloadsIt = it->hdp;
                 it->hdp += payloadsChunkLength;
                 it->payloadsEnd = it->hdp;
 
                 it->bufferedHits = BLOCK_SIZE;
                 it->hitsLeft -= BLOCK_SIZE;
+
+
         }
         else
         {
@@ -479,6 +483,23 @@ void Trinity::Codecs::Lucene::Decoder::refill_hits(PostingsListIterator *it)
                 it->hitsLeft = 0;
         }
         it->hitsIndex = 0;
+
+#if 0
+        {
+                auto p{it->payloadsIt};
+
+                for (uint32_t i{0}; i != it->bufferedHits; ++i)
+                {
+                        const auto len = it->hitsPayloadLengths[i];
+                        uint64_t h;
+
+                        memcpy(&h, p, len);
+                        p += len;
+
+                        SLog("FOR ", i, " ", len, " ", len ? h : 0, "\n");
+                }
+        }
+#endif
 }
 
 [[gnu::hot]] void Trinity::Codecs::Lucene::Decoder::skip_hits(Trinity::Codecs::Lucene::PostingsListIterator *it, const uint32_t n)
@@ -826,7 +847,6 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(PostingsListIterator *it
         auto freq = it->docFreqs[it->docsIndex];
         auto outPtr = out;
 
-
         if (const auto skippedHits = it->skippedHits)
                 skip_hits(it, skippedHits);
 
@@ -853,13 +873,12 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(PostingsListIterator *it
                         if (pos)
                                 dws->set(termID, pos);
 
+			outPtr->payload = 0;
                         if (pl)
                         {
                                 memcpy(&outPtr->payload, it->payloadsIt, pl);
                                 it->payloadsIt += pl;
                         }
-                        else
-                                outPtr->payload = 0;
 
                         ++outPtr;
                         ++hitsIndex;
@@ -886,13 +905,12 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(PostingsListIterator *it
                                 if (pos)
                                         dws->set(termID, pos);
 
-                                if (pl)
-                                {
-                                        memcpy(&outPtr->payload, it->payloadsIt, pl);
-                                        it->payloadsIt += pl;
-                                }
-                                else
-                                        outPtr->payload = 0;
+				outPtr->payload = 0;
+				if (pl)
+				{
+					memcpy(&outPtr->payload, it->payloadsIt, pl);
+					it->payloadsIt += pl;
+				}
 
                                 ++outPtr;
                                 ++hitsIndex;
@@ -1270,13 +1288,12 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
 
                                         const auto pl = hitsPayloadLengths[hitsIndex];
 
+					payload = 0;
                                         if (pl)
                                         {
                                                 memcpy(&payload, payloadsIt, pl);
                                                 payloadsIt += pl;
                                         }
-                                        else
-                                                payload = 0;
 
                                         enc->new_hit(pos, {(uint8_t *)&payload, uint8_t(pl)});
 
@@ -1302,13 +1319,12 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
 
                                                 const auto pl = hitsPayloadLengths[hitsIndex];
 
+						payload = 0;
                                                 if (pl)
                                                 {
                                                         memcpy(&payload, payloadsIt, pl);
                                                         payloadsIt += pl;
                                                 }
-                                                else
-                                                        payload = 0;
 
                                                 enc->new_hit(pos, {(uint8_t *)&payload, uint8_t(pl)});
 
@@ -1497,4 +1513,3 @@ void Trinity::Codecs::Lucene::IndexSession::merge(merge_participant *const __res
 
 l1:;
 }
-
