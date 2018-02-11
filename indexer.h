@@ -91,6 +91,8 @@ namespace Trinity
                 uint32_t flushFreq{0}, intermediateStateFlushFreq{0};
 
               public:
+	      	// Check https://www.ebayinc.com/stories/blogs/tech/making-e-commerce-search-faster/
+		// for an alternative ordering scheme, based on grouping and other semantics
                 struct document_proxy final
                 {
                         SegmentIndexSession &sess;
