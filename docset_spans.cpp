@@ -353,8 +353,8 @@ void Trinity::DocsSetSpanForDisjunctionsWithSpans::Tracker::process(relevant_doc
 Trinity::DocsSetSpanForDisjunctionsWithSpansAndCost::DocsSetSpanForDisjunctionsWithSpansAndCost(const uint16_t min, std::vector<DocsSetSpan *> &its)
     :  matchesTracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>))), leads((span_ctx **)malloc(sizeof(span_ctx *) * (its.size() + 1))), head(its.size() - min + 1), tail(min - 1), matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), matchThreshold{min}, storage((span_ctx *)malloc(sizeof(span_ctx) * (its.size() + 1))), tracker(matching, matchesTracker, curRCTX)
 {
-        expect(min && min <= its.size());
-        expect(its.size() > 1);
+        EXPECT(min && min <= its.size());
+        EXPECT(its.size() > 1);
 
         for (uint32_t i{0}; i != its.size(); ++i)
         {
@@ -546,8 +546,8 @@ void Trinity::DocsSetSpanForDisjunctionsWithSpansAndCost::Tracker::process(relev
 Trinity::DocsSetSpanForDisjunctionsWithThresholdAndCost::DocsSetSpanForDisjunctionsWithThresholdAndCost(const uint16_t min, std::vector<DocsSetIterators::Iterator *> &its, const bool ns)
     :  matchesTracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>))), leads((it_ctx **)malloc(sizeof(it_ctx *) * (its.size() + 1))), head(its.size() - min + 1), tail(min - 1), matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), needScores{ns}, matchThreshold{min}, storage((it_ctx *)malloc(sizeof(it_ctx) * (its.size() + 1)))
 {
-        expect(min && min <= its.size());
-        expect(its.size() > 1);
+        EXPECT(min && min <= its.size());
+        EXPECT(its.size() > 1);
 
         for (uint32_t i{0}; i != its.size(); ++i)
         {

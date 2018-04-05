@@ -377,7 +377,7 @@ void Trinity::Codecs::Google::IndexSession::merge(IndexSession::merge_participan
                                 if (step & 1)
                                 {
                                         payloadSize = *p++;
-                                        Dexpect(payloadSize <= sizeof(uint64_t));
+                                        DEXPECT(payloadSize <= sizeof(uint64_t));
                                 }
 
                                 if (payloadSize)
@@ -622,7 +622,7 @@ void Trinity::Codecs::Google::Decoder::materialize_hits(PostingsListIterator *co
                                 if (trace)
                                         SLog("Payload size = ", curPayloadSize, "\n");
 
-                                Dexpect(curPayloadSize <= sizeof(uint64_t)); // XXX: un-necessary check
+                                DEXPECT(curPayloadSize <= sizeof(uint64_t)); // XXX: un-necessary check
                         }
 
                         pos += step >> 1;
@@ -689,7 +689,7 @@ void Trinity::Codecs::Google::Decoder::unpack_block(PostingsListIterator *const 
                 documents[i] = id;
 
                 if (trace)
-                        expect(id < thisBlockLastDocID);
+                        EXPECT(id < thisBlockLastDocID);
         }
 
         for (uint32_t i{0}; i != n; ++i)

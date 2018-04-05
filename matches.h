@@ -158,37 +158,25 @@ namespace Trinity
                 {
                 }
 
-#if 1
 		// If the Documents Only mode is selected, this will be invoked, passed
 		// the global document ID. Given that you only really want the 
 		virtual void consider(const docid_t id)
 		{
 		}
 
+		// You may want to provide a specialized implementation here.
+		// The runtime may decide to consider() a list of documents for performance reasons
+                virtual void consider(const docid_t *const ids, const uint32_t cnt) {
+                        for (uint32_t i{0}; i != cnt; ++i)
+                                consider(ids[i]);
+                }
 
-		// If the Accumulated Score Scheme mode is selected instead, this
+                // If the Accumulated Score Scheme mode is selected instead, this
 		// will be invoked; the global document ID and its scaore will passed to the call
 		virtual void consider(const docid_t id, const double score)
 		{
 
 		}
-#else
-		inline void consider(const docid_t id)
-		{
-			static matched_document md;
-
-			md.id = id;
-			consider(md);
-		}
-
-		inline void consider(const docid_t id, const double score)
-		{
-			static matched_document md;
-
-			md.id = id;
-			consider(md);
-		}
-#endif
 
                 // Invoked before the query execution begins by the exec.engine
 		// You may want to override this if you want to be notified and get a chance to do anything before

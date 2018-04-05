@@ -7,10 +7,8 @@
 #include "similarity.h"
 #include <future>
 
-namespace Trinity
-{
-        enum class ExecFlags : uint32_t
-        {
+namespace Trinity {
+        enum class ExecFlags : uint32_t {
                 // If this set, then only the matching document IDs will be provided in MatchedIndexDocumentsFilter's subclass consider(const docid_t) call
                 // as opposed to when the default execution mode is selected where consider(matched_document &) is invoked instead, with rich information
                 // about any and all matched tokens etc.
@@ -44,14 +42,13 @@ namespace Trinity
                 DisregardTokenFlagsForQueryIndicesTerms = 4
         };
 
-        static inline void validate_flags(const uint32_t f)
-        {
+        static inline void validate_flags(const uint32_t f) {
                 if (const auto mask = f & (unsigned(ExecFlags::DocumentsOnly) | unsigned(ExecFlags::AccumulatedScoreScheme)); mask && (mask & (mask - 1)))
                         throw Switch::invalid_argument("DocumentsOnly and AccumulatedScoreScheme are mutually exclusive modes");
         }
 
         void exec_query(const query &in, IndexSource *, masked_documents_registry *const maskedDocumentsRegistry, MatchedIndexDocumentsFilter *, IndexDocumentsFilter *const f = nullptr,
-                        const uint32_t flags = 0,
+                        const uint32_t                      flags  = 0,
                         Similarity::IndexSourceTermsScorer *scorer = nullptr);
 
         // Handy utility function; executes query on all index sources in the provided collection in sequence and returns
@@ -64,19 +61,17 @@ namespace Trinity
         // Note that execution of sources does not depend on state of other sources - they are isolated so parallel processing them requires
         // no coordination.
         template <typename T, typename... Arg>
-        std::vector<std::unique_ptr<T>> exec_query(const query &in, IndexSourcesCollection *collection, IndexDocumentsFilter *f, const uint32_t flags, Arg &&... args)
-        {
+        std::vector<std::unique_ptr<T>> exec_query(const query &in, IndexSourcesCollection *collection, IndexDocumentsFilter *f, const uint32_t flags, Arg &&... args) {
                 static_assert(std::is_base_of<MatchedIndexDocumentsFilter, T>::value, "Expected a MatchedIndexDocumentsFilter subclass");
-                const auto n = collection->sources.size();
+                const auto                      n = collection->sources.size();
                 std::vector<std::unique_ptr<T>> out;
 
                 validate_flags(flags);
 
-                for (uint32_t i{0}; i != n; ++i)
-                {
-                        auto source = collection->sources[i];
+                for (uint32_t i{0}; i != n; ++i) {
+                        auto source  = collection->sources[i];
                         auto scanner = collection->scanner_registry_for(i);
-                        auto filter = std::make_unique<T>(std::forward<Arg>(args)...);
+                        auto filter  = std::make_unique<T>(std::forward<Arg>(args)...);
 
                         exec_query(in, source, scanner.get(), filter.get(), f, flags);
                         out.push_back(std::move(filter));
@@ -89,10 +84,9 @@ namespace Trinity
         // This variant also supports ExecFlags::AccumulatedScoreScheme
         // You will need to provide a cs for this to work
         template <typename T, typename... Arg>
-        std::vector<std::unique_ptr<T>> exec_query_par(const query &in, IndexSourcesCollection *collection, IndexDocumentsFilter *f, const uint32_t flags, Trinity::Similarity::IndexSourcesCollectionTermsScorer *cs, Arg &&... args)
-        {
+        std::vector<std::unique_ptr<T>> exec_query_par(const query &in, IndexSourcesCollection *collection, IndexDocumentsFilter *f, const uint32_t flags, Trinity::Similarity::IndexSourcesCollectionTermsScorer *cs, Arg &&... args) {
                 static_assert(std::is_base_of<MatchedIndexDocumentsFilter, T>::value, "Expected a MatchedIndexDocumentsFilter subclass");
-                const auto n = collection->sources.size();
+                const auto                      n = collection->sources.size();
                 std::vector<std::unique_ptr<T>> out;
 
                 validate_flags(flags);
@@ -102,8 +96,7 @@ namespace Trinity
 
                 const bool accumScoreScheme = flags & unsigned(ExecFlags::AccumulatedScoreScheme);
 
-                if (accumScoreScheme)
-                {
+                if (accumScoreScheme) {
                         if (!cs)
                                 throw Switch::invalid_argument("IndexSourcesCollectionTermsScorer not set");
 
@@ -111,14 +104,12 @@ namespace Trinity
                         cs->reset(collection);
                 }
 
-                if (n == 1)
-                {
+                if (n == 1) {
                         // fast-path: single source
-                        if (false == collection->sources[0]->index_empty())
-                        {
-                                auto source = collection->sources[0];
-                                auto scanner = collection->scanner_registry_for(0);
-                                auto filter = std::make_unique<T>(std::forward<Arg>(args)...);
+                        if (false == collection->sources[0]->index_empty()) {
+                                auto                                                source  = collection->sources[0];
+                                auto                                                scanner = collection->scanner_registry_for(0);
+                                auto                                                filter  = std::make_unique<T>(std::forward<Arg>(args)...);
                                 std::unique_ptr<Similarity::IndexSourceTermsScorer> scorer;
 
                                 if (accumScoreScheme)
@@ -134,15 +125,13 @@ namespace Trinity
 
                 // Schedule all but the first via std::async()
                 // we 'll handle the first here.
-                for (uint32_t i{1}; i != n; ++i)
-                {
-                        if (false == collection->sources[i]->index_empty())
-                        {
+                for (uint32_t i{1}; i != n; ++i) {
+                        if (false == collection->sources[i]->index_empty()) {
                                 futures.push_back(
                                     std::async(std::launch::async, [&, accumScoreScheme](const uint32_t i) {
-                                            auto source = collection->sources[i];
-                                            auto scanner = collection->scanner_registry_for(i);
-                                            auto filter = std::make_unique<T>(std::forward<Arg>(args)...);
+                                            auto                                                source  = collection->sources[i];
+                                            auto                                                scanner = collection->scanner_registry_for(i);
+                                            auto                                                filter  = std::make_unique<T>(std::forward<Arg>(args)...);
                                             std::unique_ptr<Similarity::IndexSourceTermsScorer> scorer;
 
                                             if (accumScoreScheme)
@@ -155,10 +144,9 @@ namespace Trinity
                         }
                 }
 
-                if (auto source = collection->sources[0]; false == source->index_empty())
-                {
-                        auto scanner = collection->scanner_registry_for(0);
-                        auto filter = std::make_unique<T>(std::forward<Arg>(args)...);
+                if (auto source = collection->sources[0]; false == source->index_empty()) {
+                        auto                                                scanner = collection->scanner_registry_for(0);
+                        auto                                                filter  = std::make_unique<T>(std::forward<Arg>(args)...);
                         std::unique_ptr<Similarity::IndexSourceTermsScorer> scorer;
 
                         if (accumScoreScheme)
@@ -168,8 +156,7 @@ namespace Trinity
                         out.push_back(std::move(filter));
                 }
 
-                while (futures.size())
-                {
+                while (futures.size()) {
                         auto &f = futures.back();
 
                         out.push_back(std::move(f.get()));
@@ -178,4 +165,4 @@ namespace Trinity
 
                 return out;
         }
-};
+}; // namespace Trinity

@@ -226,8 +226,8 @@ namespace Trinity
                 DocsSetSpanForDisjunctionsWithThreshold(const uint16_t min, std::vector<Trinity::DocsSetIterators::Iterator *> &its, const bool ns)
                     : needScores{ns}, matchThreshold{min}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1))), tracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>)))
                 {
-                        expect(min && min <= its.size());
-                        expect(its.size() > 1);
+                        EXPECT(min && min <= its.size());
+                        EXPECT(its.size() > 1);
 
                         for (auto it : its)
 			{
@@ -291,7 +291,7 @@ namespace Trinity
 				pq.push(it);
 			}
 
-                        expect(pq.size());
+                        EXPECT(pq.size());
                 }
 
                 ~DocsSetSpanForPartialMatch()

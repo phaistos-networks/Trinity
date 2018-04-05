@@ -155,8 +155,8 @@ namespace Trinity
 		{
 			auto res = make(a, Type::MatchSome);
 
-			expect(cnt);
-			expect(min <= cnt);
+			EXPECT(cnt);
+			EXPECT(min <= cnt);
 
 			res->match_some.size = cnt;
 			res->match_some.min = min;
@@ -504,7 +504,7 @@ namespace Trinity
                     : tokensParser{tp}
                 {
                         if (!parse(in, tp, parserFlags))
-                                throw Switch::data_error("Failed to parse query");
+				throw Switch::data_error("Failed to parse query");
                 }
 
                 query(ast_node *r)

@@ -15,7 +15,7 @@ using namespace Trinity;
 void SegmentIndexSession::document_proxy::insert(const uint32_t termID, const tokenpos_t position, range_base<const uint8_t *, const uint8_t> payload)
 {
         require(termID);
-        Dexpect(position < Limits::MaxPosition);
+        DEXPECT(position < Limits::MaxPosition);
 
 	// XXX: this works assuming that you are indexing in-order
 	// we should probably support indexing terms where positions are not in a strict order

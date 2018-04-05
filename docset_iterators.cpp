@@ -856,8 +856,8 @@ Trinity::DocsSetIterators::DisjunctionSome::DisjunctionSome(Trinity::DocsSetIter
 	head{uint32_t(cnt - minMatch + 1)}, 
 	tail{uint32_t(minMatch - 1)}
 {
-        expect(minMatch <= cnt);
-        expect(minMatch);
+        EXPECT(minMatch <= cnt);
+        EXPECT(minMatch);
 
         trackersStorage = (it_tracker *)malloc(sizeof(it_tracker) * (cnt + 1));
 	allPLI = true;

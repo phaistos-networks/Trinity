@@ -117,7 +117,7 @@ namespace Trinity
                         // new `term` hit at `position` with `payload`(attrs.)
                         void insert(const str8_t term, const tokenpos_t position, range_base<const uint8_t *, const uint8_t> payload)
                         {
-                                Dexpect(term.size() <= Limits::MaxTermLength);
+                                DEXPECT(term.size() <= Limits::MaxTermLength);
                                 insert(term_id(term), position, payload);
                         }
 
@@ -129,7 +129,7 @@ namespace Trinity
                         // new `term` hit at `position`
                         void insert(const str8_t term, const tokenpos_t position)
                         {
-                                Dexpect(term.size() <= Limits::MaxTermLength);
+                                DEXPECT(term.size() <= Limits::MaxTermLength);
                                 insert(term_id(term), position, {});
                         }
 
@@ -142,7 +142,7 @@ namespace Trinity
                         template <typename T>
                         void insert(const str8_t term, const tokenpos_t position, const T &v)
                         {
-                                Dexpect(term.size() <= Limits::MaxTermLength);
+                                DEXPECT(term.size() <= Limits::MaxTermLength);
                                 insert(term_id(term), position, {static_cast<const uint8_t *>(&v), uint32_t(sizeof(T))});
                         }
 
