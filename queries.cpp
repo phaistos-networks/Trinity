@@ -1684,6 +1684,7 @@ std::vector<uint16_t> query::subexpressions_offsets() const noexcept {
         auto &                      stack{stackTLS};
         std::vector<const phrase *> all;
 
+	stack.clear();
         stack.emplace_back(root);
 
         do {
@@ -1748,6 +1749,7 @@ size_t query::subexpressions_count() const noexcept {
         std::vector<const phrase *> all;
         std::size_t                 cnt{0};
 
+	stack.clear();
         stack.emplace_back(root);
 
         do {
