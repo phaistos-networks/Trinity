@@ -821,7 +821,7 @@ void Trinity::exec_query(const query &in,
 
         if (defaultMode) {
                 // doesn't make sense in other exec.modes
-                matchesFilter->prepare(const_cast<const query_index_terms **>(queryIndicesTerms));
+                matchesFilter->prepare(const_cast<const query_index_terms **>(queryIndicesTerms), q.final_index());
         }
 
         if (traceCompile)

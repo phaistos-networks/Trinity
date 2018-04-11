@@ -329,8 +329,19 @@ namespace Trinity
                 uint16_t index;
                 // See assign_query_indices() for how this is assigned
                 //
+		// SUB-EXPRESSION: A query is broken down into 0+ sub-expressions. When you use the OR operator, it creates an overlapping
+		//	sub-query; the left-handside overlaps the right-handside, and the next sub-expression for that overlapped union begins
+		//	after past the right-handside sub-query. 
+		// 	Examples: 
+		//	- [lord of the rings]: this is a 4 sub-expressions query (on1 for each token)
+		//	- [google OR amazon] : this is 1 sub-expression, not 2 (because google overlaps amazon)
+		//	- [google OR amazon jobs]: 2 sub-expressions, one for the overlapping [google or amazon] and another for [jobs]
+		// toNextSpan is the offset from a token(or phrase) to the next token or phrase in the query to the next sub-expression
+		// or 0 if there is no next sub-expression.
+		//
+		// 
                 // This is how many terms/tokens to advance from this index(i.e query token) to get to the next term in the query and skip
-                // all other tokens in the same OR group as this token.
+                // all other tokens in the same OR group as this token. That is, this is the offset from index to the next sub-expression
                 //
                 // This is useful in MatchedIndexDocumentsFilter::consider()
                 //
@@ -354,8 +365,12 @@ namespace Trinity
                 // The semantics of (index, toNextSpan) are somewhat complicated, but it's only because it is required for accurately and relatively effortlessly being able to
                 // capture sequences. A sequence is a 2+ consequtive tokens in a query.
 		//
-		// IMPORTANT: It can be 0 if there is no adjacent term. (i.e last term in a sequence or in the query)
+		// IMPORTANT: It can be 0 if there is no adjacent term. (i.e last term in a sequence or in the query). You can now use query::final_index()
+		// if you want to compute a range for when toNextSpan = 0, e.g range32_t(index, toNextSpan ?: final_index() - index)
+		//
+		// Effectively, the offset of the next sub-expression from index, iff there is a next sub-expression(otherwise it's 0)
                 uint8_t toNextSpan;
+
 
                 // flags. Usually 0, but e.g if you are rewritting a [wow] to [wow OR "world of warcraft"] you
                 // maybe want "world of warcraft" flags to be 1 (i.e derived). This can be very useful for scoring matches.
@@ -378,7 +393,7 @@ namespace Trinity
                 {
                         // A range, which represents the logical span in the input query terms list that was expanded/rewritten/captured.
                         // For example, rewrite_query() for query [pc games] where "pc games" is expanded to cid:806: [ (pc games) OR cid:806 ]
-                        // cid:806 range would be [0, 2), pc's would be [0, 1) and games would be [1, 2). This would make it easier to determine that
+                        // [cid:806] range would be [0, 2), [pc] would be [0, 1) and [games] would be [1, 2). This would make it easier to determine that
                         // e.g cid:806 was matched, which overlaps 'pc' and 'games'
                         range_base<uint16_t, uint8_t> range;
 
@@ -401,14 +416,57 @@ namespace Trinity
 			uint8_t srcSeqSize;
                 } rewrite_ctx;
 
+		// Difference between two ranges:
+		// query range: [index, index + toNextSpan ?: 1)
+		// rewrite range: rewrite_ctx.range
+		//
+		// For e.g query [wow OR (world of warcraft) game]
+		// where we used Trinity::rewrite_query() but didn't rewrite the query, so that rewrite_ctx is initialized
+		// we expect to get:
+		// [wow] 	index:0 	toNextSpan:3  rr:[1, 2)
+		// [world] 	index:0 	toNextSpan:1  rr:[2, 3)
+		// [of] 	index:1 	toNextSpan:1  rr:[3, 4)
+		// [warcraft] 	index:2 	toNextSpan:1  rr:[4, 5)
+		// [game] 	index:3 	toNextSpan:0  rr:[0, 1)
+		//
+		// for the query [world of warcraft game], where we used Trinity::rewrite_query(), and we contracted 'world of warcraft' to 'wow', we expect to get:
+		// [world] 	index:0 	toNextSpan:1  rr:[0, 1)
+		// [of] 	index:1 	toNextSpan:1  rr:[1, 2)
+		// [warcraft] 	index:2 	toNextSpan:1  rr:[2, 3)
+		// [wow] 	index:0 	toNextSpan:3  rr:[0, 3)
+		// [game] 	index:3 	toNextSpan:0  rr:[3, 4)
+		//
+		// for the query [wow game], where we used Trinity::rewrite_query() to expand 'wow' to 'world of warcraft', we expect to get:
+		// [wow] 	index:0 	toNextSpan:3  rr:[0, 1)
+		// [world] 	index:0 	toNextSpan:1  rr:[0, 1)
+		// [of] 	index:1 	toNextSpan:1  rr:[0, 1)
+		// [warcraft] 	index:2 	toNextSpan:2  rr:[0, 1) 
+		// [game] 	index:3 	toNextSpan:0  rr:[1, 2)
+		//
+		// As you can see:
+		// - rewrite range is very useful for identifying phrases and tokens that resulted from rewrites
+		// - rewrite range is always set, even for the last logical term in a sub-expression(for which we set toNextSpan to 0)
+		// - we can't identify logically equal sub-expressions by relying on rewrite_ctx.range. For the last expression
+		//	where [wow] and [world of warcraft] are logically equal, we could check for equality by checking
+		//	[index, toNextSpan). index is == 0 for both sub-expressions and we can easily calculate the span of
+		// 	the second logical sub-expressions and thus figure out that they are identical here.
+		// - if [game] wasn't part of the query, then toNextSpan would have been 0 for the last token of every sub-expression
+		// 	in those examples, so we clearly need a way to deal with those situations. You can now use
+		//	query::final_index() to properly and correctly compute a range when toNextSpan == 0
+
+
                 term terms[0];
+
+
+
+
 
                 bool operator==(const phrase &o) const noexcept
                 {
                         //WAS: if (size == o.size)
                         if (size == o.size && flags == o.flags)
                         {
-                                uint8_t i;
+                                size_t i;
 
                                 for (i = 0; i != size && terms[i].token == o.terms[i].token; ++i)
                                         continue;
@@ -420,7 +478,7 @@ namespace Trinity
                 }
 
                 // handy utility method
-                static auto make(const str8_t *tokens, const uint8_t n, simple_allocator *const a)
+                static auto make(const str8_t *tokens, const size_t n, simple_allocator *const a)
                 {
                         auto p = (phrase *)a->Alloc(sizeof(phrase) + sizeof(term) * n);
 
@@ -433,14 +491,14 @@ namespace Trinity
 			p->rewrite_ctx.translationCoefficient = 1.0;
                         p->size = n;
 
-                        for (uint32_t i{0}; i != n; ++i)
+                        for (size_t i{0}; i != n; ++i)
                                 p->terms[i].token.Set(a->CopyOf(tokens[i].data(), tokens[i].size()), tokens[i].size());
                         return p;
                 }
         };
 
         // see query::normalize()
-        ast_node *normalize_ast(ast_node *);
+        ast_node * normalize_ast(ast_node *);
 
         // This is really just a container for an ast root node and the allocator
         // used to allocate the AST from.
@@ -448,6 +506,7 @@ namespace Trinity
         struct query final
         {
                 ast_node *root;
+		uint16_t final_index_;
                 simple_allocator allocator{512};
                 // parse() will set tokensParser; this may come in handy elsewhere, e.g see rewrite_query() impl.
                 std::pair<uint32_t, uint8_t> (*tokensParser)(const str32_t, char_t *, const bool);
@@ -490,7 +549,7 @@ namespace Trinity
                 static void bind_tokens_to_allocator(ast_node *, simple_allocator *);
 
 		query()
-			: root{nullptr}, tokensParser{nullptr}
+			: root{nullptr}, final_index_{0}, tokensParser{nullptr}
 		{
 
 		}
@@ -500,6 +559,15 @@ namespace Trinity
                         return root;
                 }
 
+		// This would be the index of the first new sub-expression of the query, if
+		// the query had more sub-expressions.
+		// It is computed by assign_query_indices(), and it's very handy because toNextSpan is set to 0
+		// for all last tokens of the last query sub-exprs. and you may need to
+		// deal with those kind of ranges in your applications.
+		auto final_index() const noexcept {
+			return final_index_;
+		}
+
                 query(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *, const bool) = default_token_parser_impl, const uint32_t parserFlags = 0)
                     : tokensParser{tp}
                 {
@@ -508,7 +576,7 @@ namespace Trinity
                 }
 
                 query(ast_node *r)
-                    : root{r}
+                    : root{r}, final_index_{0}
                 {
                 }
 
@@ -516,6 +584,7 @@ namespace Trinity
                 {
                         tokensParser = o.tokensParser;
                         root = o.root ? (shallow ? o.root->shallow_copy(&allocator) : o.root->copy(&allocator)) : nullptr;
+			final_index_ = o.final_index_;
                         if (root && false == shallow)
                                 bind_tokens_to_allocator(root, &allocator);
                 }
@@ -523,6 +592,7 @@ namespace Trinity
                 query(query &&o)
                 {
                         root = std::exchange(o.root, nullptr);
+			final_index_ = o.final_index_;
                         tokensParser = o.tokensParser;
                         allocator = std::move(o.allocator);
                 }
@@ -532,6 +602,7 @@ namespace Trinity
                         allocator.reuse();
 
                         root = o.root ? o.root->copy(&allocator) : nullptr;
+			final_index_ = o.final_index_;
                         tokensParser = o.tokensParser;
                         if (root)
                                 bind_tokens_to_allocator(root, &allocator);
@@ -552,6 +623,18 @@ namespace Trinity
                 {
                         return nodes(root);
                 }
+
+		// Computes number of sub-expressions, whereas sub-expressions are collated using AND operators
+		// OR expressions are properly counted as one, e.g 
+		//  (usa OR (unites states of (america OR americas))) is a single expression
+		// 
+		// XXX: This is not a particularly optimal implementation
+		// make sure you have normalize()d the query before invoking this method
+                size_t subexpressions_count() const noexcept;
+
+		// This returns the phrase::index for all query subexpressions
+		// which can be very beneficial in your MatchedIndexDocumentsFilter::consider() impl.
+		std::vector<uint16_t> subexpressions_offsets() const noexcept;
 
                 // If all you want to do is remove a node, set it a dummy
                 // If all you want to do is replace a single node (i.e not a run), just replace
@@ -625,7 +708,7 @@ namespace Trinity
                                                 break;
 
 					case ast_node::Type::MatchSome:
-						for (uint32_t i{0}; i != n->match_some.size; ++i)
+						for (size_t i{0}; i != n->match_some.size; ++i)
 							stack.push_back({seg, n->match_some.nodes[i]});
 						break;
 
@@ -698,6 +781,7 @@ namespace Trinity
 		void reset()
 		{
 			root = nullptr;
+			final_index_ = 0;
 			allocator.reuse();
 		}
         };

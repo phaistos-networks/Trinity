@@ -199,7 +199,7 @@ static auto parse_operator(ast_parser &ctx) {
 }
 
 // define for more verbose representation of binops
-//#define _VERBOSE_DESCR 1
+#define _VERBOSE_DESCR 1
 
 static void PrintImpl(Buffer &b, const Operator op) {
         switch (op) {
@@ -466,15 +466,16 @@ void ast_parser::track_term(term &t) {
         distinctTokens.push_back(t.token);
 }
 
-ast_node *normalize_root(ast_node *root);
+std::pair<ast_node *, uint16_t> normalize_root(ast_node *root);
 
 ast_node *ast_parser::parse() {
         require(distinctTokens.empty()); // in case we invoked parse() earlier
 
         auto n = parse_expr(*this);
 
-        if (n)
-                n = normalize_root(n);
+        if (n) {
+                n = normalize_root(n).first;
+        }
 
         return n;
 }
@@ -927,6 +928,7 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx) {
 struct query_assign_ctx final {
         uint32_t                             nextIndex;
         std::vector<std::vector<phrase *> *> stack;
+	std::vector<phrase *> phrases;
 };
 
 #if 0
@@ -1025,6 +1027,13 @@ static void assign_query_indices(ast_node *const n, query_assign_ctx &ctx, phras
 #else
 static void assign_query_indices(ast_node *const n, query_assign_ctx &ctx) {
         if (n->is_unary()) {
+		// need to collect them all all here, in case
+		// we want to set phrase::toNextSpan to 
+		// (ctx.nextIndex  - unary_node->index)
+		// which is argulably faster and "safer" than altering the impl. of this method to 
+		// accomplish this without relying on this vector<>
+		ctx.phrases.emplace_back(n->p);
+
                 if (!ctx.stack.empty())
                         ctx.stack.back()->push_back(n->p);
 
@@ -1085,11 +1094,12 @@ static void assign_query_indices(ast_node *const n, query_assign_ctx &ctx) {
 #endif
 
 // See: IMPLEMENTATION.md
-ast_node *normalize_root(ast_node *root) {
+std::pair<ast_node *, uint16_t> normalize_root(ast_node *root) {
         if (!root)
-                return nullptr;
+                return { nullptr, 0 };
 
         normalizer_ctx ctx;
+	uint16_t findex{0};
 
         do {
                 ctx.updates   = 0;
@@ -1150,10 +1160,23 @@ ast_node *normalize_root(ast_node *root) {
 
                 ctx.nextIndex = 0;
 #if 0
+		// for the debug impl.
+
 		phrase *firstPhrase{nullptr}, *lastPhrase{nullptr};
                 assign_query_indices(root, ctx, firstPhrase, lastPhrase);
 #else
                 assign_query_indices(root, ctx);
+
+
+		// We are not going to assign (it->toNextSpan = ctx.nextIndex - it->index)
+		// for each it in ctx.phrases here
+		// because that could break semantics of applications relying on the set assumption that
+		// (phrase::toNextSpan == 0) if there is no logical next token past that token/phrase
+		// (we are still going to collect them all in ctx.phrases because it's cheap and maybe
+		// we will need to do this later)
+		//
+		// We will however need to return ctx.nextIndex here
+		findex = ctx.nextIndex;
 #endif
 
 #if 0
@@ -1165,7 +1188,7 @@ ast_node *normalize_root(ast_node *root) {
 #endif
         }
 
-        return root;
+        return {root, findex};
 }
 
 #pragma mark query utility functions
@@ -1293,7 +1316,7 @@ static void capture_leader(ast_node *const n, std::vector<ast_node *> *const out
 }
 
 ast_node *Trinity::normalize_ast(ast_node *n) {
-        return normalize_root(n);
+        return normalize_root(n).first;
 }
 
 ast_node *query::trim(const std::size_t maxQueryTokens) {
@@ -1321,7 +1344,10 @@ ast_node *query::trim(const std::size_t maxQueryTokens) {
 
 bool query::normalize() {
         if (root) {
-                root = normalize_root(root);
+                const auto[r, i] = normalize_root(root);
+
+                root         = r;
+                final_index_ = i;
                 return root;
         } else
                 return false;
@@ -1589,7 +1615,10 @@ bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str
                 Print(ansifmt::bold, ansifmt::color_blue, "OPTIMIZING AST", ansifmt::reset, "\n");
         }
 
-        root = normalize_root(root);
+        const auto [r, i] = normalize_root(root);
+
+        root         = r;
+        final_index_ = i;
 
         if (!root)
                 return false;
@@ -1644,6 +1673,136 @@ void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a) {
                                 break;
                 }
         } while (!stack.empty());
+}
+
+std::vector<uint16_t> query::subexpressions_offsets() const noexcept {
+        std::vector<uint16_t> result;
+
+        if (!root)
+                return result;
+
+        auto &                      stack{stackTLS};
+        std::vector<const phrase *> all;
+
+        stack.emplace_back(root);
+
+        do {
+                auto it = stack.back();
+
+                stack.pop_back();
+                switch (it->type) {
+                        case ast_node::Type::BinOp:
+                                stack.emplace_back(it->binop.lhs);
+                                if (it->binop.op != Operator::NOT)
+                                        stack.emplace_back(it->binop.rhs);
+                                break;
+
+                        case ast_node::Type::Phrase:
+                        case ast_node::Type::Token:
+                                all.emplace_back(it->p);
+                                break;
+
+                        case ast_node::Type::UnaryOp:
+                                stack.emplace_back(it->unaryop.expr);
+                                break;
+
+                        case ast_node::Type::ConstTrueExpr:
+                                stack.push_back(it->expr);
+                                break;
+
+                        case ast_node::Type::MatchSome:
+                                stack.insert(stack.end(),
+                                             it->match_some.nodes,
+                                             it->match_some.nodes + it->match_some.size);
+                                break;
+
+                        default:
+                                break;
+                }
+        } while (!stack.empty());
+
+        const auto range_end = [fi = final_index()](const auto p) noexcept {
+                return p->toNextSpan ? p->index + p->toNextSpan : fi;
+        };
+
+        std::sort(all.begin(), all.end(), [&range_end](const auto a, const auto b) noexcept {
+                return a->index < b->index || (a->index == b->index && range_end(b) < range_end(a));
+        });
+
+        for (size_t i{0}; i < all.size();) {
+                const auto upto = range_end(all[i]);
+
+                result.emplace_back(all[i]->index);
+                for (++i; i < all.size() && all[i]->index < upto; ++i)
+                        continue;
+        }
+
+        return result;
+}
+
+size_t query::subexpressions_count() const noexcept {
+        if (!root)
+                return 0;
+
+        auto &                      stack{stackTLS};
+        std::vector<const phrase *> all;
+        std::size_t                 cnt{0};
+
+        stack.emplace_back(root);
+
+        do {
+                auto it = stack.back();
+
+                stack.pop_back();
+                switch (it->type) {
+                        case ast_node::Type::BinOp:
+                                stack.emplace_back(it->binop.lhs);
+                                if (it->binop.op != Operator::NOT)
+                                        stack.emplace_back(it->binop.rhs);
+                                break;
+
+                        case ast_node::Type::Phrase:
+                        case ast_node::Type::Token:
+                                all.emplace_back(it->p);
+                                break;
+
+                        case ast_node::Type::UnaryOp:
+                                stack.emplace_back(it->unaryop.expr);
+                                break;
+
+                        case ast_node::Type::ConstTrueExpr:
+                                stack.push_back(it->expr);
+                                break;
+
+                        case ast_node::Type::MatchSome:
+                                stack.insert(stack.end(),
+                                             it->match_some.nodes,
+                                             it->match_some.nodes + it->match_some.size);
+                                break;
+
+                        default:
+                                break;
+                }
+        } while (!stack.empty());
+
+        const auto range_end = [fi = final_index()](const auto p) noexcept {
+                return p->toNextSpan ? p->index + p->toNextSpan : fi;
+        };
+
+        std::sort(all.begin(), all.end(), [&range_end](const auto a, const auto b) noexcept {
+                return a->index < b->index || (a->index == b->index && range_end(b) < range_end(a));
+        });
+
+        for (size_t i{0}; i < all.size();) {
+                const auto upto = range_end(all[i]);
+
+                for (++i; i < all.size() && all[i]->index < upto; ++i)
+                        continue;
+
+                ++cnt;
+        }
+
+        return cnt;
 }
 
 // Be pre-computing this, we get an important speedup, because
