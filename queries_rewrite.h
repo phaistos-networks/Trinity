@@ -103,7 +103,7 @@ namespace Trinity {
 
                 bool replace_self(flow *with) {
                         if (auto p = parent) {
-                                for (uint32_t i{0}; i != p->ents.size(); ++i) {
+                                for (size_t i{0}; i != p->ents.size(); ++i) {
                                         if (p->ents[i].type == flow_ent::Type::Flow && p->ents[i].f == this) {
                                                 with->range.Set(UINT32_MAX, 0);
                                                 with->parent = parent;
@@ -126,7 +126,7 @@ namespace Trinity {
                         if (const auto n = ents.size()) {
                                 ast_node *lhs{nullptr};
 
-                                for (uint32_t i{0}; i != n;) {
+                                for (size_t i{0}; i != n;) {
                                         ast_node *node;
 
                                         if (ents[i].type == flow_ent::Type::Flow) {
@@ -353,8 +353,10 @@ namespace Trinity {
                         if (0 == n)
                                 continue;
 
+			static constexpr uint32_t parser_flags = unsigned(Trinity::ast_parser::Flags::ParseConstTrueExpr);
+
                         if (n > 1) {
-                                auto lhs = ast_parser(alts[saved].first, allocator, tokensParser).parse();
+                                auto lhs = ast_parser(alts[saved].first, allocator, tokensParser, parser_flags).parse();
 
                                 if (unlikely(nullptr == lhs))
                                         throw Switch::data_error("Failed to parse [", alts[saved].first, "]");
@@ -380,7 +382,7 @@ namespace Trinity {
                                         lhs->set_alltokens_flags(flags);
                                 }
 
-                                for (uint32_t i{1}; budget && i != n; ++i) {
+                                for (size_t i{1}; budget && i != n; ++i) {
                                         auto n = ast_node::make_binop(allocator);
 
                                         if (budget && budget != std::numeric_limits<std::size_t>::max())
@@ -388,7 +390,7 @@ namespace Trinity {
 
                                         n->binop.op  = Operator::OR;
                                         n->binop.lhs = lhs;
-                                        n->binop.rhs = ast_parser(alts[i + saved].first, allocator, tokensParser).parse();
+                                        n->binop.rhs = ast_parser(alts[i + saved].first, allocator, tokensParser, parser_flags).parse();
                                         lhs          = n;
 
                                         if (trace)
@@ -422,10 +424,10 @@ namespace Trinity {
 
                                 node = lhs;
                         } else {
-                                node = Trinity::ast_parser(alts[saved].first, allocator, tokensParser).parse();
+                                node = Trinity::ast_parser(alts[saved].first, allocator, tokensParser, parser_flags).parse();
 
                                 if (unlikely(nullptr == node))
-                                        throw Switch::data_error("Failed to parse [", alts[saved].first, "]");
+                                        throw Switch::data_error("Failed to parse [", alts[saved].first, "], parser flags ", parser_flags);
 
                                 if (node->type == ast_node::Type::Token && span > 1) {
                                         // source range span > 1 and alt is a token

@@ -78,13 +78,13 @@ static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, queryexec_ctx
         } else if (n.fp == ENT::matchsome) {
                 auto pm = static_cast<compilation_ctx::partial_match_ctx *>(n.ptr);
 
-                for (uint32_t i{0}; i != pm->size; ++i)
+                for (size_t i{0}; i != pm->size; ++i)
                         reorder_execnode(pm->nodes[i], updates, rctx);
                 return UINT64_MAX - 1;
         } else if (n.fp == ENT::matchallnodes || n.fp == ENT::matchanynodes) {
                 auto g = static_cast<compilation_ctx::nodes_group *>(n.ptr);
 
-                for (uint32_t i{0}; i != g->size; ++i)
+                for (size_t i{0}; i != g->size; ++i)
                         reorder_execnode(g->nodes[i], updates, rctx);
                 return UINT64_MAX - 1;
         } else if (n.fp == ENT::matchallterms) {
@@ -95,7 +95,7 @@ static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, queryexec_ctx
                 const auto run = static_cast<const compilation_ctx::termsrun *>(n.ptr);
                 uint64_t   sum{0};
 
-                for (uint32_t i{0}; i != run->size; ++i)
+                for (size_t i{0}; i != run->size; ++i)
                         sum += rctx.term_ctx(run->terms[i]).documents;
                 return sum;
         } else if (n.fp == ENT::matchallphrases) {
@@ -106,7 +106,7 @@ static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, queryexec_ctx
                 const auto *const __restrict__ run = static_cast<compilation_ctx::phrasesrun *>(n.ptr);
                 uint64_t sum{0};
 
-                for (uint32_t i{0}; i != run->size; ++i)
+                for (size_t i{0}; i != run->size; ++i)
                         sum += phrase_cost(rctx, run->phrases[i]);
                 return sum;
         } else {
@@ -154,17 +154,17 @@ static exec_node prepare_tree(exec_node root, queryexec_ctx &rctx) {
                         auto ctx = static_cast<compilation_ctx::termsrun *>(n.ptr);
 
                         v.clear();
-                        for (uint32_t i{0}; i != ctx->size; ++i) {
+                        for (size_t i{0}; i != ctx->size; ++i) {
                                 const auto termID = ctx->terms[i];
 
-                                if (traceCompile)
+                                if constexpr (traceCompile)
                                         SLog("AND ", termID, " ", rctx.term_ctx(termID).documents, "\n");
                                 v.emplace_back(termID, rctx.term_ctx(termID).documents);
                         }
 
                         std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) { return a.second < b.second; });
 
-                        for (uint32_t i{0}; i != ctx->size; ++i)
+                        for (size_t i{0}; i != ctx->size; ++i)
                                 ctx->terms[i] = v[i].first;
                 } else if (n.fp == ENT::matchanyterms) {
                         // There are no real benefits to sorting terms for ENT::matchanyterms but we 'll do it anyway because its cheap
@@ -172,10 +172,10 @@ static exec_node prepare_tree(exec_node root, queryexec_ctx &rctx) {
                         auto ctx = static_cast<compilation_ctx::termsrun *>(n.ptr);
 
                         v.clear();
-                        for (uint32_t i{0}; i != ctx->size; ++i) {
+                        for (size_t i{0}; i != ctx->size; ++i) {
                                 const auto termID = ctx->terms[i];
 
-                                if (traceCompile)
+                                if constexpr (traceCompile)
                                         SLog("OR ", termID, " ", rctx.term_ctx(termID).documents, "\n");
 
                                 v.emplace_back(termID, rctx.term_ctx(termID).documents);
@@ -183,7 +183,7 @@ static exec_node prepare_tree(exec_node root, queryexec_ctx &rctx) {
 
                         std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) { return a.second < b.second; });
 
-                        for (uint32_t i{0}; i != ctx->size; ++i)
+                        for (size_t i{0}; i != ctx->size; ++i)
                                 ctx->terms[i] = v[i].first;
                 } else if (n.fp == ENT::logicaland || n.fp == ENT::logicalor || n.fp == ENT::logicalnot) {
                         auto ctx = static_cast<compilation_ctx::binop_ctx *>(n.ptr);
@@ -240,12 +240,14 @@ static bool  all_pli(const std::vector<DocsSetIterators::Iterator *> &its) noexc
         return true;
 }
 
+void PrintImpl(Buffer &b, const exec_node &n); // compilation_ctx.cpp
+
 DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, const uint32_t execFlags) {
         if (n.fp == ENT::matchallterms) {
                 const auto                  run = static_cast<const compilation_ctx::termsrun *>(n.ptr);
                 DocsSetIterators::Iterator *decoders[run->size];
 
-                for (uint32_t i{0}; i != run->size; ++i) {
+                for (size_t i{0}; i != run->size; ++i) {
                         auto pli = reg_pli(decode_ctx.decoders[run->terms[i]]->new_iterator());
 
                         decoders[i] = pli;
@@ -256,7 +258,7 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                 const auto                  run = static_cast<const compilation_ctx::termsrun *>(n.ptr);
                 DocsSetIterators::Iterator *decoders[run->size];
 
-                for (uint32_t i{0}; i != run->size; ++i) {
+                for (size_t i{0}; i != run->size; ++i) {
                         auto pli = reg_pli(decode_ctx.decoders[run->terms[i]]->new_iterator());
 
                         decoders[i] = pli;
@@ -267,7 +269,7 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                 const auto                  g = static_cast<const compilation_ctx::partial_match_ctx *>(n.ptr);
                 DocsSetIterators::Iterator *its[g->size];
 
-                for (uint32_t i{0}; i != g->size; ++i)
+                for (size_t i{0}; i != g->size; ++i)
                         its[i] = build_iterator(g->nodes[i], execFlags);
 
                 return reg_docset_it(new DocsSetIterators::DisjunctionSome(its, g->size, g->min));
@@ -275,7 +277,7 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                 const auto                    p = static_cast<const compilation_ctx::phrase *>(n.ptr);
                 Codecs::PostingsListIterator *its[p->size];
 
-                for (uint32_t i{0}; i != p->size; ++i) {
+                for (size_t i{0}; i != p->size; ++i) {
                         const auto info = tctxMap[p->termIDs[i]];
 
                         require(info.first.documents);
@@ -293,7 +295,7 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                         const auto                    p = run->phrases[pit];
                         Codecs::PostingsListIterator *tits[p->size];
 
-                        for (uint32_t i{0}; i != p->size; ++i)
+                        for (size_t i{0}; i != p->size; ++i)
                                 tits[i] = reg_pli(decode_ctx.decoders[p->termIDs[i]]->new_iterator());
 
                         its[pit] = reg_docset_it(new DocsSetIterators::Phrase(this, tits, p->size, execFlags & unsigned(ExecFlags::AccumulatedScoreScheme), execFlags &unsigned(ExecFlags::DocumentsOnly)));
@@ -308,7 +310,7 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                         const auto                    p = run->phrases[pit];
                         Codecs::PostingsListIterator *tits[p->size];
 
-                        for (uint32_t i{0}; i != p->size; ++i)
+                        for (size_t i{0}; i != p->size; ++i)
                                 tits[i] = reg_pli(decode_ctx.decoders[p->termIDs[i]]->new_iterator());
 
                         its[pit] = reg_docset_it(new DocsSetIterators::Phrase(this, tits, p->size, execFlags & unsigned(ExecFlags::AccumulatedScoreScheme), execFlags &unsigned(ExecFlags::DocumentsOnly)));
@@ -321,9 +323,12 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                 std::vector<DocsSetIterators::Iterator *> its;
                 DocsSetIterators::Iterator *              v[2] = {build_iterator(e->lhs, execFlags), build_iterator(e->rhs, execFlags)};
 
+		if constexpr (traceCompile)
+			SLog("Compiling logical OR\n");
+
                 // Pulling Iterators from (lhs, rhs) to this disjunction when possible is extremely important
                 // Over 50% perf.improvement
-                for (uint32_t i{0}; i != 2; ++i) {
+                for (size_t i{0}; i != 2; ++i) {
                         auto it = v[i];
 
                         if (it->type == DocsSetIterators::Type::Disjunction) {
@@ -344,7 +349,7 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                                 its.push_back(it);
                 }
 
-                if (traceCompile)
+                if constexpr (traceCompile)
                         SLog("Final ", its.size(), " ", execFlags & unsigned(ExecFlags::DocumentsOnly), ": ", all_pli(its), "\n");
 
                 return reg_docset_it(all_pli(its)
@@ -365,19 +370,19 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                         std::vector<DocsSetIterators::Iterator *> its;
                         Trinity::DocsSetIterators::Iterator *     v[2] = {build_iterator(e->lhs, execFlags), build_iterator(e->rhs, execFlags)};
 
-                        for (uint32_t i{0}; i != 2; ++i) {
+                        for (size_t i{0}; i != 2; ++i) {
                                 auto it = v[i];
 
                                 if (it->type == DocsSetIterators::Type::Conjuction || it->type == DocsSetIterators::Type::ConjuctionAllPLI) {
                                         const auto internal = static_cast<DocsSetIterators::Conjuction *>(it);
 
-                                        for (uint32_t i{0}; i != internal->size; ++i)
+                                        for (size_t i{0}; i != internal->size; ++i)
                                                 its.push_back(internal->its[i]);
                                 } else
                                         its.push_back(it);
                         }
 
-                        if (traceCompile)
+                        if constexpr (traceCompile)
                                 SLog("final ", its.size(), "\n");
 
                         return reg_docset_it(all_pli(its)
@@ -389,7 +394,7 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                 const auto                                g = static_cast<const compilation_ctx::nodes_group *>(n.ptr);
 
                 its.reserve(g->size);
-                for (uint32_t i{0}; i != g->size; ++i)
+                for (size_t i{0}; i != g->size; ++i)
                         its.push_back(build_iterator(g->nodes[i], execFlags));
 
                 return reg_docset_it(all_pli(its)
@@ -400,7 +405,7 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                 const auto                                g = static_cast<const compilation_ctx::nodes_group *>(n.ptr);
 
                 its.reserve(g->size);
-                for (uint32_t i{0}; i != g->size; ++i)
+                for (size_t i{0}; i != g->size; ++i)
                         its.push_back(build_iterator(g->nodes[i], execFlags));
 
                 return reg_docset_it(all_pli(its)
@@ -419,6 +424,9 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
         } else if (n.fp == ENT::consttrueexpr) {
                 // not part of a binary op.
                 const auto op = static_cast<const compilation_ctx::unaryop_ctx *>(n.ptr);
+
+		if constexpr (traceCompile)
+			SLog("ConstTrueExpr not part of a binary op?\n");
 
                 return build_iterator(op->expr, execFlags);
         } else {
@@ -501,7 +509,7 @@ void Trinity::exec_query(const query &in,
         };
 
         if (!in) {
-                if (traceCompile)
+                if constexpr (traceCompile)
                         SLog("No root node\n");
 
                 return;
@@ -514,7 +522,7 @@ void Trinity::exec_query(const query &in,
 
         // Normalize just in case
         if (!q.normalize()) {
-                if (traceCompile)
+                if constexpr (traceCompile)
                         SLog("No root node after normalization\n");
 
                 return;
@@ -591,7 +599,7 @@ void Trinity::exec_query(const query &in,
 
                         // for each phrase token
                         for (uint16_t pos{it->index}, i{0}; i != it->size; ++i, ++pos) {
-                                if (traceCompile)
+                                if constexpr (traceCompile)
                                         SLog("Collected instance: [", it->terms[i].token, "] index:", pos, " rep:", rep, " toNextSpan:", i == (it->size - 1) ? toNextSpan : 1, "\n");
 
                                 originalQueryTokenInstances.push_back({{pos, flags, rep, uint8_t(i == (it->size - 1) ? toNextSpan : 1), {rewriteRange, translationCoefficient, srcSeqSize}}, it->terms[i].token}); // need to be careful to get this right for phrases
@@ -599,7 +607,7 @@ void Trinity::exec_query(const query &in,
                 }
         }
 
-        if (traceCompile)
+        if constexpr (traceCompile)
                 SLog("Compiling:", q, "\n");
 
         queryexec_ctx rctx(idxsrc, documentsOnly, accumScoreMode);
@@ -613,10 +621,10 @@ void Trinity::exec_query(const query &in,
                 }
 
                 inline uint16_t resolve_query_term(const str8_t term) final {
-			const auto res = rctx->resolve_term(term);
+                        const auto res = rctx->resolve_term(term);
 
-			if (traceCompile)
-				SLog("Attempting to resolve [", term, "] ", res, "\n");
+                        if constexpr (traceCompile)
+                                SLog("Attempting to resolve [", term, "] ", res, "\n");
 
                         return res;
                 }
@@ -626,11 +634,11 @@ void Trinity::exec_query(const query &in,
         const auto before       = Timings::Microseconds::Tick();
         auto       rootExecNode = compile_query(q.root, compilationCtx);
 
-        if (traceCompile)
+        if constexpr (traceCompile)
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " to compile, ", duration_repr(Timings::Microseconds::Since(_start)), " since start\n");
 
         if (unlikely(rootExecNode.fp == ENT::dummyop || rootExecNode.fp == ENT::constfalse)) {
-                if (traceCompile)
+                if constexpr (traceCompile)
                         SLog("Nothing to do\n");
 
                 return;
@@ -669,12 +677,12 @@ void Trinity::exec_query(const query &in,
                 rctx.originalQueryTermCtx = static_cast<query_term_ctx **>(rctx.allocator.Alloc(sizeof(query_term_ctx *) * maxQueryTermIDPlus1));
 
                 memset(rctx.originalQueryTermCtx, 0, sizeof(query_term_ctx *) * maxQueryTermIDPlus1);
-                std::sort(originalQueryTokenInstances.begin(), originalQueryTokenInstances.end(), [](const auto &a, const auto &b) { return terms_cmp(a.token.data(), a.token.size(), b.token.data(), b.token.size()) < 0; });
+                std::sort(originalQueryTokenInstances.begin(), originalQueryTokenInstances.end(), [](const auto &a, const auto &b) noexcept { return terms_cmp(a.token.data(), a.token.size(), b.token.data(), b.token.size()) < 0; });
 
                 for (const auto *p = originalQueryTokenInstances.data(), *const e = p + originalQueryTokenInstances.size(); p != e;) {
                         const auto token = p->token;
 
-                        if (traceCompile)
+                        if constexpr (traceCompile)
                                 SLog("Collecting token [", token, "]\n");
 
                         if (const auto termID = rctx.termsDict[token]) // only if this token has actually been used in the compiled query
@@ -684,7 +692,7 @@ void Trinity::exec_query(const query &in,
                                         collected.push_back(p);
                                 } while (++p != e && p->token == token);
 
-                                if (traceCompile)
+                                if constexpr (traceCompile)
                                         SLog("Collected ", collected.size(), " for token [", token, "]\n");
 
                                 const auto cnt = collected.size();
@@ -698,7 +706,7 @@ void Trinity::exec_query(const query &in,
                                 p->term.id      = termID;
                                 p->term.token   = token;
 
-                                std::sort(collected.begin(), collected.end(), [](const auto &a, const auto &b) { return a->index < b->index; });
+                                std::sort(collected.begin(), collected.end(), [](const auto &a, const auto &b) noexcept { return a->index < b->index; });
                                 for (size_t i{0}; i != collected.size(); ++i) {
                                         auto it = collected[i];
 
@@ -710,7 +718,7 @@ void Trinity::exec_query(const query &in,
                                         p->instances[i].rewrite_ctx.translationCoefficient = it->rewrite_ctx.translationCoefficient;
                                         p->instances[i].rewrite_ctx.srcSeqSize             = it->rewrite_ctx.srcSeqSize;
 
-                                        if (traceCompile)
+                                        if constexpr (traceCompile)
                                                 SLog("<<<<<< token index ", it->index, "\n");
 
                                         maxIndex = std::max(maxIndex, it->index);
@@ -723,7 +731,7 @@ void Trinity::exec_query(const query &in,
                                 // rctx.originalQueryTermCtx[termID] will be nullptr
                                 // see capture_matched_term() for why this is important.
 
-                                if (traceCompile)
+                                if constexpr (traceCompile)
                                         SLog("Ignoring ", token, "\n");
 
                                 do {
@@ -768,7 +776,7 @@ void Trinity::exec_query(const query &in,
                                         } while (p != e && p->first == idx && p->second.termID == info.termID && p->second.toNextSpan == info.toNextSpan);
                                 } while (p != e && p->first == idx);
 
-                                if (traceCompile) {
+                                if constexpr (traceCompile) {
                                         SLog("For index ", idx, " ", list.size(), "\n");
 
                                         for (const auto &it : list)
@@ -798,7 +806,7 @@ void Trinity::exec_query(const query &in,
 
                                 } while (p != e && p->first == idx);
 
-                                if (traceCompile) {
+                                if constexpr (traceCompile) {
                                         SLog("For index ", idx, " ", list.size(), "\n");
 
                                         for (const auto &it : list)
@@ -824,11 +832,11 @@ void Trinity::exec_query(const query &in,
                 matchesFilter->prepare(const_cast<const query_index_terms **>(queryIndicesTerms), q.final_index());
         }
 
-        if (traceCompile)
+        if constexpr (traceCompile)
                 SLog("RUNNING: ", duration_repr(Timings::Microseconds::Since(_start)), " since start, documentsOnly = ", documentsOnly, "\n");
 
-	// this is probably a good idea (improved cache locality)
-	// but not likely a great idea
+                // this is probably a good idea (improved cache locality)
+                // but not likely a great idea
 #define DOCSONLY_BATCH_SIZE 0
 
 #pragma mark Execution
@@ -837,7 +845,7 @@ void Trinity::exec_query(const query &in,
                         isrc_docid_t docID;
 
                         // SPECIALIZATION: single term
-                        if (traceCompile)
+                        if constexpr (traceCompile)
                                 SLog("SPECIALIZATION: single term\n");
 
                         if (documentsOnly) {
@@ -846,39 +854,39 @@ void Trinity::exec_query(const query &in,
                                 auto *const decoder = rctx.decode_ctx.decoders[termID];
                                 auto *const it      = rctx.reg_pli(decoder->new_iterator());
 #if DOCSONLY_BATCH_SIZE > 0
-				docid_t queue[DOCSONLY_BATCH_SIZE];
-				uint32_t queue_size{0};
+                                docid_t  queue[DOCSONLY_BATCH_SIZE];
+                                uint32_t queue_size{0};
 #endif
 
-                                if (traceCompile)
+                                if constexpr (traceCompile)
                                         SLog("SPECIALIZATION: documentsOnly\n");
 
                                 if (documentsFilter) {
-					if (traceCompile)
-						SLog("SPECIALIZATION: documentsFilter\n");
+                                        if constexpr (traceCompile)
+                                                SLog("SPECIALIZATION: documentsFilter\n");
 
                                         while (likely((docID = it->next()) != DocIDsEND)) {
                                                 const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(docID) : docID;
 
                                                 if (!documentsFilter->filter(globalDocID) && !maskedDocumentsRegistry->test(globalDocID)) {
 #if DOCSONLY_BATCH_SIZE > 0
-							queue[queue_size++] = globalDocID;
-							if (queue_size == DOCSONLY_BATCH_SIZE) {
-								matchesFilter->consider(queue, DOCSONLY_BATCH_SIZE);
-								queue_size = 0;
-							}
+                                                        queue[queue_size++] = globalDocID;
+                                                        if (queue_size == DOCSONLY_BATCH_SIZE) {
+                                                                matchesFilter->consider(queue, DOCSONLY_BATCH_SIZE);
+                                                                queue_size = 0;
+                                                        }
 #else
                                                         matchesFilter->consider(globalDocID);
 #endif
-						}
+                                                }
                                         }
                                 } else if (nullptr == maskedDocumentsRegistry || maskedDocumentsRegistry->empty()) {
-					if (traceCompile)
-						SLog("SPECIALIZATION: fast\n");
+                                        if constexpr (traceCompile)
+                                                SLog("SPECIALIZATION: fast\n");
 
                                         while (likely((docID = it->next()) != DocIDsEND)) {
 #if DOCSONLY_BATCH_SIZE > 0
-						const auto id = requireDocIDTranslation ? idxsrc->translate_docid(docID) : docID;
+                                                const auto id = requireDocIDTranslation ? idxsrc->translate_docid(docID) : docID;
 
                                                 queue[queue_size++] = id;
                                                 if (queue_size == DOCSONLY_BATCH_SIZE) {
@@ -889,10 +897,10 @@ void Trinity::exec_query(const query &in,
 #else
                                                 matchesFilter->consider(requireDocIDTranslation ? idxsrc->translate_docid(docID) : docID);
 #endif
-					}
+                                        }
                                 } else {
-					if (traceCompile)
-						SLog("Specialization: masked\n");
+                                        if constexpr (traceCompile)
+                                                SLog("Specialization: masked\n");
 
                                         while (likely((docID = it->next()) != DocIDsEND)) {
                                                 const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(docID) : docID;
@@ -900,7 +908,7 @@ void Trinity::exec_query(const query &in,
                                                 if (!maskedDocumentsRegistry->test(globalDocID)) {
 #if DOCSONLY_BATCH_SIZE > 0
                                                         queue[queue_size++] = globalDocID;
-							if (queue_size == DOCSONLY_BATCH_SIZE) {
+                                                        if (queue_size == DOCSONLY_BATCH_SIZE) {
                                                                 matchesFilter->consider(queue, DOCSONLY_BATCH_SIZE);
                                                                 queue_size = 0;
                                                         }
@@ -940,7 +948,7 @@ void Trinity::exec_query(const query &in,
 
                                 if (documentsFilter) {
                                         if (maskedDocumentsRegistry && false == maskedDocumentsRegistry->empty()) {
-                                                if (traceExec)
+                                                if constexpr (traceExec)
                                                         SLog("documentsFilter AND maskedDocumentsRegistry\n");
 
                                                 while (likely((docID = it->next()) != DocIDsEND)) {
@@ -953,7 +961,7 @@ void Trinity::exec_query(const query &in,
                                                         }
                                                 }
                                         } else {
-                                                if (traceExec)
+                                                if constexpr (traceExec)
                                                         SLog("documentsFilter\n");
 
                                                 while (likely((docID = it->next()) != DocIDsEND)) {
@@ -967,7 +975,7 @@ void Trinity::exec_query(const query &in,
                                                 }
                                         }
                                 } else if (maskedDocumentsRegistry && false == maskedDocumentsRegistry->empty()) {
-                                        if (traceExec)
+                                        if constexpr (traceExec)
                                                 SLog("maskedDocumentsRegistry\n");
 
                                         while (likely((docID = it->next()) != DocIDsEND)) {
@@ -980,7 +988,7 @@ void Trinity::exec_query(const query &in,
                                                 }
                                         }
                                 } else {
-                                        if (traceExec)
+                                        if constexpr (traceExec)
                                                 SLog("No filtering\n");
 
                                         while (likely((docID = it->next()) != DocIDsEND)) {
@@ -993,6 +1001,9 @@ void Trinity::exec_query(const query &in,
                                 }
                         }
                 } else {
+                        if constexpr (traceCompile)
+                                SLog("BUILDING ITERATORS from ", rootExecNode, "\n");
+
                         auto *const sit = rctx.build_iterator(rootExecNode, execFlags);
                         // Over-estimate capacity, make sure we won't overrun any buffers
                         const std::size_t capacity = rctx.tctxMap.size() + rctx.allIterators.size() + rctx.docsetsIterators.size() + 64;
@@ -1002,6 +1013,8 @@ void Trinity::exec_query(const query &in,
                         rctx.reusableCDS.capacity = std::max<uint16_t>(512, capacity);
                         rctx.reusableCDS.data     = static_cast<candidate_document **>(malloc(sizeof(candidate_document *) * rctx.reusableCDS.capacity));
                         rctx.rootIterator         = sit;
+
+
 
                         // We will create different Handlers depending on the mode and other execution options so
                         // because process() is a hot method and we 'd like to reduce checks in there if we can
@@ -1018,7 +1031,7 @@ void Trinity::exec_query(const query &in,
                                                         IndexDocumentsFilter *__restrict__ const documentsFilter;
                                                         std::size_t n{0};
 
-                                                        void process(relevant_document_provider *const rdp) final {
+                                                        void process(relevant_document_provider *__restrict__ const rdp) final {
                                                                 const auto id          = rdp->document();
                                                                 const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(id) : id;
 
@@ -1256,8 +1269,11 @@ void Trinity::exec_query(const query &in,
                                         span->process(&handler, 1, DocIDsEND);
                                         matchedDocuments = handler.n;
                                 }
-                        } else // documentsOnly == false
-                        {
+                        } else {
+
+				if constexpr (traceExec) 
+					SLog("Executing query\n");
+
                                 if (documentsFilter) {
                                         if (maskedDocumentsRegistry && !maskedDocumentsRegistry->empty()) {
                                                 struct Handler final

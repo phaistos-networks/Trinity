@@ -199,7 +199,7 @@ static auto parse_operator(ast_parser &ctx) {
 }
 
 // define for more verbose representation of binops
-#define _VERBOSE_DESCR 1
+//#define _VERBOSE_DESCR 1
 
 static void PrintImpl(Buffer &b, const Operator op) {
         switch (op) {
@@ -350,32 +350,29 @@ void PrintImpl(Buffer &b, const Trinity::ast_node &n) {
 
 static ast_node *parse_expr(ast_parser &);
 
-static ast_node *parse_unary(ast_parser &ctx) {
+static ast_node *parse_unary(ast_parser &ctx, const uint32_t parser_flags) {
         ctx.skip_ws();
 
-#if 0
-        // enable this for debugging
-        if (ctx.content.StripPrefix(_S("<")))
-        {
-                ctx.groupTerm.push_back('>');
+        if (parser_flags & unsigned(ast_parser::Flags::ParseConstTrueExpr)) {
+		// this is useful for debugging, and for query rewrites
+                if (ctx.content.StripPrefix(_S("<"))) {
+                        ctx.groupTerm.push_back('>');
 
-                auto e = parse_expr(ctx) ?: ctx.parse_failnode();
+                        auto e = parse_expr(ctx) ?: ctx.parse_failnode();
 
-                ctx.skip_ws();
-                if (!ctx.content.StripPrefix(_S(">")))
-                {
-                        if (e->type != ast_node::Type::Dummy)
-                                e = ctx.parse_failnode();
+                        ctx.skip_ws();
+                        if (!ctx.content.StripPrefix(_S(">"))) {
+                                if (e->type != ast_node::Type::Dummy)
+                                        e = ctx.parse_failnode();
+                        } else
+                                ctx.groupTerm.pop_back();
+
+                        auto res = ctx.alloc_node(ast_node::Type::ConstTrueExpr);
+
+                        res->expr = e;
+                        return res;
                 }
-                else
-                        ctx.groupTerm.pop_back();
-
-                auto res = ctx.alloc_node(ast_node::Type::ConstTrueExpr);
-
-                res->expr = e;
-                return res;
         }
-#endif
 
         if (ctx.content.StripPrefix(_S("("))) {
                 ctx.groupTerm.push_back(')');
@@ -411,8 +408,9 @@ static ast_node *parse_unary(ast_parser &ctx) {
 }
 
 static ast_node *parse_subexpr(ast_parser &ctx, const uint16_t limit) {
+	const auto parser_flags{ctx.parserFlags};
         uint8_t prio;
-        auto    cur = parse_unary(ctx);
+        auto    cur = parse_unary(ctx, parser_flags);
 
         Drequire(cur); // can't fail
         for (auto op = parse_operator(ctx); op.first != Operator::NONE && (prio = OpPrio(op.first)) < limit; op = parse_operator(ctx)) {
@@ -1095,6 +1093,8 @@ static void assign_query_indices(ast_node *const n, query_assign_ctx &ctx) {
 
 // See: IMPLEMENTATION.md
 std::pair<ast_node *, uint16_t> normalize_root(ast_node *root) {
+	static constexpr bool traceParser{true};
+
         if (!root)
                 return { nullptr, 0 };
 
@@ -1522,13 +1522,24 @@ void ast_node::set_alltokens_flags(const uint16_t flags) {
 }
 
 bool ast_node::any_leader_tokens() const {
-        std::vector<const ast_node *> stack{this};
+	auto &stack{stackTLS};
 
+	stack.clear();
+	stack.emplace_back(const_cast<ast_node *>(this));
         do {
                 auto n = stack.back();
 
                 stack.pop_back();
                 switch (n->type) {
+			// UPDATE:(markp) 12.04.2018
+			case ast_node::Type::ConstTrueExpr:
+				stack.emplace_back(n->expr);
+				break;
+
+                        case ast_node::Type::MatchSome:
+                                stack.insert(stack.end(), n->match_some.nodes, n->match_some.nodes + n->match_some.size * sizeof(ast_node *));
+                                break;
+
                         case ast_node::Type::Token:
                         case ast_node::Type::Phrase:
                                 return true;

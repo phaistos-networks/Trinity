@@ -6,7 +6,7 @@ using namespace Trinity;
 
 // This is required to support phrases, and its important for working around a bug that manifests very rarely
 // but it does nonetheless.
-// 
+//
 // To replicate [xbox one x] on BP, and consider score for 2155079078, where
 // we fail to properly materialize the hists. This is because the iterator for (XBOX), (ONE) were already
 // asked to materialize the hits for that document earlier to process a phrase. We are now
@@ -15,138 +15,118 @@ using namespace Trinity;
 // TODO: quantify that overhead
 static constexpr const bool trace_docrefs{false};
 
-void Trinity::queryexec_ctx::track_docref(candidate_document *doc)
-{
+void Trinity::queryexec_ctx::track_docref(candidate_document *doc) {
         track_document(doc);
 
-        if (tracked_docrefs.size == tracked_docrefs.capacity)
-        {
+        if (tracked_docrefs.size == tracked_docrefs.capacity) {
                 tracked_docrefs.capacity = (tracked_docrefs.capacity * 2) + 128;
-                tracked_docrefs.data = (candidate_document **)realloc(tracked_docrefs.data,
+                tracked_docrefs.data     = (candidate_document **)realloc(tracked_docrefs.data,
                                                                       sizeof(candidate_document *) * tracked_docrefs.capacity);
         }
 
         tracked_docrefs.data[tracked_docrefs.size++] = doc;
 
-	if constexpr (trace_docrefs)
-		SLog("now ", tracked_docrefs.size, " ", doc->id, "\n");
+        if constexpr (trace_docrefs)
+                SLog("now ", tracked_docrefs.size, " ", doc->id, "\n");
 }
 
-void Trinity::queryexec_ctx::gc_retained_docs(const isrc_docid_t base)
-{
-	std::size_t n{0};
-	auto cnt{tracked_docrefs.size};
+void Trinity::queryexec_ctx::gc_retained_docs(const isrc_docid_t base) {
+        std::size_t n{0};
+        auto        cnt{tracked_docrefs.size};
 
-	// Tirim back, and front
-	// this is not optimal because the documents are not ordered by id in tracked_docrefs.data[]
-	// but short of using e.g a binary heap/prio.queue, which would provide this guarantee, at the expense of
-	// higher maintenance, this is an good compromise.
-	//
-	// The only problem is that we are likely tracking too many candidate_document instances
-	// and this could mean more memory pressure.
-	//
-	// TODO: we can eliminate memmove() by using a ring instead (front_index, back_index), and making
-	// ring size a power of a 2. That way, we will only need to manipulate two indices, and not bother
-	// with memmove(), at the expense of higher iteration costs. Need to consider that alternative impl.
+        // Tirim back, and front
+        // this is not optimal because the documents are not ordered by id in tracked_docrefs.data[]
+        // but short of using e.g a binary heap/prio.queue, which would provide this guarantee, at the expense of
+        // higher maintenance, this is an good compromise.
+        //
+        // The only problem is that we are likely tracking too many candidate_document instances
+        // and this could mean more memory pressure.
+        //
+        // TODO: we can eliminate memmove() by using a ring instead (front_index, back_index), and making
+        // ring size a power of a 2. That way, we will only need to manipulate two indices, and not bother
+        // with memmove(), at the expense of higher iteration costs. Need to consider that alternative impl.
 
-	while (cnt)
-        {
-                if (auto r = tracked_docrefs.data[cnt - 1]; base > r->id)
-                {
+        while (cnt) {
+                if (auto r = tracked_docrefs.data[cnt - 1]; base > r->id) {
                         forget_document(r);
                         cds_release(r);
                         --cnt;
-                }
-                else
+                } else
                         break;
         }
 
-        while (n < cnt)
-        {
-                if (auto r = tracked_docrefs.data[n]; base > r->id)
-                {
+        while (n < cnt) {
+                if (auto r = tracked_docrefs.data[n]; base > r->id) {
                         forget_document(r);
                         cds_release(r);
                         ++n;
-                }
-                else
+                } else
                         break;
         }
 
         tracked_docrefs.size = cnt;
 
+        if constexpr (trace_docrefs) {
+                SLog("GC: For base = ", base, " n = ", n, " tracked_docrefs.size = ", tracked_docrefs.size, "\n");
+        }
+
+        if (n) {
+                tracked_docrefs.size -= n;
+                memmove(tracked_docrefs.data, tracked_docrefs.data + n, tracked_docrefs.size * sizeof(candidate_document *));
+        }
+}
+
+Codecs::PostingsListIterator *Trinity::queryexec_ctx::reg_pli(Codecs::PostingsListIterator *it) {
+        if (accumScoreMode)
+                wrap_iterator(this, it);
+
+        allIterators.push_back(it);
+        return it;
+}
+
+DocsSetIterators::Iterator *Trinity::queryexec_ctx::reg_docset_it(DocsSetIterators::Iterator *it) {
+        auto res{it};
+
+        if (accumScoreMode) {
+                wrap_iterator(this, it);
+                // see comments of IteratorScorer::iterator() decl.
+                res = static_cast<IteratorScorer *>(it->rdp)->iterator();
+        }
+
+        docsetsIterators.push_back(it);
+        return res;
+}
+
+queryexec_ctx::~queryexec_ctx() {
         if constexpr (trace_docrefs)
-	{
-		SLog("GC: For base = ", base, " n = ", n, " tracked_docrefs.size = ", tracked_docrefs.size, "\n");
-	}
+                SLog("Flushing ", tracked_docrefs.size, "\n");
 
-	if (n)
-	{
-		tracked_docrefs.size -= n;
-		memmove(tracked_docrefs.data, tracked_docrefs.data + n, tracked_docrefs.size * sizeof(candidate_document *));
-	}
-}
+        while (tracked_docrefs.size) {
+                auto d = tracked_docrefs.data[--tracked_docrefs.size];
 
-Codecs::PostingsListIterator *Trinity::queryexec_ctx::reg_pli(Codecs::PostingsListIterator *it)
-{
-	if (accumScoreMode)
-		wrap_iterator(this, it);
+                if (unlikely(d->rc != 1)) {
+                        if constexpr (trace_docrefs) {
+                                SLog(ansifmt::bold, ansifmt::color_blue, "Unexpected rc(", d->rc, ") for ", ptr_repr(d), " (", tracked_docrefs.size, ")", ansifmt::reset, "\n");
+                        }
+                }
 
-	allIterators.push_back(it);
-	return it;
-}
+                cds_release(d);
+        }
 
-DocsSetIterators::Iterator *Trinity::queryexec_ctx::reg_docset_it(DocsSetIterators::Iterator *it)
-{
-	auto res{it};
-
-	if (accumScoreMode)
-	{
-		wrap_iterator(this, it);
-		// see comments of IteratorScorer::iterator() decl.
-		res = static_cast<IteratorScorer *>(it->rdp)->iterator();
-	}
-		
-	docsetsIterators.push_back(it);
-	return res;
-}
-
-
-queryexec_ctx::~queryexec_ctx()
-{
-	if constexpr (trace_docrefs)
-		SLog("Flushing ", tracked_docrefs.size, "\n");
-
-	while (tracked_docrefs.size)
-	{
-		auto d = tracked_docrefs.data[--tracked_docrefs.size];
-
-		if (unlikely(d->rc != 1))
-		{
-			if constexpr (trace_docrefs)
-			{
-				SLog(ansifmt::bold, ansifmt::color_blue, "Unexpected rc(", d->rc, ") for ", ptr_repr(d), " (", tracked_docrefs.size, ")", ansifmt::reset, "\n");
-			}
-		}
-
-		cds_release(d);
-	}
-
-	if (auto ptr = tracked_docrefs.data)
-		std::free(ptr);
+        if (auto ptr = tracked_docrefs.data)
+                std::free(ptr);
 
 #ifdef USE_BANKS
-	for (auto it : banks)
-		delete it;
-	for (auto it : reusableBanks)
-		delete it;
+        for (auto it : banks)
+                delete it;
+        for (auto it : reusableBanks)
+                delete it;
 
-	reusableBanks.clear();
-	banks.clear();
+        reusableBanks.clear();
+        banks.clear();
 #endif
 
-        while (allIterators.size())
-        {
+        while (!allIterators.empty()) {
                 auto ptr = allIterators.back();
 
                 if (auto rdp = ptr->rdp; rdp != ptr)
@@ -156,14 +136,12 @@ queryexec_ctx::~queryexec_ctx()
                 allIterators.pop_back();
         }
 
-        for (auto ptr : docsetsIterators)
-        {
-		// this is not elegant, but its pragmatic enough to be OK
-		if (auto rdp = ptr->rdp; rdp != ptr)
-			delete static_cast<IteratorScorer *>(rdp);
+        for (auto ptr : docsetsIterators) {
+                // this is not elegant, but its pragmatic enough to be OK
+                if (auto rdp = ptr->rdp; rdp != ptr)
+                        delete static_cast<IteratorScorer *>(rdp);
 
-                switch (ptr->type)
-                {
+                switch (ptr->type) {
                         case DocsSetIterators::Type::AppIterator:
                                 delete static_cast<DocsSetIterators::AppIterator *>(ptr);
                                 break;
@@ -217,14 +195,12 @@ queryexec_ctx::~queryexec_ctx()
                 std::free(reusableCDS.data);
 }
 
-void queryexec_ctx::prepare_decoder(exec_term_id_t termID)
-{
+void queryexec_ctx::prepare_decoder(exec_term_id_t termID) {
         decode_ctx.check(termID);
 
-        if (!decode_ctx.decoders[termID])
-        {
-                const auto p = tctxMap[termID];
-                auto dec = decode_ctx.decoders[termID] = idxsrc->new_postings_decoder(p.second, p.first);
+        if (!decode_ctx.decoders[termID]) {
+                const auto p   = tctxMap[termID];
+                auto       dec = decode_ctx.decoders[termID] = idxsrc->new_postings_decoder(p.second, p.first);
 
                 dec->set_exec(termID, this);
         }
@@ -232,35 +208,27 @@ void queryexec_ctx::prepare_decoder(exec_term_id_t termID)
         require(decode_ctx.decoders[termID]);
 }
 
-exec_term_id_t queryexec_ctx::resolve_term(const str8_t term)
-{
-	const auto res = termsDict.insert({ term, 0 });
+exec_term_id_t queryexec_ctx::resolve_term(const str8_t term) {
+        const auto res = termsDict.insert({term, 0});
 
-	if (res.second)
-	{
-		auto ptr = &res.first->second;
-		const auto tctx = idxsrc->term_ctx(term);
+        if (res.second) {
+                auto       ptr  = &res.first->second;
+                const auto tctx = idxsrc->term_ctx(term);
 
-		if (tctx.documents == 0)
-		{
-			// matches no documents, unknown
-			*ptr = 0;
-		}
-		else
-		{
-			*ptr = termsDict.size();
-			tctxMap.insert({*ptr, {tctx, term}});
-		}
-	}
+                if (tctx.documents == 0) {
+                        // matches no documents, unknown
+                        *ptr = 0;
+                } else {
+                        *ptr = termsDict.size();
+                        tctxMap.insert({*ptr, {tctx, term}});
+                }
+        }
 
-	return res.first->second;
+        return res.first->second;
 }
 
-
-void queryexec_ctx::decode_ctx_struct::check(const uint16_t idx)
-{
-        if (idx >= capacity)
-        {
+void queryexec_ctx::decode_ctx_struct::check(const uint16_t idx) {
+        if (idx >= capacity) {
                 const auto newCapacity{idx + 8};
 
                 decoders = (Trinity::Codecs::Decoder **)std::realloc(decoders, sizeof(Trinity::Codecs::Decoder *) * newCapacity);
@@ -269,15 +237,13 @@ void queryexec_ctx::decode_ctx_struct::check(const uint16_t idx)
         }
 }
 
-queryexec_ctx::decode_ctx_struct::~decode_ctx_struct()
-{
-        for (uint32_t i{0}; i != capacity; ++i)
+queryexec_ctx::decode_ctx_struct::~decode_ctx_struct() {
+        for (size_t i{0}; i != capacity; ++i)
                 delete decoders[i];
 
         if (decoders)
                 std::free(decoders);
 }
-
 
 #if 0 // SOLVED
 static void will_materialize(void *ptr, const isrc_docid_t did, const uint32_t ref, Trinity::candidate_document *cd)
@@ -317,32 +283,27 @@ static void will_materialize(void *ptr, const isrc_docid_t did, const uint32_t r
 #endif
 
 // In practice, this is only used by DocsSetIterators::Phrase::consider_phrase_match()
-Trinity::term_hits *candidate_document::materialize_term_hits(queryexec_ctx *rctx, Codecs::PostingsListIterator *const it, const exec_term_id_t termID)
-{
+Trinity::term_hits *candidate_document::materialize_term_hits(queryexec_ctx *rctx, Codecs::PostingsListIterator *const it, const exec_term_id_t termID) {
         auto *const __restrict__ th = termHits + termID;
-        const auto did = it->curDocument.id;
+        const auto did              = it->curDocument.id;
 
-        if (th->doc_id != did)
-        {
+        if (th->doc_id != did) {
                 const auto docHits = it->freq;
 
-		//will_materialize(it, did, __LINE__, this);
+                //will_materialize(it, did, __LINE__, this);
 
                 th->set_docid(did);
                 th->set_freq(docHits);
 
-                if (!matchedDocument.dws)
-		{
+                if (!matchedDocument.dws) {
                         matchedDocument.dws = new DocWordsSpace(rctx->idxsrc->max_indexed_position());
-		}
-
-                if (!dwsInUse)
-                {
-                        // deferred until we will need to do this
-                        matchedDocument.dws->reset();
-                        dwsInUse = true; 	// in use now
                 }
 
+                if (!dwsInUse) {
+                        // deferred until we will need to do this
+                        matchedDocument.dws->reset();
+                        dwsInUse = true; // in use now
+                }
 
                 it->materialize_hits(matchedDocument.dws, th->all);
         }
@@ -350,200 +311,165 @@ Trinity::term_hits *candidate_document::materialize_term_hits(queryexec_ctx *rct
         return th;
 }
 
-Trinity::candidate_document::candidate_document(queryexec_ctx *const rctx)
-{
+Trinity::candidate_document::candidate_document(queryexec_ctx *const rctx) {
         const auto maxQueryTermIDPlus1 = rctx->termsDict.size() + 1;
 
-        curDocQueryTokensCaptured = (isrc_docid_t *)calloc(sizeof(isrc_docid_t), maxQueryTermIDPlus1);
-        termHits = new term_hits[maxQueryTermIDPlus1];
+        curDocQueryTokensCaptured    = (isrc_docid_t *)calloc(sizeof(isrc_docid_t), maxQueryTermIDPlus1);
+        termHits                     = new term_hits[maxQueryTermIDPlus1];
         matchedDocument.matchedTerms = (matched_query_term *)rctx->allocator.Alloc(sizeof(matched_query_term) * maxQueryTermIDPlus1);
 }
 
-void queryexec_ctx::_reusable_cds::push_back(candidate_document *const d)
-{
-        if (unlikely(size_ == capacity))
-        {
+void queryexec_ctx::_reusable_cds::push_back(candidate_document *const d) {
+        if (unlikely(size_ == capacity)) {
                 // can't hold no more
                 delete d;
-        }
-        else
-        {
+        } else {
                 data[size_++] = d;
         }
 }
 
 static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *const it,
-                                       const isrc_docid_t docID,
-                                       Trinity::iterators_collector *const out)
-{
-        switch (it->type)
-        {
-                case DocsSetIterators::Type::Phrase:
-                {
-                        const auto I = static_cast<const DocsSetIterators::Phrase *>(it);
-                        const auto n = I->size;
-                        auto its = I->its;
+                                       const isrc_docid_t                         docID,
+                                       Trinity::iterators_collector *const        out) {
+        switch (it->type) {
+                case DocsSetIterators::Type::Phrase: {
+                        const auto I   = static_cast<const DocsSetIterators::Phrase *>(it);
+                        const auto n   = I->size;
+                        auto       its = I->its;
 
                         memcpy(out->data + out->cnt, its, sizeof(its[0]) * n);
                         out->cnt += n;
-                }
-                break;
+                } break;
 
-                case DocsSetIterators::Type::DisjunctionSome:
-		{
-			auto const d = static_cast<DocsSetIterators::DisjunctionSome *>(it);
+                case DocsSetIterators::Type::DisjunctionSome: {
+                        auto const d = static_cast<DocsSetIterators::DisjunctionSome *>(it);
 
-			d->update_matched_cnt();
-			if (d->allPLI)
-			{
-				for (auto i{d->lead}; i; i = i->next)
-					out->data[out->cnt++] = reinterpret_cast<Codecs::PostingsListIterator *>(i->it);
-			}
-			else
-			{
-				for (auto i{d->lead}; i; i = i->next)
-					collect_doc_matching_terms(i->it, docID, out);
-			}
-		}
-                break;
+                        d->update_matched_cnt();
+                        if (d->allPLI) {
+                                for (auto i{d->lead}; i; i = i->next)
+                                        out->data[out->cnt++] = reinterpret_cast<Codecs::PostingsListIterator *>(i->it);
+                        } else {
+                                for (auto i{d->lead}; i; i = i->next)
+                                        collect_doc_matching_terms(i->it, docID, out);
+                        }
+                } break;
 
                 case DocsSetIterators::Type::PostingsListIterator:
                         out->data[out->cnt++] = reinterpret_cast<Codecs::PostingsListIterator *>(it);
                         break;
 
-                case DocsSetIterators::Type::Optional:
-                {
-                        auto *const opt = reinterpret_cast<const DocsSetIterators::Optional *>(it);
-                        auto optCur = opt->opt->current();
+                case DocsSetIterators::Type::Optional: {
+                        auto *const opt    = reinterpret_cast<const DocsSetIterators::Optional *>(it);
+                        auto        optCur = opt->opt->current();
 
                         collect_doc_matching_terms(opt->main, docID, out);
 
-                        if (optCur < docID)
+                        if (optCur < docID) {
+				// we need to advance here
                                 optCur = opt->opt->advance(docID);
+			}
+
                         if (optCur == docID)
                                 collect_doc_matching_terms(opt->opt, docID, out);
-                }
-                break;
+                } break;
 
                 case DocsSetIterators::Type::Filter:
                         collect_doc_matching_terms(reinterpret_cast<const DocsSetIterators::Filter *>(it)->req, docID, out);
                         break;
 
-                case DocsSetIterators::Type::Conjuction:
-                {
-                        const auto I = static_cast<const DocsSetIterators::Conjuction *>(it);
-                        const auto n = I->size;
-                        auto its = I->its;
+                case DocsSetIterators::Type::Conjuction: {
+                        const auto I   = static_cast<const DocsSetIterators::Conjuction *>(it);
+                        const auto n   = I->size;
+                        auto       its = I->its;
 
-                        for (uint16_t i{0}; i != n; ++i)
+                        for (size_t i{0}; i != n; ++i)
                                 collect_doc_matching_terms(its[i], docID, out);
-                }
-                break;
+                } break;
 
-                case DocsSetIterators::Type::ConjuctionAllPLI:
-                {
-                        const auto I = static_cast<const DocsSetIterators::ConjuctionAllPLI *>(it);
-                        const auto n = I->size;
-                        auto its = I->its;
+                case DocsSetIterators::Type::ConjuctionAllPLI: {
+                        const auto I   = static_cast<const DocsSetIterators::ConjuctionAllPLI *>(it);
+                        const auto n   = I->size;
+                        auto       its = I->its;
 
                         memcpy(out->data + out->cnt, its, sizeof(its[0]) * n);
                         out->cnt += n;
-                }
-                break;
+                } break;
 
-                case DocsSetIterators::Type::DisjunctionAllPLI:
-                {
+                case DocsSetIterators::Type::DisjunctionAllPLI: {
                         // See Switch::priority_queue<>::for_each_top()
-                        const auto I = static_cast<DocsSetIterators::DisjunctionAllPLI *>(it);
-                        const auto &pq = I->pq;
-                        const auto size = pq.size();
-                        const auto heap = pq.data();
+                        const auto  I    = static_cast<DocsSetIterators::DisjunctionAllPLI *>(it);
+                        const auto &pq   = I->pq;
+                        const auto  size = pq.size();
+                        const auto  heap = pq.data();
 
                         out->data[out->cnt++] = (Codecs::PostingsListIterator *)heap[0];
-                        if (size >= 3)
-                        {
+                        if (size >= 3) {
                                 auto &stack = I->istack;
 
                                 stack.data[0] = 1;
                                 stack.data[1] = 2;
-                                stack.cnt = 2;
+                                stack.cnt     = 2;
 
-                                do
-                                {
+                                do {
                                         const auto i = stack.data[--stack.cnt];
 
-                                        if (auto it = heap[i]; it->current() == docID)
-                                        {
+                                        if (auto it = heap[i]; it->current() == docID) {
                                                 out->data[out->cnt++] = (Codecs::PostingsListIterator *)it;
 
-                                                const auto left = ((i + 1) << 1) - 1;
+                                                const auto left  = ((i + 1) << 1) - 1;
                                                 const auto right = left + 1;
 
-                                                if (right < size)
-                                                {
+                                                if (right < size) {
                                                         stack.data[stack.cnt++] = left;
                                                         stack.data[stack.cnt++] = right;
-                                                }
-                                                else if (left < size && (it = heap[left])->current() == docID)
-                                                {
+                                                } else if (left < size && (it = heap[left])->current() == docID) {
                                                         out->data[out->cnt++] = (Codecs::PostingsListIterator *)it;
                                                 }
                                         }
+
                                 } while (stack.cnt);
-                        }
-                        else if (size == 2 && heap[1]->current() == docID)
-                        {
+
+                        } else if (size == 2 && heap[1]->current() == docID) {
                                 out->data[out->cnt++] = (Codecs::PostingsListIterator *)heap[1];
                         }
-                }
-                break;
+                } break;
 
-                case DocsSetIterators::Type::Disjunction:
-                {
+                case DocsSetIterators::Type::Disjunction: {
                         // See Switch::priority_queue<>::for_each_top()
-                        const auto I = static_cast<DocsSetIterators::Disjunction *>(it);
-                        const auto &pq = I->pq;
-                        const auto size = pq.size();
-                        const auto heap = pq.data();
+                        const auto  I    = static_cast<DocsSetIterators::Disjunction *>(it);
+                        const auto &pq   = I->pq;
+                        const auto  size = pq.size();
+                        const auto  heap = pq.data();
 
                         collect_doc_matching_terms(heap[0], docID, out);
-                        if (size >= 3)
-                        {
+                        if (size >= 3) {
                                 auto &stack = I->istack;
 
                                 stack.data[0] = 1;
                                 stack.data[1] = 2;
-                                stack.cnt = 2;
+                                stack.cnt     = 2;
 
-                                do
-                                {
+                                do {
                                         const auto i = stack.data[--stack.cnt];
 
-                                        if (auto it = heap[i]; it->current() == docID)
-                                        {
+                                        if (auto it = heap[i]; it->current() == docID) {
                                                 collect_doc_matching_terms(it, docID, out);
 
-                                                const auto left = ((i + 1) << 1) - 1;
+                                                const auto left  = ((i + 1) << 1) - 1;
                                                 const auto right = left + 1;
 
-                                                if (right < size)
-                                                {
+                                                if (right < size) {
                                                         stack.data[stack.cnt++] = left;
                                                         stack.data[stack.cnt++] = right;
-                                                }
-                                                else if (left < size && (it = heap[left])->current() == docID)
-                                                {
+                                                } else if (left < size && (it = heap[left])->current() == docID) {
                                                         collect_doc_matching_terms(it, docID, out);
                                                 }
                                         }
                                 } while (stack.cnt);
-                        }
-                        else if (size == 2 && heap[1]->current() == docID)
-                        {
+                        } else if (size == 2 && heap[1]->current() == docID) {
                                 collect_doc_matching_terms(heap[1], docID, out);
                         }
-                }
-                break;
+                } break;
 
                 default:
                         SLog("IMPLEMENT ME\n");
@@ -551,113 +477,92 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
         }
 }
 
+void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const doc) {
+        static constexpr const bool trace{false};
+        auto &                      md  = doc->matchedDocument;
+        const auto                  did = doc->id;
+        auto                        dws = md.dws;
+        //const bool trace = doc->id == 2155079078 || doc->id == 2154380143;
 
-
-void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const doc)
-{
-        auto &md = doc->matchedDocument;
-        const auto did = doc->id;
-        auto dws = md.dws;
-	static constexpr const bool trace{false};
-	//const bool trace = doc->id == 2155079078 || doc->id == 2154380143;
-
-	if (trace)
-		SLog(ansifmt::bold, ansifmt::color_blue, "Preparing match for ", doc->id, ansifmt::reset, " ", ptr_repr(doc), "\n");
-
+        if (trace)
+                SLog(ansifmt::bold, ansifmt::color_blue, "Preparing match for ", doc->id, ansifmt::reset, " ", ptr_repr(doc), "\n");
 
         collectedIts.cnt = 0;
         collect_doc_matching_terms(rootIterator, doc->id, &collectedIts);
         md.matchedTermsCnt = 0;
 
-        //SLog("collectedIts.size() = ", collectedIts.size(), "\n");
-
-        if (!dws)
-	{
-		if (trace)
-			SLog("dws == nullptr\n");
+        if (!dws) {
+                if (trace)
+                        SLog("dws == nullptr\n");
 
                 dws = md.dws = new DocWordsSpace(idxsrc->max_indexed_position());
-	}
-	else if (trace)
-	{
-		SLog("Already have dws inuse = ", doc->dwsInUse, "\n");
-	}
-	
+        } else if (trace) {
+                SLog("Already have dws inuse = ", doc->dwsInUse, "\n");
+        }
 
-        if (!doc->dwsInUse)
-	{
-		// wasn't already reset
+        if (!doc->dwsInUse) {
+                // wasn't already reset
                 dws->reset();
-	}
-        else
-	{
-		// force reset later
+        } else {
+                // force reset later
                 doc->dwsInUse = false;
-	}
+        }
 
-        const auto cnt = collectedIts.cnt;
+        const auto  cnt  = collectedIts.cnt;
         auto *const data = collectedIts.data;
 
-	if (trace)
-		SLog("collected iterators ", cnt, "\n");
+        if (trace)
+                SLog("collected iterators ", cnt, "\n");
 
-        for (uint32_t i{0}; i != cnt; ++i)
-        {
-                auto *const it = data[i];
-                const auto tid = it->decoder()->exec_ctx_termid();
+        for (size_t i{0}; i != cnt; ++i) {
+                auto *const it  = data[i];
+                const auto  tid = it->decoder()->exec_ctx_termid();
 
-
-		if (trace)
-			SLog(ansifmt::color_green, "term id ", tid, ansifmt::reset, "\n");
+                if (trace)
+                        SLog(ansifmt::color_green, "term id ", tid, ansifmt::reset, "\n");
 
                 if (const auto *const qti = originalQueryTermCtx[tid]) // not in a NOT branch
                 {
-			if (trace)
-				SLog("YES, qti ", doc->curDocQueryTokensCaptured[tid], " ", doc->curDocSeq, "\n");
+                        if (trace)
+                                SLog("YES, qti ", doc->curDocQueryTokensCaptured[tid], " ", doc->curDocSeq, "\n");
 
-                        if (doc->curDocQueryTokensCaptured[tid] != doc->curDocSeq)
-                        {
-                                auto *const p = md.matchedTerms + md.matchedTermsCnt++;
+                        if (doc->curDocQueryTokensCaptured[tid] != doc->curDocSeq) {
+                                auto *const p  = md.matchedTerms + md.matchedTermsCnt++;
                                 auto *const th = doc->termHits + tid;
 
                                 doc->curDocQueryTokensCaptured[tid] = doc->curDocSeq;
-                                p->queryCtx = qti;
-                                p->hits = th;
+                                p->queryCtx                         = qti;
+                                p->hits                             = th;
 
-				if (trace)
-					SLog("th->docID = ", th->doc_id, "  ", did, "\n");
+                                if (trace)
+                                        SLog("th->docID = ", th->doc_id, "  ", did, "\n");
 
-                                if (th->doc_id != did)
-                                {
+                                if (th->doc_id != did) {
                                         // could have been materialized earlier for a phrase check
                                         const auto docHits = it->freq;
 
-					if (trace)
-						SLog(ansifmt::bold, ansifmt::color_green, "YES, need to materialize freq = ", docHits, ansifmt::reset, " ", ptr_repr(it), "\n");
+                                        if (trace)
+                                                SLog(ansifmt::bold, ansifmt::color_green, "YES, need to materialize freq = ", docHits, ansifmt::reset, " ", ptr_repr(it), "\n");
 
-					//will_materialize(it, did, __LINE__, doc);
-
+                                        //will_materialize(it, did, __LINE__, doc);
 
                                         th->set_docid(did);
                                         th->set_freq(docHits);
                                         it->materialize_hits(dws, th->all);
                                 }
-                        }
-			else if (trace)
-				SLog("Already have materialized hits for (", doc->id, ", ", tid, ")\n");
+                        } else if (trace)
+                                SLog("Already have materialized hits for (", doc->id, ", ", tid, ")\n");
                 }
         }
 }
 
-void Trinity::queryexec_ctx::forget_document(candidate_document *const doc)
-{
+void Trinity::queryexec_ctx::forget_document(candidate_document *const doc) {
 #ifdef USE_BANKS
         forget_document_inbank(doc);
 #endif
 }
 
-Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document(const isrc_docid_t id)
-{
+Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document(const isrc_docid_t id) {
 #ifdef USE_BANKS
         return lookup_document_inbank(id);
 #else
@@ -669,27 +574,22 @@ Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document(const isrc_
         auto data = v.data();
         auto size = v.size();
 
-        for (uint32_t i{0}; i < size;)
-        {
+        for (size_t i{0}; i < size;) {
                 auto doc = data[i];
 
-                if (!doc->bindCnt)
-                {
+                if (!doc->bindCnt) {
                         if (traceBindings)
                                 SLog("Letting go of document\n");
 
                         cds_release(doc);
                         data[i] = data[--size];
                         v.pop_back();
-                }
-                else if (doc->id == id)
-                {
+                } else if (doc->id == id) {
                         if (traceBindings)
                                 SLog("Found at ", i, "\n");
 
                         return doc;
-                }
-                else
+                } else
                         ++i;
         }
         return nullptr;
@@ -697,10 +597,8 @@ Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document(const isrc_
 }
 
 #ifdef USE_BANKS
-Trinity::docstracker_bank *Trinity::queryexec_ctx::new_bank(const Trinity::isrc_docid_t base)
-{
-        if (reusableBanks.size())
-        {
+Trinity::docstracker_bank *Trinity::queryexec_ctx::new_bank(const Trinity::isrc_docid_t base) {
+        if (reusableBanks.size()) {
                 auto b = reusableBanks.back();
 
                 reusableBanks.pop_back();
@@ -710,7 +608,7 @@ Trinity::docstracker_bank *Trinity::queryexec_ctx::new_bank(const Trinity::isrc_
                 memset(b->entries, 0, sizeof(docstracker_bank::entry) * docstracker_bank::SIZE);
 #endif
 
-                b->base = base;
+                b->base   = base;
                 b->setCnt = 0;
 
                 lastBank = b;
@@ -725,7 +623,7 @@ Trinity::docstracker_bank *Trinity::queryexec_ctx::new_bank(const Trinity::isrc_
 #else
         memset(b->entries, 0, sizeof(docstracker_bank::entry) * docstracker_bank::SIZE);
 #endif
-        b->base = base;
+        b->base   = base;
         b->setCnt = 0;
 
         lastBank = b;
@@ -734,20 +632,16 @@ Trinity::docstracker_bank *Trinity::queryexec_ctx::new_bank(const Trinity::isrc_
         return b;
 }
 
-void Trinity::queryexec_ctx::forget_document_inbank(Trinity::candidate_document *const doc)
-{
+void Trinity::queryexec_ctx::forget_document_inbank(Trinity::candidate_document *const doc) {
         const auto id = doc->id;
-        auto b = bank_for(id);
+        auto       b  = bank_for(id);
 
-        if (1 == b->setCnt--)
-        {
+        if (1 == b->setCnt--) {
                 if (lastBank == b)
                         lastBank = nullptr;
 
-                for (uint32_t i{0}; i != banks.size(); ++i)
-                {
-                        if (banks[i] == b)
-                        {
+                for (size_t i{0}; i != banks.size(); ++i) {
+                        if (banks[i] == b) {
                                 banks[i] = banks.back();
                                 banks.pop_back();
                                 break;
@@ -756,9 +650,7 @@ void Trinity::queryexec_ctx::forget_document_inbank(Trinity::candidate_document 
 
                 reusableBanks.push_back(b);
                 lastBank = nullptr;
-        }
-        else
-        {
+        } else {
                 const auto idx = id - b->base;
 
 #ifdef BANKS_USE_BM
@@ -769,10 +661,8 @@ void Trinity::queryexec_ctx::forget_document_inbank(Trinity::candidate_document 
         }
 }
 
-Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document_inbank(const isrc_docid_t id)
-{
-        if (const auto b = bank_for(id))
-        {
+Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document_inbank(const isrc_docid_t id) {
+        if (const auto b = bank_for(id)) {
                 const auto idx = id - b->base;
 
 #ifdef BANKS_USE_BM
@@ -784,10 +674,9 @@ Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document_inbank(cons
         return nullptr;
 }
 
-void Trinity::queryexec_ctx::track_document_inbank(Trinity::candidate_document *const d)
-{
-        const auto id = d->id;
-        auto b = bank_for(id);
+void Trinity::queryexec_ctx::track_document_inbank(Trinity::candidate_document *const d) {
+        const auto id  = d->id;
+        auto       b   = bank_for(id);
         const auto idx = id - b->base;
 
 #ifdef BANKS_USE_BM

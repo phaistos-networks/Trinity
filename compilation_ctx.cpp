@@ -12,7 +12,7 @@ compilation_ctx::phrase *compilation_ctx::register_phrase(const Trinity::phrase 
         auto ptr = static_cast<phrase *>(allocator.Alloc(sizeof(phrase) + sizeof(exec_term_id_t) * p->size));
 
         ptr->size = p->size;
-        for (uint32_t i{0}; i != p->size; ++i) {
+        for (size_t i{0}; i != p->size; ++i) {
                 if (const auto id = resolve_query_term(p->terms[i].token))
                         ptr->termIDs[i] = id;
                 else
@@ -25,7 +25,7 @@ compilation_ctx::phrase *compilation_ctx::register_phrase(const Trinity::phrase 
 uint8_t compilation_ctx::phrase::intersection(const termsrun *const tr, exec_term_id_t *const out) const noexcept {
         uint16_t n{0};
 
-        for (uint32_t i{0}; i != size; ++i) {
+        for (size_t i{0}; i != size; ++i) {
                 if (const auto id = termIDs[i]; tr->is_set(id))
                         out[n++] = id;
         }
@@ -36,7 +36,7 @@ uint8_t compilation_ctx::phrase::disjoint_union(const termsrun *const tr, exec_t
         uint16_t   n{0};
         const auto cnt = tr->size;
 
-        for (uint32_t i{0}; i != cnt; ++i) {
+        for (size_t i{0}; i != cnt; ++i) {
                 if (const auto id = tr->terms[i]; !is_set(id))
                         out[n++] = id;
         }
@@ -45,7 +45,7 @@ uint8_t compilation_ctx::phrase::disjoint_union(const termsrun *const tr, exec_t
 
 bool compilation_ctx::phrase::intersected_by(const termsrun *const tr) const noexcept {
         if (tr->size >= size) {
-                for (uint32_t i{0}; i != size; ++i) {
+                for (size_t i{0}; i != size; ++i) {
                         if (!tr->is_set(termIDs[i]))
                                 return false;
                 }
@@ -56,7 +56,7 @@ bool compilation_ctx::phrase::intersected_by(const termsrun *const tr) const noe
 
 bool compilation_ctx::phrase::operator==(const phrase &o) const noexcept {
         if (size == o.size) {
-                for (uint32_t i{0}; i != size; ++i) {
+                for (size_t i{0}; i != size; ++i) {
                         if (termIDs[i] != o.termIDs[i])
                                 return false;
                 }
@@ -69,7 +69,7 @@ bool compilation_ctx::phrase::is_set(const exec_term_id_t *const l, const uint8_
         if (n <= size) {
                 const auto upto = size - n;
 
-                for (uint32_t i{0}; i != upto; ++i) {
+                for (size_t i{0}; i != upto; ++i) {
                         uint32_t k;
 
                         for (k = 0; k != n && l[k] == termIDs[i + k]; ++k)
@@ -84,7 +84,7 @@ bool compilation_ctx::phrase::is_set(const exec_term_id_t *const l, const uint8_
 }
 
 bool compilation_ctx::phrase::is_set(const exec_term_id_t id) const noexcept {
-        for (uint32_t i{0}; i != size; ++i) {
+        for (size_t i{0}; i != size; ++i) {
                 if (termIDs[i] == id)
                         return true;
         }
@@ -93,7 +93,7 @@ bool compilation_ctx::phrase::is_set(const exec_term_id_t id) const noexcept {
 
 bool compilation_ctx::termsrun::operator==(const termsrun &o) const noexcept {
         if (size == o.size) {
-                for (uint32_t i{0}; i != size; ++i) {
+                for (size_t i{0}; i != size; ++i) {
                         if (terms[i] != o.terms[i])
                                 return false;
                 }
@@ -103,7 +103,7 @@ bool compilation_ctx::termsrun::operator==(const termsrun &o) const noexcept {
 }
 
 bool compilation_ctx::termsrun::is_set(const exec_term_id_t id) const noexcept {
-        for (uint32_t i{0}; i != size; ++i) {
+        for (size_t i{0}; i != size; ++i) {
                 if (terms[i] == id)
                         return true;
         }
@@ -111,7 +111,7 @@ bool compilation_ctx::termsrun::is_set(const exec_term_id_t id) const noexcept {
 }
 
 bool compilation_ctx::termsrun::erase(const exec_term_id_t id) noexcept {
-        for (uint32_t i{0}; i != size; ++i) {
+        for (size_t i{0}; i != size; ++i) {
                 if (terms[i] == id) {
                         memmove(terms + i, terms + i + 1, (--size - i) * sizeof(terms[0]));
                         return true;
@@ -256,7 +256,7 @@ static exec_node compile_node(const ast_node *const n, compilation_ctx &cctx, si
                                 pm->min  = n->match_some.min;
                                 pm->size = n->match_some.size;
 
-                                for (uint32_t i{0}; i != n->match_some.size; ++i)
+                                for (size_t i{0}; i != n->match_some.size; ++i)
                                         pm->nodes[i] = compile_node(n->match_some.nodes[i], cctx, a);
 
                                 res.ptr = pm;
@@ -336,12 +336,12 @@ static void collapse_node(exec_node &n, compilation_ctx &cctx, simple_allocator 
         } else if (n.fp == ENT::matchsome) {
                 auto pm = static_cast<compilation_ctx::partial_match_ctx *>(n.ptr);
 
-                for (uint32_t i{0}; i != pm->size; ++i)
+                for (size_t i{0}; i != pm->size; ++i)
                         collapse_node(pm->nodes[i], cctx, a, terms, phrases, stack);
         } else if (n.fp == ENT::matchallnodes || n.fp == ENT::matchanynodes) {
                 auto g = static_cast<compilation_ctx::nodes_group *>(n.ptr);
 
-                for (uint32_t i{0}; i != g->size; ++i)
+                for (size_t i{0}; i != g->size; ++i)
                         collapse_node(g->nodes[i], cctx, a, terms, phrases, stack);
         } else if (n.fp == ENT::logicaland || n.fp == ENT::logicalor || n.fp == ENT::logicalnot) {
                 auto                        ctx = static_cast<compilation_ctx::binop_ctx *>(n.ptr);
@@ -466,7 +466,7 @@ static void trim_phrasesrun(exec_node &n, compilation_ctx::phrasesrun *pr) {
         const auto size = pr->size;
         uint32_t   k;
 
-        for (uint32_t i{0}; i != size; ++i) {
+        for (size_t i{0}; i != size; ++i) {
                 auto p = pr->phrases[i];
 
                 for (k = i + 1; k != size && !(*p == *pr->phrases[k]); ++k)
@@ -496,12 +496,12 @@ static void expand_node(exec_node &n, compilation_ctx &cctx, simple_allocator &a
         } else if (n.fp == ENT::matchsome) {
                 auto ctx = static_cast<compilation_ctx::partial_match_ctx *>(n.ptr);
 
-                for (uint32_t i{0}; i != ctx->size; ++i)
+                for (size_t i{0}; i != ctx->size; ++i)
                         expand_node(ctx->nodes[i], cctx, a, terms, phrases, stack);
         } else if (n.fp == ENT::matchallnodes || n.fp == ENT::matchanynodes) {
                 auto g = static_cast<compilation_ctx::nodes_group *>(n.ptr);
 
-                for (uint32_t i{0}; i != g->size; ++i)
+                for (size_t i{0}; i != g->size; ++i)
                         expand_node(g->nodes[i], cctx, a, terms, phrases, stack);
         } else if (n.fp == ENT::logicaland || n.fp == ENT::logicalor || n.fp == ENT::logicalnot) {
                 auto ctx = static_cast<compilation_ctx::binop_ctx *>(n.ptr);
@@ -545,7 +545,7 @@ static void expand_node(exec_node &n, compilation_ctx &cctx, simple_allocator &a
                 std::sort(terms.begin(), terms.end());
                 terms.resize(std::unique(terms.begin(), terms.end()) - terms.begin());
 
-                if (traceCompile)
+                if constexpr (traceCompile)
                         SLog("Expanded terms = ", terms.size(), ", phrases = ", phrases.size(), " ", n.fp == ENT::SPECIALIMPL_COLLECTION_LOGICALOR ? "OR" : "AND", "\n");
 
                 // We have expanded this collection into tokens and phrases
@@ -670,12 +670,12 @@ static void expand_node(exec_node &n, compilation_ctx &cctx, simple_allocator &a
 static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_allocator &a, std::vector<exec_term_id_t> &terms, std::vector<const compilation_ctx::phrase *> &phrases, std::vector<exec_node> &stack, bool &updates, const exec_node *const root) {
         const auto saved{n};
 
-        if (traceCompile)
+        if constexpr (traceCompile)
                 SLog("Before OPT:", n, "\n");
 
 #define set_dirty()                                                     \
         do {                                                            \
-                if (traceCompile)                                       \
+                if constexpr (traceCompile)                                       \
                         SLog("HERE from [", saved, "] to [", n, "]\n"); \
                 updates = true;                                         \
         } while (0)
@@ -694,12 +694,35 @@ static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_alloca
                 if (0 == g->size) {
                         n.fp = ENT::constfalse;
                         set_dirty();
+			return n;
+                } else {
+			// if they are all tokens, switch to respective matchanyterm or matchallterms
+			size_t i{0};
+
+			while (i < g->size && g->nodes[i].fp == ENT::matchterm)
+				++i;
+
+                        if (i == g->size) {
+                                exec_node new_node;
+                                auto      tr = static_cast<compilation_ctx::termsrun *>(a.Alloc(sizeof(compilation_ctx::termsrun) + sizeof(exec_term_id_t) * g->size));
+
+                                tr->size = g->size;
+                                for (i = 0; i != g->size; ++i)
+                                        tr->terms[i] = g->nodes[i].u16;
+
+                                new_node.fp  = n.fp == ENT::matchallnodes ? ENT::matchallterms : ENT::matchanyterms;
+                                new_node.ptr = tr;
+
+                                n = new_node;
+                                set_dirty();
+                                return n;
+                        }
                 }
         } else if (n.fp == ENT::matchsome) {
                 auto       ctx = static_cast<compilation_ctx::partial_match_ctx *>(n.ptr);
                 const auto saved{ctx->size};
 
-                for (uint32_t i{0}; i < ctx->size; ++i) {
+                for (size_t i{0}; i < ctx->size; ++i) {
                         ctx->nodes[i] = optimize_node(ctx->nodes[i], cctx, a, terms, phrases, stack, updates, root);
 
                         if (ctx->nodes[i].fp == ENT::constfalse || ctx->nodes[i].fp == ENT::dummyop)
@@ -719,7 +742,7 @@ static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_alloca
                                 // transform to binary op that includes all those
                                 auto en = ctx->nodes[0];
 
-                                for (uint32_t i{1}; i != ctx->size; ++i) {
+                                for (size_t i{1}; i != ctx->size; ++i) {
                                         auto b = static_cast<compilation_ctx::binop_ctx *>(a.Alloc(sizeof(compilation_ctx::binop_ctx)));
 
                                         b->lhs = en;
@@ -831,20 +854,69 @@ static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_alloca
                                         set_dirty();
                                         return n;
                                 }
-                        } else if (ctx->lhs.fp == ENT::consttrueexpr) {
+                        }
+
+                        if (ctx->lhs.fp == ENT::consttrueexpr && ctx->rhs.fp == ENT::consttrueexpr) {
+				// We are now handling [<A> OR <B>] as <ANYNODEOF[A, B]>
+                                exec_node new_node, group;
+                                auto      ng = static_cast<compilation_ctx::nodes_group *>(a.Alloc(sizeof(compilation_ctx::nodes_group) + 2 * sizeof(exec_node)));
+                                auto      un = a.Alloc<compilation_ctx::unaryop_ctx>();
+
+                                ng->size     = 2;
+                                ng->nodes[0] = static_cast<compilation_ctx::unaryop_ctx *>(ctx->lhs.ptr)->expr;
+                                ng->nodes[1] = static_cast<compilation_ctx::unaryop_ctx *>(ctx->rhs.ptr)->expr;
+
+                                group.fp  = ENT::matchanynodes;
+                                group.ptr = ng;
+
+                                un->expr     = group;
+                                new_node.ptr = un;
+                                new_node.fp  = ENT::consttrueexpr;
+
+                                if constexpr (traceCompile)
+					SLog("<CTRUEXPR> OR <CTRUEXPR> => ", new_node, "\n");
+
+                                n            = new_node;
+                                set_dirty();
+                                return n;
+                        }
+
+                        if (ctx->lhs.fp == ENT::consttrueexpr) {
+				// XXX: not sure [<FOR> OR <THE>] or [<FOR> OR THE] should become
+				// [FOR OR THE]
+				// UPDATE: this is handled above, however what about
+				//
+				// 	UPDATE:
+				// Assuming THE is a stopword and you wrap it in a ConstTrueExpr:
+				// For query: [THES FOOD] rewritten to [(THES OR <THE> FOOD]
+				// we want to match THES or whatever else it is expanded to (i.e <THE>)
+				// For query: [THE FOOD] rewritten to [ (<THE> OR THES) FOOD]
+				// we don't care if THE or whatever it expands to is matched
+				// 
+				// so this is the responsibility of the application/rewrite logic.
                                 auto c = static_cast<const compilation_ctx::unaryop_ctx *>(ctx->lhs.ptr);
+
+				if constexpr (traceCompile)
+					SLog("Logical OR, lhs is ENT::consttrueexpr ", c->expr, "\n");
 
                                 ctx->lhs = c->expr;
                                 set_dirty();
                                 return n;
                         }
+
                         if (ctx->rhs.fp == ENT::consttrueexpr) {
+				// UPDATE: see above
                                 auto c = static_cast<const compilation_ctx::unaryop_ctx *>(ctx->rhs.ptr);
+
+				if constexpr (traceCompile)
+					SLog("Logical OR, rhs is ENT::consttrueexpr ", c->expr, "\n");
 
                                 ctx->rhs = c->expr;
                                 set_dirty();
                                 return n;
                         }
+
+
                 } else if (n.fp == ENT::logicaland) {
                         if (ctx->lhs.fp == ENT::constfalse || ctx->rhs.fp == ENT::constfalse) {
                                 n.fp = ENT::constfalse;
@@ -966,7 +1038,7 @@ static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_alloca
                                 const auto *const __restrict__ run = static_cast<compilation_ctx::phrasesrun *>(ctx->rhs.ptr);
                                 const auto termID                  = ctx->lhs.u16;
 
-                                for (uint32_t i{0}; i != run->size; ++i) {
+                                for (size_t i{0}; i != run->size; ++i) {
                                         const auto p = run->phrases[i];
 
                                         if (p->is_set(termID)) {
@@ -1093,7 +1165,7 @@ static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_alloca
                                 auto *const __restrict__ run = static_cast<compilation_ctx::phrasesrun *>(ctx->lhs.ptr);
                                 const auto termID            = ctx->rhs.u16;
 
-                                for (uint32_t i{0}; i < run->size;) {
+                                for (size_t i{0}; i < run->size;) {
                                         const auto p = run->phrases[i];
 
                                         if (p->is_set(termID))
@@ -1119,7 +1191,7 @@ static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_alloca
                                 auto *const __restrict__ run = static_cast<compilation_ctx::phrasesrun *>(ctx->lhs.ptr);
                                 const auto rhsPhrase         = static_cast<const compilation_ctx::phrase *>(ctx->rhs.ptr);
 
-                                for (uint32_t i{0}; i != run->size;) {
+                                for (size_t i{0}; i != run->size;) {
                                         const auto p = run->phrases[i];
 
                                         if (p->is_set(rhsPhrase->termIDs, rhsPhrase->size))
@@ -1145,7 +1217,7 @@ static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_alloca
                                 auto *const __restrict__ run = static_cast<compilation_ctx::phrasesrun *>(ctx->lhs.ptr);
                                 const auto rhsPhrase         = static_cast<const compilation_ctx::phrase *>(ctx->rhs.ptr);
 
-                                for (uint32_t i{0}; i != run->size; ++i) {
+                                for (size_t i{0}; i != run->size; ++i) {
                                         const auto p = run->phrases[i];
 
                                         if (p->is_set(rhsPhrase->termIDs, rhsPhrase->size)) {
@@ -1183,7 +1255,7 @@ static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_alloca
 
                 const auto saved{size};
 
-                for (uint32_t i{0}; i < size;) {
+                for (size_t i{0}; i < size;) {
                         const auto p = run->phrases[i];
                         bool       any{false};
 
@@ -1265,7 +1337,7 @@ static auto impl_repr(const ENT fp) noexcept {
                 return "<other>"_s8;
 }
 
-static void PrintImpl(Buffer &b, const exec_node &n) {
+void PrintImpl(Buffer &b, const exec_node &n) {
         if (n.fp == ENT::unaryand) {
                 auto ctx = static_cast<compilation_ctx::unaryop_ctx *>(n.ptr);
 
@@ -1296,7 +1368,7 @@ static void PrintImpl(Buffer &b, const exec_node &n) {
                 const auto p = static_cast<compilation_ctx::phrase *>(n.ptr);
 
                 b.append('[');
-                for (uint32_t i{0}; i != p->size; ++i)
+                for (size_t i{0}; i != p->size; ++i)
                         b.append(p->termIDs[i], ',');
                 b.shrink_by(1);
                 b.append(']');
@@ -1308,7 +1380,7 @@ static void PrintImpl(Buffer &b, const exec_node &n) {
                 const auto *__restrict__ run = static_cast<const compilation_ctx::termsrun *>(n.ptr);
 
                 b.append("ANY OF[");
-                for (uint32_t i{0}; i != run->size; ++i)
+                for (size_t i{0}; i != run->size; ++i)
                         b.append(run->terms[i], ',');
                 b.shrink_by(1);
                 b.append("]");
@@ -1316,7 +1388,7 @@ static void PrintImpl(Buffer &b, const exec_node &n) {
                 const auto *__restrict__ run = static_cast<const compilation_ctx::termsrun *>(n.ptr);
 
                 b.append("ALL OF[");
-                for (uint32_t i{0}; i != run->size; ++i)
+                for (size_t i{0}; i != run->size; ++i)
                         b.append(run->terms[i], ',');
                 b.shrink_by(1);
                 b.append("]");
@@ -1328,7 +1400,7 @@ static void PrintImpl(Buffer &b, const exec_node &n) {
                         const auto p = run->phrases[k];
 
                         b.append('[');
-                        for (uint32_t i{0}; i != p->size; ++i)
+                        for (size_t i{0}; i != p->size; ++i)
                                 b.append(p->termIDs[i], ',');
                         b.shrink_by(1);
                         b.append(']');
@@ -1337,17 +1409,28 @@ static void PrintImpl(Buffer &b, const exec_node &n) {
         } else if (n.fp == ENT::matchanyterms) {
                 const auto *const __restrict__ run = static_cast<compilation_ctx::phrasesrun *>(n.ptr);
 
-                b.append("ANYPHRASES:[");
+                b.append("ANYPHRASES:["_s32);
                 for (uint32_t k{0}; k != run->size; ++k) {
                         const auto p = run->phrases[k];
 
                         b.append('[');
-                        for (uint32_t i{0}; i != p->size; ++i)
+                        for (size_t i{0}; i != p->size; ++i)
                                 b.append(p->termIDs[i], ',');
                         b.shrink_by(1);
                         b.append(']');
                 }
                 b.append(']');
+	} else if (n.fp == ENT::matchanynodes) {
+		const auto ctx = static_cast<compilation_ctx::nodes_group *>(n.ptr);
+
+		b.append("ANYNODES:["_s32);
+		for (size_t i{0}; i != ctx->size; ++i) {
+			PrintImpl(b, ctx->nodes[i]);
+			b.append(',');
+		}
+		if (b.back() == ',')
+			b.pop_back();
+		b.append(']');
         } else {
                 b.append("Missing for ", impl_repr(n.fp));
         }
@@ -1372,13 +1455,13 @@ static exec_node compile(const ast_node *const n, compilation_ctx &cctx, simple_
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " to compile to:", root, "\n");
 
         if (root.fp == ENT::constfalse) {
-                if (traceCompile)
+                if constexpr (traceCompile)
                         SLog("Nothing to do, compile_node() compiled away the expr.\n");
 
                 return {ENT::constfalse, {}};
         }
 
-        if (traceCompile)
+        if constexpr (traceCompile)
                 SLog("Before second pass:", root, "\n");
 
         // Second pass
@@ -1387,23 +1470,23 @@ static exec_node compile(const ast_node *const n, compilation_ctx &cctx, simple_
         do {
                 // collapse and expand nodes
                 // this was pulled out of optimize_node() in order to safeguard us from some edge conditions
-                if (traceCompile)
+                if constexpr (traceCompile)
                         SLog("Before Collapse:", root, "\n");
                 collapse_node(root, cctx, a, terms, phrases, stack);
 
-                if (traceCompile)
+                if constexpr (traceCompile)
                         SLog("Before Expand:", root, "\n");
 
                 expand_node(root, cctx, a, terms, phrases, stack);
 
-                if (traceCompile)
+                if constexpr (traceCompile)
                         SLog("Before Optimizations:", root, "\n");
 
                 updates = false;
                 root    = optimize_node(root, cctx, a, terms, phrases, stack, updates, &root);
 
                 if (root.fp == ENT::constfalse || root.fp == ENT::dummyop) {
-                        if (traceCompile)
+                        if constexpr (traceCompile)
                                 SLog("Nothing to do (false OR noop)\n");
 
                         return {ENT::constfalse, {}};
@@ -1412,7 +1495,7 @@ static exec_node compile(const ast_node *const n, compilation_ctx &cctx, simple_
 
         if (traceMetrics)
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " to expand. Before third pass:", root, "\n");
-        else if (traceCompile)
+        else if constexpr (traceCompile)
                 SLog("Before third pass:", root, "\n");
 
         return root;
@@ -1428,7 +1511,7 @@ static void reorder(ast_node *n, reorder_ctx *const ctx) {
 #if 0
 #define set_dirty()                                                  \
         do {                                                         \
-                if (traceCompile)                                    \
+                if constexpr (traceCompile)                                    \
                         SLog("Dirty at ", __LINE__, ": ", *n, "\n"); \
                 ctx->dirty = true;                                   \
         } while (0)
@@ -1441,7 +1524,7 @@ static void reorder(ast_node *n, reorder_ctx *const ctx) {
         else if (n->type == ast_node::Type::ConstTrueExpr)
                 reorder(n->expr, ctx);
         else if (n->type == ast_node::Type::MatchSome) {
-                for (uint32_t i{0}; i != n->match_some.size; ++i)
+                for (size_t i{0}; i != n->match_some.size; ++i)
                         reorder(n->match_some.nodes[i], ctx);
         }
         if (n->type == ast_node::Type::BinOp) {
@@ -1564,7 +1647,7 @@ static ast_node *reorder_root(ast_node *r) {
                 reorder(r, &ctx);
         } while (ctx.dirty);
 
-        if (traceCompile)
+        if constexpr (traceCompile)
                 SLog("REORDERED:", *r, "\n");
 
         return r;
@@ -1572,7 +1655,7 @@ static ast_node *reorder_root(ast_node *r) {
 
 exec_node Trinity::compile_query(ast_node *root, compilation_ctx &cctx) {
         if (!root) {
-                if (traceCompile)
+                if constexpr (traceCompile)
                         SLog("No root node\n");
 
                 return {ENT::constfalse, {}};
@@ -1660,7 +1743,7 @@ void Trinity::group_execnodes(exec_node &n, simple_allocator &a) {
         } else if (n.fp == ENT::matchsome) {
                 auto pm = static_cast<compilation_ctx::partial_match_ctx *>(n.ptr);
 
-                for (uint32_t i{0}; i != pm->size; ++i)
+                for (size_t i{0}; i != pm->size; ++i)
                         group_execnodes(pm->nodes[i], a);
         }
 }

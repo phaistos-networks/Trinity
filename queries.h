@@ -3,13 +3,11 @@
 #include <switch_mallocators.h>
 #include <vector>
 
-namespace Trinity
-{
+namespace Trinity {
         static constexpr uint8_t UnaryOperatorPrio{100};
-	static constexpr uint8_t DefaultToNextSpan{0};
+        static constexpr uint8_t DefaultToNextSpan{0};
 
-        enum class Operator : uint8_t
-        {
+        enum class Operator : uint8_t {
                 NONE,
                 AND,
                 NOT,
@@ -20,55 +18,52 @@ namespace Trinity
         struct phrase;
 
         // A query is an ASTree
-	//
-	// Choice of AST vs Lucene's Query Interface:
-	// Lucene's use of the Query interface, which is to say, building the actual queries by subclassing the Query abstract class, provides some benefits, but gives up
-	// some useful properties in the process.
-	// Specifically, it doesn't capture sequence and context. That is to say, for example, the use of BooleanQuery as a container of BooleanClauses can't be used
-	// to determine that term A is before term B, because clauses order is not necessarily taken into account 
-	// (you pack clauses of type Occur.MUST, Occur.FILTER, Occur.SHOULD ) in a list, and furthermore BooleanQuery::rewrite() alters that list
-	// and doesn't preserve any logical order. It shouldn't be too hard for someone to update the respective Lucene classes to account for that and properly
-	// track state and context, but in general Lucuene does not care for the query structure.
-	// Trinity's default query execution mode relies on capturing that state and passing information about matched terms and their context in the orignal query
-	// to the callback.
-	//
-	// On the other hand, it's simpler to to just create a BooleanQuery and push BooleanClause's in to it. It's also easier to subclass Query and implement
-	// the various abstract methods in your Lucene application, whereas in Trinity you 'd need to define a new ast_node::Type in the Trinity codebase and
-	// implement whatever's required.
-        struct ast_node final
-        {
+        //
+        // Choice of AST vs Lucene's Query Interface:
+        // Lucene's use of the Query interface, which is to say, building the actual queries by subclassing the Query abstract class, provides some benefits, but gives up
+        // some useful properties in the process.
+        // Specifically, it doesn't capture sequence and context. That is to say, for example, the use of BooleanQuery as a container of BooleanClauses can't be used
+        // to determine that term A is before term B, because clauses order is not necessarily taken into account
+        // (you pack clauses of type Occur.MUST, Occur.FILTER, Occur.SHOULD ) in a list, and furthermore BooleanQuery::rewrite() alters that list
+        // and doesn't preserve any logical order. It shouldn't be too hard for someone to update the respective Lucene classes to account for that and properly
+        // track state and context, but in general Lucuene does not care for the query structure.
+        // Trinity's default query execution mode relies on capturing that state and passing information about matched terms and their context in the orignal query
+        // to the callback.
+        //
+        // On the other hand, it's simpler to to just create a BooleanQuery and push BooleanClause's in to it. It's also easier to subclass Query and implement
+        // the various abstract methods in your Lucene application, whereas in Trinity you 'd need to define a new ast_node::Type in the Trinity codebase and
+        // implement whatever's required.
+        struct ast_node final {
                 union {
                         struct
                         {
                                 ast_node *lhs, *rhs;
-                                Operator op;
+                                Operator  op;
 
-                                constexpr auto normalized_operator() const noexcept
-                                {
+                                constexpr auto normalized_operator() const noexcept {
                                         return op == Operator::STRICT_AND ? Operator::AND : op;
                                 }
                         } binop;
 
-			struct
-			{
-				uint16_t size; 	// among that many nodes here
-                                uint16_t min;   // at least those many should match
+                        struct
+                        {
+                                uint16_t   size; // among that many nodes here
+                                uint16_t   min;  // at least those many should match
                                 ast_node **nodes;
                         } match_some;
 
                         struct
                         {
                                 ast_node *expr;
-                                Operator op;
+                                Operator  op;
                         } unaryop;
 
                         // for both type::Token and type::Phrase
-                        phrase *p;
+                        phrase *  p;
                         ast_node *expr;
                 };
 
-                enum class Type : uint8_t
-                {
+                enum class Type : uint8_t {
                         BinOp = 0,
                         // We need different types for phrases and tokens, because
                         // we may have a phrase with a single token, but we need to know that it is indeed a phrase
@@ -93,90 +88,79 @@ namespace Trinity
                         // You an also think of this as an 'optional match' node.
                         ConstTrueExpr,
 
-			// This is a special-purprose type, and it can be used to specify 2+ nodes and a threshold; at least threshold many
-			// of those should be matched during execution.
-			// Suppose you are buiding a visual search engine, and you extract all images features(say, maybe about 1000 or so for each image). You can then index them, and then for each input image, extract
-			// its own features, and use MatchSome ast_node with all the features extracted from the input image, and a threshold set to say 50% of the total features in that input image, and then execute
-			// the query; it will match all images that have at least 50% common features with the input image. This is going to be very fast and very handy.
-			MatchSome,
+                        // This is a special-purprose type, and it can be used to specify 2+ nodes and a threshold; at least threshold many
+                        // of those should be matched during execution.
+                        // Suppose you are buiding a visual search engine, and you extract all images features(say, maybe about 1000 or so for each image). You can then index them, and then for each input image, extract
+                        // its own features, and use MatchSome ast_node with all the features extracted from the input image, and a threshold set to say 50% of the total features in that input image, and then execute
+                        // the query; it will match all images that have at least 50% common features with the input image. This is going to be very fast and very handy.
+                        MatchSome,
                 } type;
 
                 // this is handy if you want to delete a node
                 // normalize_root() will GC those nodes
-                constexpr void set_dummy() noexcept
-                {
+                constexpr void set_dummy() noexcept {
                         type = Type::Dummy;
                 }
 
-                constexpr bool is_binop() const noexcept
-                {
+                constexpr bool is_binop() const noexcept {
                         return type == Type::BinOp;
                 }
 
-                constexpr bool is_unary() const noexcept
-                {
+                constexpr bool is_unary() const noexcept {
                         return type == Type::Phrase || type == Type::Token;
                 }
 
-                constexpr bool is_dummy() const noexcept
-                {
+                constexpr bool is_dummy() const noexcept {
                         return type == Type::Dummy;
                 }
 
-                constexpr void set_const_false() noexcept
-                {
+                constexpr void set_const_false() noexcept {
                         type = Type::ConstFalse;
                 }
 
-                constexpr bool is_const_false() const noexcept
-                {
+                constexpr bool is_const_false() const noexcept {
                         return type == Type::ConstFalse;
                 }
 
-                constexpr bool is_token() const noexcept
-                {
+                constexpr bool is_token() const noexcept {
                         return type == Type::Token;
                 }
 
-                constexpr bool is_phrase() const noexcept
-                {
+                constexpr bool is_phrase() const noexcept {
                         return type == Type::Phrase;
                 }
 
-                static ast_node *make(simple_allocator &a, const Type t)
-                {
+                static ast_node *make(simple_allocator &a, const Type t) {
                         auto r = a.Alloc<ast_node>();
 
                         r->type = t;
                         return r;
                 }
 
-		static ast_node *make_match_some(simple_allocator &a, ast_node **nodes, const uint16_t cnt, const uint16_t min)
-		{
-			auto res = make(a, Type::MatchSome);
+                static ast_node *make_match_some(simple_allocator &a, ast_node **nodes, const uint16_t cnt, const uint16_t min) {
+                        auto res = make(a, Type::MatchSome);
 
-			EXPECT(cnt);
-			EXPECT(min <= cnt);
+                        EXPECT(cnt);
+                        EXPECT(min <= cnt);
 
-			res->match_some.size = cnt;
-			res->match_some.min = min;
-			res->match_some.nodes = a.CopyOf(nodes, cnt);
+                        res->match_some.size  = cnt;
+                        res->match_some.min   = min;
+                        res->match_some.nodes = a.CopyOf(nodes, cnt);
 
-			return res;
-		}
+                        return res;
+                }
 
-                static ast_node *make_binop(simple_allocator &a)
-                {
-			auto res =  make(a, Type::BinOp);
+                static ast_node *make_binop(simple_allocator &a) {
+                        auto res = make(a, Type::BinOp);
 
-			// so that we 'll catch this if necessary
-			res->binop.lhs = res->binop.rhs = nullptr;
-			return res;
+                        // so that we 'll catch this if necessary
+                        res->binop.lhs = res->binop.rhs = nullptr;
+                        return res;
                 }
 
                 ast_node *copy(simple_allocator *const a);
 
-		// same as copy(), except we are not copying tokens
+                // same as copy(), except we are not copying tokens
                 ast_node *shallow_copy(simple_allocator *const a);
 
                 // see query::leader_nodes() comments
@@ -189,14 +173,12 @@ namespace Trinity
                 // any of the tokens added to the query after the rewrite.
                 void set_alltokens_flags(const uint16_t flags);
 
-		void set_rewrite_range(const range_base<uint16_t, uint8_t>);
+                void set_rewrite_range(const range_base<uint16_t, uint8_t>);
 
-		void set_rewrite_translation_coeff(const uint16_t span);
+                void set_rewrite_translation_coeff(const uint16_t span);
 
-                size_t nodes_count() const noexcept
-                {
-                        switch (type)
-                        {
+                size_t nodes_count() const noexcept {
+                        switch (type) {
                                 case Type::BinOp:
                                         return binop.lhs->nodes_count() + binop.rhs->nodes_count() + 1;
 
@@ -210,21 +192,18 @@ namespace Trinity
                 }
         };
 
-        static constexpr auto unary_same_type(const ast_node *a, const ast_node *b) noexcept
-        {
+        static constexpr auto unary_same_type(const ast_node *a, const ast_node *b) noexcept {
                 return a->type == b->type && (a->type == ast_node::Type::Phrase || b->type == ast_node::Type::Token);
         }
 
-        struct term final
-        {
+        struct term final {
                 // for now, just the token but maybe in the future we 'll want to extend to support flags etc
                 str8_t token;
 
-		// We now have this union here, which maybe useful for some applications, but is otherwise not used by Trinity
-		union
-		{
-			uint32_t u32;
-		};
+                // We now have this union here, which maybe useful for some applications, but is otherwise not used by Trinity
+                union {
+                        uint32_t u32;
+                };
         };
 
         // This is an AST parser
@@ -238,39 +217,36 @@ namespace Trinity
         // A query only holds its root node and its own allocator, and uses a ast_parser to parse the query input. See query::parse()
         //
         // Keep in mind that you can always copy nodes/asts using ast_node::copy()
-        struct ast_parser final
-        {
-                enum class Flags : uint32_t
-                {
+        struct ast_parser final {
+                enum class Flags : uint32_t {
                         // Treat OR as a regular token
                         // Amazon.com treats (AND, NOT, OR) as regular tokens, but they do support '|' AND '-' AND '+' operators
-                        ORAsToken = 1,
+                        ORAsToken = 1u,
                         // Treat NOT as a regular token
-                        NOTAsToken = 1 << 1,
+                        NOTAsToken = 1u << 1,
                         // Treat AND as a regular token
-                        ANDAsToken = 1 << 2
+                        ANDAsToken         = 1u << 2,
+                        ParseConstTrueExpr = 1u << 3,
                 };
 
-                str32_t content;
-                const char_t *contentBase;
+                str32_t           content;
+                const char_t *    contentBase;
                 simple_allocator &allocator;
-                term terms[Trinity::Limits::MaxPhraseSize];
+                term              terms[Trinity::Limits::MaxPhraseSize];
                 // It is important that your queries token parser semantics are also implemented in your documents content parser
                 std::pair<uint32_t, uint8_t> (*token_parser)(const str32_t, char_t *, const bool);
-		const uint32_t parserFlags;
+                const uint32_t      parserFlags;
                 std::vector<str8_t> distinctTokens;
                 // facilitates parsing
                 std::vector<char_t> groupTerm;
-                char_t lastParsedToken[255];
+                char_t              lastParsedToken[255];
 
-                auto *alloc_node(const ast_node::Type t)
-                {
+                auto *alloc_node(const ast_node::Type t) {
                         return ast_node::make(allocator, t);
                 }
 
                 ast_parser(const str32_t input, simple_allocator &a, std::pair<uint32_t, uint8_t> (*p)(const str32_t, char_t *, const bool) = default_token_parser_impl, const uint32_t parserFlags_ = 0)
-                    : content{input}, contentBase{content.data()}, allocator{a}, token_parser{p}, parserFlags{parserFlags_}
-                {
+                    : content{input}, contentBase{content.data()}, allocator{a}, token_parser{p}, parserFlags{parserFlags_} {
                 }
 
                 // You may NOT invoke parse() more than once
@@ -278,16 +254,15 @@ namespace Trinity
                 //
                 // Make sure that the allocate you provide is not deleted or reused before you are done accessing
                 // any query tokens
-		//
-		// UPDATE: you can now use reset_and_parse()
-		// which will reset content and state. This is useful if you really don't want to allocate/init a new ast_parser
-		// in say, a loop, and want to reuse it.
+                //
+                // UPDATE: you can now use reset_and_parse()
+                // which will reset content and state. This is useful if you really don't want to allocate/init a new ast_parser
+                // in say, a loop, and want to reuse it.
                 ast_node *parse();
 
-		auto reset_and_parse(const str32_t c)
-                {
-                        content = c;
-			contentBase = content.data();
+                auto reset_and_parse(const str32_t c) {
+                        content     = c;
+                        contentBase = content.data();
 
                         allocator.reuse();
 
@@ -297,13 +272,11 @@ namespace Trinity
                         return parse();
                 }
 
-                inline void skip_ws()
-                {
+                inline void skip_ws() {
                         content.trim_leading_whitespace();
                 }
 
-                auto parse_failnode()
-                {
+                auto parse_failnode() {
                         // We no longer return nullptr
                         // because we really can't fail (not strict)
                         return alloc_node(ast_node::Type::Dummy);
@@ -312,8 +285,7 @@ namespace Trinity
                 void track_term(term &t);
         };
 
-        struct phrase final
-        {
+        struct phrase final {
                 // total terms (1 for a single token)
                 uint8_t size;
 
@@ -329,17 +301,17 @@ namespace Trinity
                 uint16_t index;
                 // See assign_query_indices() for how this is assigned
                 //
-		// SUB-EXPRESSION: A query is broken down into 0+ sub-expressions. When you use the OR operator, it creates an overlapping
-		//	sub-query; the left-handside overlaps the right-handside, and the next sub-expression for that overlapped union begins
-		//	after past the right-handside sub-query. 
-		// 	Examples: 
-		//	- [lord of the rings]: this is a 4 sub-expressions query (on1 for each token)
-		//	- [google OR amazon] : this is 1 sub-expression, not 2 (because google overlaps amazon)
-		//	- [google OR amazon jobs]: 2 sub-expressions, one for the overlapping [google or amazon] and another for [jobs]
-		// toNextSpan is the offset from a token(or phrase) to the next token or phrase in the query to the next sub-expression
-		// or 0 if there is no next sub-expression.
-		//
-		// 
+                // SUB-EXPRESSION: A query is broken down into 0+ sub-expressions. When you use the OR operator, it creates an overlapping
+                //	sub-query; the left-handside overlaps the right-handside, and the next sub-expression for that overlapped union begins
+                //	after past the right-handside sub-query.
+                // 	Examples:
+                //	- [lord of the rings]: this is a 4 sub-expressions query (on1 for each token)
+                //	- [google OR amazon] : this is 1 sub-expression, not 2 (because google overlaps amazon)
+                //	- [google OR amazon jobs]: 2 sub-expressions, one for the overlapping [google or amazon] and another for [jobs]
+                // toNextSpan is the offset from a token(or phrase) to the next token or phrase in the query to the next sub-expression
+                // or 0 if there is no next sub-expression.
+                //
+                //
                 // This is how many terms/tokens to advance from this index(i.e query token) to get to the next term in the query and skip
                 // all other tokens in the same OR group as this token. That is, this is the offset from index to the next sub-expression
                 //
@@ -364,22 +336,21 @@ namespace Trinity
                 //
                 // The semantics of (index, toNextSpan) are somewhat complicated, but it's only because it is required for accurately and relatively effortlessly being able to
                 // capture sequences. A sequence is a 2+ consequtive tokens in a query.
-		//
-		// IMPORTANT: It can be 0 if there is no adjacent term. (i.e last term in a sequence or in the query). You can now use query::final_index()
-		// if you want to compute a range for when toNextSpan = 0, e.g range32_t(index, toNextSpan ?: final_index() - index)
-		//
-		// Effectively, the offset of the next sub-expression from index, iff there is a next sub-expression(otherwise it's 0)
+                //
+                // IMPORTANT: It can be 0 if there is no adjacent term. (i.e last term in a sequence or in the query). You can now use query::final_index()
+                // if you want to compute a range for when toNextSpan = 0, e.g range32_t(index, toNextSpan ?: final_index() - index)
+                //
+                // Effectively, the offset of the next sub-expression from index, iff there is a next sub-expression(otherwise it's 0)
                 uint8_t toNextSpan;
-
 
                 // flags. Usually 0, but e.g if you are rewritting a [wow] to [wow OR "world of warcraft"] you
                 // maybe want "world of warcraft" flags to be 1 (i.e derived). This can be very useful for scoring matches.
-		// So you can rely on flags for query expansion/rewrite tagging/tracking, and on matched query terms hits to compute a 'relevance' score
-		// and maybe another 'context' score(based on personalization, popularity, recency, etc) and then fuse them together to come up with the final score.
-		//
-		// You can use it for encoding flags, and state or anything else
-		//
-		// This is not in rewrite_ctx because it's not specifically here for rewrites only.
+                // So you can rely on flags for query expansion/rewrite tagging/tracking, and on matched query terms hits to compute a 'relevance' score
+                // and maybe another 'context' score(based on personalization, popularity, recency, etc) and then fuse them together to come up with the final score.
+                //
+                // You can use it for encoding flags, and state or anything else
+                //
+                // This is not in rewrite_ctx because it's not specifically here for rewrites only.
                 //
                 // See ast_node::set_alltokens_flags()
                 query_term_flags_t flags;
@@ -389,7 +360,7 @@ namespace Trinity
                 // and you 'd rather not have to go through hoops to accomplish it
                 range_base<uint16_t, uint16_t> inputRange;
 
-		struct
+                struct
                 {
                         // A range, which represents the logical span in the input query terms list that was expanded/rewritten/captured.
                         // For example, rewrite_query() for query [pc games] where "pc games" is expanded to cid:806: [ (pc games) OR cid:806 ]
@@ -397,99 +368,89 @@ namespace Trinity
                         // e.g cid:806 was matched, which overlaps 'pc' and 'games'
                         range_base<uint16_t, uint8_t> range;
 
-			// We encode expansions and contractions here
-			// if you rewrite(expand) [cod] to [call of duty], i.e from 1 token to 3, then
-			// this should be equal to 1/3
-			// Conversely, if we rewrite(contract) [lord of the rings] to [lotr], i.e from 4 tokens to 1, then
-			// this should be equal to 1/4 -- i.e std::min(low, high)/std::max(low, high)
-			float translationCoefficient;
+                        // We encode expansions and contractions here
+                        // if you rewrite(expand) [cod] to [call of duty], i.e from 1 token to 3, then
+                        // this should be equal to 1/3
+                        // Conversely, if we rewrite(contract) [lord of the rings] to [lotr], i.e from 4 tokens to 1, then
+                        // this should be equal to 1/4 -- i.e std::min(low, high)/std::max(low, high)
+                        float translationCoefficient;
 
-
-			// This is 0, except when we expand or contract a sequence and its output is a single token
-			// e.g [mac book] =>  [macbook]. A sequence of two tokens into 1
-			// however for e.g
-			// [mac book] => [apple cool laptops], a sequence of two expanded to a sequence of 3, we can't currently treat
-			// the final sequence as a single entity, however we rarely if ever need to care for that kind of expansion, and we will
-			// come up with something by then.
-			//
-			// You should probably just use translationCoefficient.
-			uint8_t srcSeqSize;
+                        // This is 0, except when we expand or contract a sequence and its output is a single token
+                        // e.g [mac book] =>  [macbook]. A sequence of two tokens into 1
+                        // however for e.g
+                        // [mac book] => [apple cool laptops], a sequence of two expanded to a sequence of 3, we can't currently treat
+                        // the final sequence as a single entity, however we rarely if ever need to care for that kind of expansion, and we will
+                        // come up with something by then.
+                        //
+                        // You should probably just use translationCoefficient.
+                        uint8_t srcSeqSize;
                 } rewrite_ctx;
 
-		// Difference between two ranges:
-		// query range: [index, index + toNextSpan ?: 1)
-		// rewrite range: rewrite_ctx.range
-		//
-		// For e.g query [wow OR (world of warcraft) game]
-		// where we used Trinity::rewrite_query() but didn't rewrite the query, so that rewrite_ctx is initialized
-		// we expect to get:
-		// [wow] 	index:0 	toNextSpan:3  rr:[1, 2)
-		// [world] 	index:0 	toNextSpan:1  rr:[2, 3)
-		// [of] 	index:1 	toNextSpan:1  rr:[3, 4)
-		// [warcraft] 	index:2 	toNextSpan:1  rr:[4, 5)
-		// [game] 	index:3 	toNextSpan:0  rr:[0, 1)
-		//
-		// for the query [world of warcraft game], where we used Trinity::rewrite_query(), and we contracted 'world of warcraft' to 'wow', we expect to get:
-		// [world] 	index:0 	toNextSpan:1  rr:[0, 1)
-		// [of] 	index:1 	toNextSpan:1  rr:[1, 2)
-		// [warcraft] 	index:2 	toNextSpan:1  rr:[2, 3)
-		// [wow] 	index:0 	toNextSpan:3  rr:[0, 3)
-		// [game] 	index:3 	toNextSpan:0  rr:[3, 4)
-		//
-		// for the query [wow game], where we used Trinity::rewrite_query() to expand 'wow' to 'world of warcraft', we expect to get:
-		// [wow] 	index:0 	toNextSpan:3  rr:[0, 1)
-		// [world] 	index:0 	toNextSpan:1  rr:[0, 1)
-		// [of] 	index:1 	toNextSpan:1  rr:[0, 1)
-		// [warcraft] 	index:2 	toNextSpan:2  rr:[0, 1) 
-		// [game] 	index:3 	toNextSpan:0  rr:[1, 2)
-		//
-		// As you can see:
-		// - rewrite range is very useful for identifying phrases and tokens that resulted from rewrites
-		// - rewrite range is always set, even for the last logical term in a sub-expression(for which we set toNextSpan to 0)
-		// - we can't identify logically equal sub-expressions by relying on rewrite_ctx.range. For the last expression
-		//	where [wow] and [world of warcraft] are logically equal, we could check for equality by checking
-		//	[index, toNextSpan). index is == 0 for both sub-expressions and we can easily calculate the span of
-		// 	the second logical sub-expressions and thus figure out that they are identical here.
-		// - if [game] wasn't part of the query, then toNextSpan would have been 0 for the last token of every sub-expression
-		// 	in those examples, so we clearly need a way to deal with those situations. You can now use
-		//	query::final_index() to properly and correctly compute a range when toNextSpan == 0
-
+                // Difference between two ranges:
+                // query range: [index, index + toNextSpan ?: 1)
+                // rewrite range: rewrite_ctx.range
+                //
+                // For e.g query [wow OR (world of warcraft) game]
+                // where we used Trinity::rewrite_query() but didn't rewrite the query, so that rewrite_ctx is initialized
+                // we expect to get:
+                // [wow] 	index:0 	toNextSpan:3  rr:[1, 2)
+                // [world] 	index:0 	toNextSpan:1  rr:[2, 3)
+                // [of] 	index:1 	toNextSpan:1  rr:[3, 4)
+                // [warcraft] 	index:2 	toNextSpan:1  rr:[4, 5)
+                // [game] 	index:3 	toNextSpan:0  rr:[0, 1)
+                //
+                // for the query [world of warcraft game], where we used Trinity::rewrite_query(), and we contracted 'world of warcraft' to 'wow', we expect to get:
+                // [world] 	index:0 	toNextSpan:1  rr:[0, 1)
+                // [of] 	index:1 	toNextSpan:1  rr:[1, 2)
+                // [warcraft] 	index:2 	toNextSpan:1  rr:[2, 3)
+                // [wow] 	index:0 	toNextSpan:3  rr:[0, 3)
+                // [game] 	index:3 	toNextSpan:0  rr:[3, 4)
+                //
+                // for the query [wow game], where we used Trinity::rewrite_query() to expand 'wow' to 'world of warcraft', we expect to get:
+                // [wow] 	index:0 	toNextSpan:3  rr:[0, 1)
+                // [world] 	index:0 	toNextSpan:1  rr:[0, 1)
+                // [of] 	index:1 	toNextSpan:1  rr:[0, 1)
+                // [warcraft] 	index:2 	toNextSpan:2  rr:[0, 1)
+                // [game] 	index:3 	toNextSpan:0  rr:[1, 2)
+                //
+                // As you can see:
+                // - rewrite range is very useful for identifying phrases and tokens that resulted from rewrites
+                // - rewrite range is always set, even for the last logical term in a sub-expression(for which we set toNextSpan to 0)
+                // - we can't identify logically equal sub-expressions by relying on rewrite_ctx.range. For the last expression
+                //	where [wow] and [world of warcraft] are logically equal, we could check for equality by checking
+                //	[index, toNextSpan). index is == 0 for both sub-expressions and we can easily calculate the span of
+                // 	the second logical sub-expressions and thus figure out that they are identical here.
+                // - if [game] wasn't part of the query, then toNextSpan would have been 0 for the last token of every sub-expression
+                // 	in those examples, so we clearly need a way to deal with those situations. You can now use
+                //	query::final_index() to properly and correctly compute a range when toNextSpan == 0
 
                 term terms[0];
 
-
-
-
-
-                bool operator==(const phrase &o) const noexcept
-                {
+                bool operator==(const phrase &o) const noexcept {
                         //WAS: if (size == o.size)
-                        if (size == o.size && flags == o.flags)
-                        {
+                        if (size == o.size && flags == o.flags) {
                                 size_t i;
 
                                 for (i = 0; i != size && terms[i].token == o.terms[i].token; ++i)
                                         continue;
 
                                 return i == size;
-                        }
-                        else
+                        } else
                                 return false;
                 }
 
                 // handy utility method
-                static auto make(const str8_t *tokens, const size_t n, simple_allocator *const a)
-                {
+                static auto make(const str8_t *tokens, const size_t n, simple_allocator *const a) {
                         auto p = (phrase *)a->Alloc(sizeof(phrase) + sizeof(term) * n);
 
                         p->flags = 0;
-                        p->rep = 1;
+                        p->rep   = 1;
                         p->inputRange.reset();
                         p->toNextSpan = DefaultToNextSpan;
-			p->rewrite_ctx.range.reset();
-			p->rewrite_ctx.srcSeqSize = 1;
-			p->rewrite_ctx.translationCoefficient = 1.0;
-                        p->size = n;
+                        p->rewrite_ctx.range.reset();
+                        p->rewrite_ctx.srcSeqSize             = 1;
+                        p->rewrite_ctx.translationCoefficient = 1.0;
+                        p->size                               = n;
 
                         for (size_t i{0}; i != n; ++i)
                                 p->terms[i].token.Set(a->CopyOf(tokens[i].data(), tokens[i].size()), tokens[i].size());
@@ -498,15 +459,14 @@ namespace Trinity
         };
 
         // see query::normalize()
-        ast_node * normalize_ast(ast_node *);
+        ast_node *normalize_ast(ast_node *);
 
         // This is really just a container for an ast root node and the allocator
         // used to allocate the AST from.
         // It also provides a few useful methods that operate on the root and may make use of the allocator
-        struct query final
-        {
-                ast_node *root;
-		uint16_t final_index_;
+        struct query final {
+                ast_node *       root;
+                uint16_t         final_index_;
                 simple_allocator allocator{512};
                 // parse() will set tokensParser; this may come in handy elsewhere, e.g see rewrite_query() impl.
                 std::pair<uint32_t, uint8_t> (*tokensParser)(const str32_t, char_t *, const bool);
@@ -548,61 +508,53 @@ namespace Trinity
                 // the source query to go away
                 static void bind_tokens_to_allocator(ast_node *, simple_allocator *);
 
-		query()
-			: root{nullptr}, final_index_{0}, tokensParser{nullptr}
-		{
+                query()
+                    : root{nullptr}, final_index_{0}, tokensParser{nullptr} {
+                }
 
-		}
-
-                inline operator bool() const noexcept
-                {
+                inline operator bool() const noexcept {
                         return root;
                 }
 
-		// This would be the index of the first new sub-expression of the query, if
-		// the query had more sub-expressions.
-		// It is computed by assign_query_indices(), and it's very handy because toNextSpan is set to 0
-		// for all last tokens of the last query sub-exprs. and you may need to
-		// deal with those kind of ranges in your applications.
-		auto final_index() const noexcept {
-			return final_index_;
-		}
+                // This would be the index of the first new sub-expression of the query, if
+                // the query had more sub-expressions.
+                // It is computed by assign_query_indices(), and it's very handy because toNextSpan is set to 0
+                // for all last tokens of the last query sub-exprs. and you may need to
+                // deal with those kind of ranges in your applications.
+                auto final_index() const noexcept {
+                        return final_index_;
+                }
 
                 query(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *, const bool) = default_token_parser_impl, const uint32_t parserFlags = 0)
-                    : tokensParser{tp}
-                {
+                    : tokensParser{tp} {
                         if (!parse(in, tp, parserFlags))
-				throw Switch::data_error("Failed to parse query");
+                                throw Switch::data_error("Failed to parse query");
                 }
 
                 query(ast_node *r)
-                    : root{r}, final_index_{0}
-                {
+                    : root{r}, final_index_{0} {
                 }
 
-                explicit query(const query &o, const bool shallow = false)
-                {
+                explicit query(const query &o, const bool shallow = false) {
                         tokensParser = o.tokensParser;
-                        root = o.root ? (shallow ? o.root->shallow_copy(&allocator) : o.root->copy(&allocator)) : nullptr;
-			final_index_ = o.final_index_;
+                        root         = o.root ? (shallow ? o.root->shallow_copy(&allocator) : o.root->copy(&allocator)) : nullptr;
+                        final_index_ = o.final_index_;
                         if (root && false == shallow)
                                 bind_tokens_to_allocator(root, &allocator);
                 }
 
-                query(query &&o)
-                {
-                        root = std::exchange(o.root, nullptr);
-			final_index_ = o.final_index_;
+                query(query &&o) {
+                        root         = std::exchange(o.root, nullptr);
+                        final_index_ = o.final_index_;
                         tokensParser = o.tokensParser;
-                        allocator = std::move(o.allocator);
+                        allocator    = std::move(o.allocator);
                 }
 
-                query &operator=(const query &o)
-                {
+                query &operator=(const query &o) {
                         allocator.reuse();
 
-                        root = o.root ? o.root->copy(&allocator) : nullptr;
-			final_index_ = o.final_index_;
+                        root         = o.root ? o.root->copy(&allocator) : nullptr;
+                        final_index_ = o.final_index_;
                         tokensParser = o.tokensParser;
                         if (root)
                                 bind_tokens_to_allocator(root, &allocator);
@@ -612,29 +564,27 @@ namespace Trinity
                 // utility method; returns all nodes
                 static std::vector<ast_node *> &nodes(ast_node *root, std::vector<ast_node *> *const res);
 
-                static auto nodes(ast_node *root)
-                {
+                static auto nodes(ast_node *root) {
                         std::vector<ast_node *> out;
 
                         return nodes(root, &out);
                 }
 
-                auto nodes() const
-                {
+                auto nodes() const {
                         return nodes(root);
                 }
 
-		// Computes number of sub-expressions, whereas sub-expressions are collated using AND operators
-		// OR expressions are properly counted as one, e.g 
-		//  (usa OR (unites states of (america OR americas))) is a single expression
-		// 
-		// XXX: This is not a particularly optimal implementation
-		// make sure you have normalize()d the query before invoking this method
+                // Computes number of sub-expressions, whereas sub-expressions are collated using AND operators
+                // OR expressions are properly counted as one, e.g
+                //  (usa OR (unites states of (america OR americas))) is a single expression
+                //
+                // XXX: This is not a particularly optimal implementation
+                // make sure you have normalize()d the query before invoking this method
                 size_t subexpressions_count() const noexcept;
 
-		// This returns the phrase::index for all query subexpressions
-		// which can be very beneficial in your MatchedIndexDocumentsFilter::consider() impl.
-		std::vector<uint16_t> subexpressions_offsets() const noexcept;
+                // This returns the phrase::index for all query subexpressions
+                // which can be very beneficial in your MatchedIndexDocumentsFilter::consider() impl.
+                std::vector<uint16_t> subexpressions_offsets() const noexcept;
 
                 // If all you want to do is remove a node, set it a dummy
                 // If all you want to do is replace a single node (i.e not a run), just replace
@@ -654,8 +604,7 @@ namespace Trinity
                 // XXX: you need to be careful if you are replacing a node's value (e.g *n = *anotherNode)
                 // and that anotherNode is e.g a binop and either of its (lhs, rhs) references itself.
                 // In that case, just create another node (e.g use clone() method) and use that
-                static void replace_run(ast_node **run, const size_t cnt, ast_node *newExprNode)
-                {
+                static void replace_run(ast_node **run, const size_t cnt, ast_node *newExprNode) {
                         // Just set all nodes _except_ the first to dummy
                         // and replace value of the first with the newExprNode
 
@@ -668,20 +617,19 @@ namespace Trinity
                         // Now just make sure you normalize_root()
                 }
 
-		// Returns true if can intersect this query
-		// See intersections.{h,cpp} for comments
-		bool can_intersect() const;
+                // Returns true if can intersect this query
+                // See intersections.{h,cpp} for comments
+                bool can_intersect() const;
 
                 // Make sure you check the repetition count
                 // See also ast_node::set_alltokens_flags()
                 //
                 // andOnly: if false, will also consider runs of STRICT_AND nodes
                 template <typename L>
-                void process_runs(const bool includePhrases, const bool processStrictAND, const bool processNOT, L &&cb)
-                {
+                void process_runs(const bool includePhrases, const bool processStrictAND, const bool processNOT, L &&cb) {
                         static thread_local std::vector<std::pair<uint32_t, ast_node *>> unaryNodes, stack;
-                        static thread_local std::vector<ast_node *> run;
-                        uint32_t segments{0};
+                        static thread_local std::vector<ast_node *>                      run;
+                        uint32_t                                                         segments{0};
 
                         stack.clear();
                         unaryNodes.clear();
@@ -689,15 +637,13 @@ namespace Trinity
                         if (root)
                                 stack.push_back({0, root});
 
-                        while (stack.size())
-                        {
+                        while (stack.size()) {
                                 const auto pair = stack.back();
-                                auto n = pair.second;
-                                const auto seg = pair.first;
+                                auto       n    = pair.second;
+                                const auto seg  = pair.first;
 
                                 stack.pop_back();
-                                switch (n->type)
-                                {
+                                switch (n->type) {
                                         case ast_node::Type::Token:
                                                 unaryNodes.push_back({seg, n});
                                                 break;
@@ -707,35 +653,27 @@ namespace Trinity
                                                         unaryNodes.push_back({seg, n});
                                                 break;
 
-					case ast_node::Type::MatchSome:
-						for (size_t i{0}; i != n->match_some.size; ++i)
-							stack.push_back({seg, n->match_some.nodes[i]});
-						break;
+                                        case ast_node::Type::MatchSome:
+                                                for (size_t i{0}; i != n->match_some.size; ++i)
+                                                        stack.push_back({seg, n->match_some.nodes[i]});
+                                                break;
 
                                         case ast_node::Type::BinOp:
-                                                if (n->binop.op == Operator::AND)
-                                                {
+                                                if (n->binop.op == Operator::AND) {
                                                         stack.push_back({seg, n->binop.lhs});
                                                         stack.push_back({seg, n->binop.rhs});
-                                                }
-                                                else if (n->binop.op == Operator::NOT)
-                                                {
+                                                } else if (n->binop.op == Operator::NOT) {
                                                         stack.push_back({seg, n->binop.lhs});
-                                                        if (processNOT)
-                                                        {
+                                                        if (processNOT) {
                                                                 ++segments;
                                                                 stack.push_back({segments, n->binop.rhs});
                                                         }
-                                                }
-                                                else if (n->binop.op == Operator::OR)
-                                                {
+                                                } else if (n->binop.op == Operator::OR) {
                                                         ++segments;
                                                         stack.push_back({segments, n->binop.lhs});
                                                         ++segments;
                                                         stack.push_back({segments, n->binop.rhs});
-                                                }
-                                                else if (processStrictAND && n->binop.op == Operator::STRICT_AND)
-                                                {
+                                                } else if (processStrictAND && n->binop.op == Operator::STRICT_AND) {
                                                         stack.push_back({seg, n->binop.lhs});
                                                         stack.push_back({seg, n->binop.rhs});
                                                 }
@@ -753,17 +691,15 @@ namespace Trinity
                                 }
                         }
 
-                        std::sort(unaryNodes.begin(), unaryNodes.end(), [](const auto &a, const auto &b) {
+                        std::sort(unaryNodes.begin(), unaryNodes.end(), [](const auto &a, const auto &b) noexcept {
                                 return a.first < b.first || (a.first == b.first && a.second->p->index < b.second->p->index);
                         });
 
-                        for (const auto *p = unaryNodes.data(), *const e = p + unaryNodes.size(); p != e;)
-                        {
+                        for (const auto *p = unaryNodes.data(), *const e = p + unaryNodes.size(); p != e;) {
                                 const auto segment = p->first;
 
                                 run.clear();
-                                do
-                                {
+                                do {
                                         run.push_back(p->second);
                                 } while (++p != e && p->first == segment);
 
@@ -771,26 +707,23 @@ namespace Trinity
                         }
                 }
 
-		// If more than that many different tokens are in this query, it will
-		// remove however many required so that the total number of tokens is <= maxQueryTokens
-		// and will return the first node removed(ast_node::Type::Token or ast_node::Type::Phrase), otherwise it will return nullptr
-		// Try a google search for over 32 tokens
-		ast_node *trim(const std::size_t maxQueryTokens);
+                // If more than that many different tokens are in this query, it will
+                // remove however many required so that the total number of tokens is <= maxQueryTokens
+                // and will return the first node removed(ast_node::Type::Token or ast_node::Type::Phrase), otherwise it will return nullptr
+                // Try a google search for over 32 tokens
+                ast_node *trim(const std::size_t maxQueryTokens);
 
-
-		void reset()
-		{
-			root = nullptr;
-			final_index_ = 0;
-			allocator.reuse();
-		}
+                void reset() {
+                        root         = nullptr;
+                        final_index_ = 0;
+                        allocator.reuse();
+                }
         };
-}
+} // namespace Trinity
 
-void PrintImpl(Buffer &b, const Trinity::ast_node &n);
-void PrintImpl(Buffer &b, const Trinity::phrase &);
-inline void PrintImpl(Buffer &b, const Trinity::query &q)
-{
+void        PrintImpl(Buffer &b, const Trinity::ast_node &n);
+void        PrintImpl(Buffer &b, const Trinity::phrase &);
+inline void PrintImpl(Buffer &b, const Trinity::query &q) {
         if (q.root)
                 b.append(*q.root);
         else
