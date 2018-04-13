@@ -195,12 +195,16 @@ namespace Trinity {
                 // we really only need to track 'useful' flows)
                 std::vector<flow *>        allocatedFlows, flows, flows_1, flows_2;
                 std::unordered_set<flow *> S[2];
+                std::vector<void *>        large_allocations;
 
                 ~gen_ctx() {
                         while (!allocatedFlows.empty()) {
                                 allocatedFlows.back()->~flow();
                                 allocatedFlows.pop_back();
                         }
+
+			for (auto p : large_allocations)
+				std::free(p);
                 }
 
                 void prepare_run_capture() {
@@ -701,8 +705,8 @@ namespace Trinity {
                                                                 // TODO(markp): expose a flag that controls the semantics(shallow or full copies)
                                                                 // UPDATE: now controlled via flags
                                                                 auto *const clone = (rewriteFlags & unsigned(RewriteFlags::NoShallowCopy))
-                                                                                        ? p.second->copy(&genCtx.allocator)
-                                                                                        : p.second->shallow_copy(&genCtx.allocator);
+                                                                                        ? p.second->copy(&genCtx.allocator, &genCtx.large_allocations)
+                                                                                        : p.second->shallow_copy(&genCtx.allocator, &genCtx.large_allocations);
 
                                                                 f->push_back_node({p.first, clone}, genCtx, flows, maxStop, Operator::AND);
                                                         }

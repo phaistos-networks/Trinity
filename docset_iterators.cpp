@@ -3,15 +3,12 @@
 #include "queryexec_ctx.h"
 
 // see reorder_execnode_impl()
-uint64_t Trinity::DocsSetIterators::Iterator::cost()
-{
-	return Trinity::DocsSetIterators::cost(this);
+uint64_t Trinity::DocsSetIterators::Iterator::cost() {
+        return Trinity::DocsSetIterators::cost(this);
 }
 
-uint64_t Trinity::DocsSetIterators::cost(const Iterator *it)
-{
-        switch (it->type)
-        {
+uint64_t Trinity::DocsSetIterators::cost(const Iterator *it) {
+        switch (it->type) {
                 case Type::AppIterator:
                         std::abort();
 
@@ -25,29 +22,25 @@ uint64_t Trinity::DocsSetIterators::cost(const Iterator *it)
                         return static_cast<const VectorIDs *>(it)->ids.size();
 
                 case Type::Optional:
-			return cost(static_cast<const Optional *>(it)->main);
+                        return cost(static_cast<const Optional *>(it)->main);
 
-                case Type::Disjunction:
-                {
+                case Type::Disjunction: {
                         const auto self = static_cast<const Disjunction *>(it);
-                        uint64_t sum{0};
+                        uint64_t   sum{0};
 
-			for (const auto it : self->pq)
+                        for (const auto it : self->pq)
                                 sum += cost(it);
                         return sum;
-                }
-                break;
+                } break;
 
-                case Type::DisjunctionAllPLI:
-                {
+                case Type::DisjunctionAllPLI: {
                         const auto self = static_cast<const DisjunctionAllPLI *>(it);
-                        uint64_t sum{0};
+                        uint64_t   sum{0};
 
-			for (const auto it : self->pq)
+                        for (const auto it : self->pq)
                                 sum += cost(it);
                         return sum;
-                }
-                break;
+                } break;
 
                 case Type::Conjuction:
                         return cost(static_cast<const Conjuction *>(it)->its[0]);
@@ -55,14 +48,12 @@ uint64_t Trinity::DocsSetIterators::cost(const Iterator *it)
                 case Type::ConjuctionAllPLI:
                         return cost(static_cast<const ConjuctionAllPLI *>(it)->its[0]);
 
-                case Type::Phrase:
-                {
+                case Type::Phrase: {
                         const auto self = static_cast<const Phrase *>(it);
 
                         // XXX: see phrase_cost()
                         return cost(self->its[0]) + UINT32_MAX + UINT16_MAX * self->size;
-                }
-                break;
+                } break;
 
                 case Type::PostingsListIterator:
                         return static_cast<const Codecs::PostingsListIterator *>(it)->decoder()->indexTermCtx.documents;
@@ -72,21 +63,20 @@ uint64_t Trinity::DocsSetIterators::cost(const Iterator *it)
         }
 }
 
-bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
-{
+bool Trinity::DocsSetIterators::Phrase::consider_phrase_match() {
         [[maybe_unused]] static constexpr bool trace{false};
-        const auto did = curDocument.id;
-        auto &rctx = *rctxRef;
-        auto *const doc = rctx.document_by_id(did);
-        const auto n = size;
-        auto it = its[0];
-        const auto firstTermID = it->decoder()->exec_ctx_termid();
-        auto *const __restrict__ th = doc->materialize_term_hits(&rctx, it, firstTermID); // will create and initialize dws if not created
-        auto *const __restrict__ dws = doc->matchedDocument.dws;
-        const auto firstTermFreq = th->freq;
-        const auto firstTermHits = th->all;
+        const auto                             did         = curDocument.id;
+        auto &                                 rctx        = *rctxRef;
+        auto *const                            doc         = rctx.document_by_id(did);
+        const auto                             n           = size;
+        auto                                   it          = its[0];
+        const auto                             firstTermID = it->decoder()->exec_ctx_termid();
+        auto *const __restrict__ th                        = doc->materialize_term_hits(&rctx, it, firstTermID); // will create and initialize dws if not created
+        auto *const __restrict__ dws                       = doc->matchedDocument.dws;
+        const auto firstTermFreq                           = th->freq;
+        const auto firstTermHits                           = th->all;
 
-	require(curDocument.id == doc->id);
+        require(curDocument.id == doc->id);
 
         // On one hand, we care for documents where we have CAPTURED terms, and so we only need to bind
         // this phrase to a document if all terms match.
@@ -99,8 +89,7 @@ bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
         // another iterator advances to document 10 and needs to access the same terms, it means we 'll need to dematerialize them again.
         // Maybe this is not a big deal though?
         matchCnt = 0;
-        for (uint16_t i{1}; i != n; ++i)
-        {
+        for (uint16_t i{1}; i != n; ++i) {
                 auto it = its[i];
 
                 doc->materialize_term_hits(&rctx, it, it->decoder()->exec_ctx_termid());
@@ -109,49 +98,37 @@ bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
         if (trace)
                 SLog("firstTermFreq = ", firstTermFreq, "\n");
 
-        for (uint32_t i{0}; i != firstTermFreq; ++i)
-        {
-                if (const auto pos = firstTermHits[i].pos)
-                {
+        for (size_t i{0}; i != firstTermFreq; ++i) {
+                if (const auto pos = firstTermHits[i].pos) {
                         if (trace)
                                 SLog("For POS ", pos, "\n");
 
-                        for (uint8_t k{1};; ++k)
-                        {
-                                if (k == n)
-                                {
+                        for (uint8_t k{1};; ++k) {
+                                if (k == n) {
                                         // matched seq
                                         if (trace)
                                                 SLog("MATCHED\n");
 
-                                        if (++matchCnt == maxMatchCnt)
-                                        {
-                                                if (release_docrefs)
-						{
+                                        if (++matchCnt == maxMatchCnt) {
+                                                if (release_docrefs) {
                                                         rctx.cds_release(doc);
-						}
-						else
-						{
-							// If this matches a PHRASE, and we will need this
-							// for prepare_match()
-							// then this may be an issue -- we need to otherwise
-							// retain this document and GC it later
-							//
-							// UPDATE: if we have multiple phrases for this logical evaluation
-							// we don't want to retain a document again; once would do 
-							if (doc->rc == 1)
-							{
-								rctx.track_docref(doc);
-							}
-							else
-							{
-								rctx.cds_release(doc);
-							}
-						}
+                                                } else {
+                                                        // If this matches a PHRASE, and we will need this
+                                                        // for prepare_match()
+                                                        // then this may be an issue -- we need to otherwise
+                                                        // retain this document and GC it later
+                                                        //
+                                                        // UPDATE: if we have multiple phrases for this logical evaluation
+                                                        // we don't want to retain a document again; once would do
+                                                        if (doc->rc == 1) {
+                                                                rctx.track_docref(doc);
+                                                        } else {
+                                                                rctx.cds_release(doc);
+                                                        }
+                                                }
 
                                                 return true;
-                                        }
-                                        else
+                                        } else
                                                 break;
                                 }
 
@@ -166,39 +143,29 @@ bool Trinity::DocsSetIterators::Phrase::consider_phrase_match()
                 }
         }
 
-        if (release_docrefs)
-	{
+        if (release_docrefs) {
                 rctx.cds_release(doc);
-	}
-	else
-	{
-		// See earlier comments
-		if (doc->rc == 1)
-		{
-			rctx.track_docref(doc);
-		}
-		else
-		{
-			rctx.cds_release(doc);
-		}
-	}
+        } else {
+                // See earlier comments
+                if (doc->rc == 1) {
+                        rctx.track_docref(doc);
+                } else {
+                        rctx.cds_release(doc);
+                }
+        }
 
         return matchCnt;
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::Phrase::next_impl(isrc_docid_t id)
-{
+Trinity::isrc_docid_t Trinity::DocsSetIterators::Phrase::next_impl(isrc_docid_t id) {
 restart:
-        for (uint32_t i{1}; i != size; ++i)
-        {
+        for (size_t i{1}; i != size; ++i) {
                 auto it = its[i];
 
-                if (it->current() != id)
-                {
+                if (it->current() != id) {
                         const auto next = it->advance(id);
 
-                        if (next > id)
-                        {
+                        if (next > id) {
                                 if (unlikely(next == DocIDsEND))
                                         return DocIDsEND;
 
@@ -215,122 +182,92 @@ restart:
         return curDocument.id = id; // we need to set curDocument to id here; required by Phrase::consider_phrase_match()
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::Phrase::advance(const isrc_docid_t target)
-{
-        if (size)
-        {
+Trinity::isrc_docid_t Trinity::DocsSetIterators::Phrase::advance(const isrc_docid_t target) {
+        if (size) {
                 auto id = its[0]->advance(target);
 
-                if (unlikely(id == DocIDsEND))
-                {
-                        size = 0;
+                if (unlikely(id == DocIDsEND)) {
+                        size                  = 0;
                         return curDocument.id = DocIDsEND;
                 }
 
-                for (id = next_impl(id);; id = next_impl(its[0]->next()))
-                {
-                        if (unlikely(id == DocIDsEND))
-                        {
-                                size = 0;
+                for (id = next_impl(id);; id = next_impl(its[0]->next())) {
+                        if (unlikely(id == DocIDsEND)) {
+                                size                  = 0;
                                 return curDocument.id = DocIDsEND;
-                        }
-                        else if (consider_phrase_match())
+                        } else if (consider_phrase_match())
                                 return id;
                 }
-        }
-        else
+        } else
                 return DocIDsEND; // already reset curDocument.id to DocIDsEND
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::Phrase::next()
-{
-        if (size)
-        {
+Trinity::isrc_docid_t Trinity::DocsSetIterators::Phrase::next() {
+        if (size) {
                 auto id = its[0]->next();
 
-                if (unlikely(id == DocIDsEND))
-                {
+                if (unlikely(id == DocIDsEND)) {
                         size = 0;
 
                         return curDocument.id = DocIDsEND;
                 }
 
-                for (id = next_impl(id);; id = next_impl(its[0]->next()))
-                {
-                        if (unlikely(id == DocIDsEND))
-                        {
-                                size = 0;
+                for (id = next_impl(id);; id = next_impl(its[0]->next())) {
+                        if (unlikely(id == DocIDsEND)) {
+                                size                  = 0;
                                 return curDocument.id = DocIDsEND;
-                        }
-                        else if (consider_phrase_match())
+                        } else if (consider_phrase_match())
                                 return curDocument.id = id;
                 }
-        }
-        else
+        } else
                 return DocIDsEND; // already reset curDocument.id to DocIDsEND
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::ConjuctionAllPLI::advance(const isrc_docid_t target)
-{
-        if (size)
-        {
+Trinity::isrc_docid_t Trinity::DocsSetIterators::ConjuctionAllPLI::advance(const isrc_docid_t target) {
+        if (size) {
                 const auto id = its[0]->advance(target);
 
-                if (unlikely(id == DocIDsEND))
-                {
-                        size = 0;
+                if (unlikely(id == DocIDsEND)) {
+                        size                  = 0;
                         return curDocument.id = DocIDsEND;
-                }
-                else
+                } else
                         return next_impl(id);
-        }
-        else
+        } else
                 return DocIDsEND; // already reset curDocument.id to DocIDsEND
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::ConjuctionAllPLI::next()
-{
-        if (size)
-        {
+Trinity::isrc_docid_t Trinity::DocsSetIterators::ConjuctionAllPLI::next() {
+        if (size) {
                 const auto id = its[0]->next();
 
-                if (unlikely(id == DocIDsEND))
-                {
-                        size = 0;
+                if (unlikely(id == DocIDsEND)) {
+                        size                  = 0;
                         return curDocument.id = DocIDsEND;
-                }
-                else
+                } else
                         return next_impl(id);
-        }
-        else
+        } else
                 return DocIDsEND; // already reset curDocument.id to DocIDsEND
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::ConjuctionAllPLI::next_impl(isrc_docid_t id)
-{
+Trinity::isrc_docid_t Trinity::DocsSetIterators::ConjuctionAllPLI::next_impl(isrc_docid_t id) {
 restart:
-        for (uint32_t i{1}; i != size; ++i)
-        {
+        for (size_t i{1}; i != size; ++i) {
                 auto it = its[i];
 
-                if (it->current() != id)
-                {
+                if (it->current() != id) {
                         const auto next = it->advance(id);
 
-                        if (next > id)
-                        {
-                                if (unlikely(next == DocIDsEND))
-                                {
+                        if (next > id) {
+                                if (unlikely(next == DocIDsEND)) {
                                         // draining either of the iterators means we always need to return DocIDsEND from now on
-                                        size = 0;
+                                        size                  = 0;
                                         return curDocument.id = DocIDsEND;
                                 }
 
                                 id = its[0]->advance(next);
 
-                                if (unlikely(id == DocIDsEND))
-                                {
-                                        size = 0;
+                                if (unlikely(id == DocIDsEND)) {
+                                        size                  = 0;
                                         return curDocument.id = DocIDsEND;
                                 }
 
@@ -342,68 +279,53 @@ restart:
         return curDocument.id = id;
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::Conjuction::advance(const isrc_docid_t target)
-{
-        if (size)
-        {
+Trinity::isrc_docid_t Trinity::DocsSetIterators::Conjuction::advance(const isrc_docid_t target) {
+        if (size) {
                 const auto id = its[0]->advance(target);
 
-                if (unlikely(id == DocIDsEND))
-                {
-                        size = 0;
+                if (unlikely(id == DocIDsEND)) {
+                        size                  = 0;
                         return curDocument.id = DocIDsEND;
-                }
-                else
+                } else
                         return next_impl(id);
-        }
-        else
+        } else
                 return DocIDsEND; // already reset curDocument.id to DocIDsEND
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::Conjuction::next()
-{
-        if (size)
-        {
+Trinity::isrc_docid_t Trinity::DocsSetIterators::Conjuction::next() {
+        if (size) {
                 const auto id = its[0]->next();
 
-                if (unlikely(id == DocIDsEND))
-                {
-                        size = 0;
+                if (unlikely(id == DocIDsEND)) {
+                        size                  = 0;
                         return curDocument.id = DocIDsEND;
-                }
-                else
+                } else
                         return next_impl(id);
-        }
-        else
+        } else
                 return DocIDsEND; // already reset curDocument.id to DocIDsEND
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::Conjuction::next_impl(isrc_docid_t id)
-{
+Trinity::isrc_docid_t Trinity::DocsSetIterators::Conjuction::next_impl(isrc_docid_t id) {
         static constexpr bool trace{false};
-        const auto localSize{size}; // alias just in case the compiler can't do it itself
+        const auto            localSize{size}; // alias just in case the compiler can't do it itself
 
 restart:
-        for (uint32_t i{1}; i != localSize; ++i)
-        {
+        for (size_t i{1}; i != localSize; ++i) {
                 auto it = its[i];
 
                 if (trace)
                         SLog(i, "/", size, " id = ", id, ", it->current = ", it->current(), "\n");
 
-                if (it->current() != id)
-                {
+                if (it->current() != id) {
                         const auto next = it->advance(id);
 
                         if (trace)
                                 SLog("Advanced it to ", next, "\n");
 
-                        if (next > id)
-                        {
-                                if (unlikely(next == DocIDsEND))
-                                {
+                        if (next > id) {
+                                if (unlikely(next == DocIDsEND)) {
                                         // draining either of the iterators means we always need to return DocIDsEND from now on
-                                        size = 0;
+                                        size                  = 0;
                                         return curDocument.id = DocIDsEND;
                                 }
 
@@ -412,10 +334,9 @@ restart:
                                 if (trace)
                                         SLog("After advancing lead to ", next, " ", id, "\n");
 
-                                if (unlikely(id == DocIDsEND))
-                                {
+                                if (unlikely(id == DocIDsEND)) {
                                         // see earlier
-                                        size = 0;
+                                        size                  = 0;
                                         return curDocument.id = DocIDsEND;
                                 }
                                 goto restart;
@@ -426,23 +347,18 @@ restart:
         return curDocument.id = id;
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionAllPLI::next()
-{
+Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionAllPLI::next() {
         if (pq.empty())
                 return DocIDsEND;
 
-        auto top = pq.top();
+        auto       top = pq.top();
         const auto doc = top->current();
 
-        do
-        {
-                if (likely(top->next() != DocIDsEND))
-                {
+        do {
+                if (likely(top->next() != DocIDsEND)) {
                         pq.update_top();
                         top = pq.top();
-                }
-                else
-                {
+                } else {
                         pq.erase(top);
                         if (unlikely(pq.empty()))
                                 return curDocument.id = DocIDsEND;
@@ -455,8 +371,7 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionAllPLI::next()
         return curDocument.id;
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionAllPLI::advance(const isrc_docid_t target)
-{
+Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionAllPLI::advance(const isrc_docid_t target) {
         if (pq.empty())
                 return DocIDsEND;
 
@@ -470,17 +385,13 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionAllPLI::advance(cons
         }
 #endif
 
-        do
-        {
+        do {
                 const auto res = top->advance(target);
 
-                if (likely(res != DocIDsEND))
-                {
+                if (likely(res != DocIDsEND)) {
                         pq.update_top();
                         top = pq.top();
-                }
-                else
-                {
+                } else {
                         pq.erase(top);
                         if (unlikely(pq.empty()))
                                 return curDocument.id = DocIDsEND;
@@ -513,7 +424,7 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::advance(const isrc
         auto &rctx = *rctxRef;
         const auto base = rctx.cdSTM.size - (target != DocIDsEND);
 
-        for (uint32_t i{0}; i < size;)
+        for (size_t i{0}; i < size;)
         {
                 auto it = its[i];
 
@@ -613,7 +524,7 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::next()
         capturedCnt = 0;
 #endif
 
-        for (uint32_t i{0}; i < size;)
+        for (size_t i{0}; i < size;)
         {
                 auto it = its[i];
 
@@ -708,23 +619,18 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::next()
 }
 #endif
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::next()
-{
+Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::next() {
         if (pq.empty())
                 return DocIDsEND;
 
-        auto top = pq.top();
+        auto       top = pq.top();
         const auto doc = top->current();
 
-        do
-        {
-                if (likely(top->next() != DocIDsEND))
-                {
+        do {
+                if (likely(top->next() != DocIDsEND)) {
                         pq.update_top();
                         top = pq.top();
-                }
-                else
-                {
+                } else {
                         pq.erase(top);
                         if (unlikely(pq.empty()))
                                 return curDocument.id = DocIDsEND;
@@ -737,8 +643,7 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::next()
         return curDocument.id;
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::advance(const isrc_docid_t target)
-{
+Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::advance(const isrc_docid_t target) {
         if (pq.empty())
                 return DocIDsEND;
 
@@ -752,17 +657,13 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::advance(const isrc
         }
 #endif
 
-        do
-        {
+        do {
                 const auto res = top->advance(target);
 
-                if (likely(res != DocIDsEND))
-                {
+                if (likely(res != DocIDsEND)) {
                         pq.update_top();
                         top = pq.top();
-                }
-                else
-                {
+                } else {
                         pq.erase(top);
                         if (unlikely(pq.empty()))
                                 return curDocument.id = DocIDsEND;
@@ -775,8 +676,7 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::advance(const isrc
         return curDocument.id;
 }
 
-bool Trinity::DocsSetIterators::Filter::matches(const isrc_docid_t id)
-{
+bool Trinity::DocsSetIterators::Filter::matches(const isrc_docid_t id) {
         auto excl = filter->current();
 
         if (excl < id)
@@ -785,10 +685,8 @@ bool Trinity::DocsSetIterators::Filter::matches(const isrc_docid_t id)
         return excl != id;
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::Filter::next()
-{
-        for (auto id = req->next();; id = req->next())
-        {
+Trinity::isrc_docid_t Trinity::DocsSetIterators::Filter::next() {
+        for (auto id = req->next();; id = req->next()) {
                 if (id == DocIDsEND)
                         return curDocument.id = DocIDsEND;
                 else if (matches(id))
@@ -796,10 +694,8 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Filter::next()
         }
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::Filter::advance(const isrc_docid_t target)
-{
-        for (auto id = req->advance(target);; id = req->next())
-        {
+Trinity::isrc_docid_t Trinity::DocsSetIterators::Filter::advance(const isrc_docid_t target) {
+        for (auto id = req->advance(target);; id = req->next()) {
                 if (id == DocIDsEND)
                         return curDocument.id = DocIDsEND;
                 else if (matches(id))
@@ -807,40 +703,32 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Filter::advance(const isrc_doci
         }
 }
 
-
-void Trinity::DocsSetIterators::DisjunctionSome::update_current()
-{
+void Trinity::DocsSetIterators::DisjunctionSome::update_current() {
         // the top of head defines the next potential match
         // pop all documents which are on that document
-        lead = head.pop();
-        lead->next = nullptr;
+        lead                = head.pop();
+        lead->next          = nullptr;
         curDocMatchedItsCnt = 1;
 
         curDocument.id = lead->id;
 
-	require(lead->id == lead->it->current());
+        require(lead->id == lead->it->current());
 
-        while (head.size() && head.top()->id == curDocument.id)
-	{
-		require(head.top()->id == head.top()->it->current());
+        while (head.size() && head.top()->id == curDocument.id) {
+                require(head.top()->id == head.top()->it->current());
 
                 add_lead(head.pop());
-	}
+        }
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::next_impl()
-{
-        while (curDocMatchedItsCnt < matchThreshold)
-        {
-                if (curDocMatchedItsCnt + tail.size() >= matchThreshold)
-                {
-			// we may still be able to match, advance tail.top()
+Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::next_impl() {
+        while (curDocMatchedItsCnt < matchThreshold) {
+                if (curDocMatchedItsCnt + tail.size() >= matchThreshold) {
+                        // we may still be able to match, advance tail.top()
                         advance_tail();
-                }
-                else
-                {
-			// Match impossible for this document
-			// Advance to the next potential document that may match
+                } else {
+                        // Match impossible for this document
+                        // Advance to the next potential document that may match
                         for (auto it{lead}; it; it = it->next)
                                 tail.push(it);
 
@@ -852,52 +740,43 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::next_impl()
 }
 
 Trinity::DocsSetIterators::DisjunctionSome::DisjunctionSome(Trinity::DocsSetIterators::Iterator **const iterators, const uint16_t cnt, const uint16_t minMatch)
-	: Iterator{Type::DisjunctionSome}, matchThreshold{minMatch}, 
-	head{uint32_t(cnt - minMatch + 1)}, 
-	tail{uint32_t(minMatch - 1)}
-{
+    : Iterator{Type::DisjunctionSome}, matchThreshold{minMatch}, head{uint32_t(cnt - minMatch + 1)}, tail{uint32_t(minMatch - 1)} {
         EXPECT(minMatch <= cnt);
         EXPECT(minMatch);
 
         trackersStorage = (it_tracker *)malloc(sizeof(it_tracker) * (cnt + 1));
-	allPLI = true;
+        allPLI          = true;
 
-        for (uint32_t i{0}; i != cnt; ++i)
-        {
+        for (size_t i{0}; i != cnt; ++i) {
                 auto t = trackersStorage + i;
 
-		if (iterators[i]->type != DocsSetIterators::Type::PostingsListIterator)
+                if (iterators[i]->type != DocsSetIterators::Type::PostingsListIterator)
                         allPLI = false;
 
-                t->it = iterators[i];
+                t->it   = iterators[i];
                 t->cost = t->it->cost();
                 add_lead(t);
         }
 
         {
                 Switch::priority_queue<uint64_t, std::greater<uint64_t>> pq{uint32_t(cnt - minMatch + 1)};
-                uint64_t evicted;
+                uint64_t                                                 evicted;
 
                 for (auto it{lead}; it; it = it->next)
                         pq.try_push(it->cost, evicted);
 
                 cost_ = 0;
-		for (const auto it : pq)
+                for (const auto it : pq)
                         cost_ += it;
         }
-
-	SLog("OK\n"); for (auto it{lead}; it; it = it->next) { require(it->id == 0); require(it->it->current() == 0); }
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::next()
-{
+Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::next() {
         it_tracker *evicted;
-	const auto doc{curDocument.id};
+        const auto  doc{curDocument.id};
 
-        for (auto it{lead}; it; it = it->next)
-        {
-                if (!tail.try_push(it, evicted))
-                {
+        for (auto it{lead}; it; it = it->next) {
+                if (!tail.try_push(it, evicted)) {
                         evicted->id = (evicted->id == doc)
                                           ? evicted->it->next()
                                           : evicted->it->advance(doc + 1);
@@ -910,22 +789,18 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::next()
         return next_impl();
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::advance(const isrc_docid_t target)
-{
+Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::advance(const isrc_docid_t target) {
         it_tracker *evicted;
 
-        for (auto it{lead}; it; it = it->next)
-        {
-                if (!tail.try_push(it, evicted))
-                {
+        for (auto it{lead}; it; it = it->next) {
+                if (!tail.try_push(it, evicted)) {
                         evicted->id = evicted->it->advance(target);
                         head.push(evicted);
                 }
         }
 
-        for (auto top = head.top();
-             top->id < target; top = head.top())
-        {
+        for (auto top              = head.top();
+             top->id < target; top = head.top()) {
                 // We know the tail is full, because it contains at most
                 // (matchThreshold - 1) entries, and we have moved at least matchThreshold entries to it, so try_push()
                 // would return false
@@ -939,8 +814,7 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::advance(const 
         return next_impl();
 }
 
-void Trinity::DocsSetIterators::DisjunctionSome::advance_tail(it_tracker *const top)
-{
+void Trinity::DocsSetIterators::DisjunctionSome::advance_tail(it_tracker *const top) {
         top->id = top->it->advance(curDocument.id);
 
         if (top->id == curDocument.id)
@@ -949,17 +823,16 @@ void Trinity::DocsSetIterators::DisjunctionSome::advance_tail(it_tracker *const 
                 head.push(top);
 }
 
-void Trinity::DocsSetIterators::DisjunctionSome::update_matched_cnt()
-{
-	// We return the next document when there are matchThreshold matching iterators
-	// but some of the iterators in tail might match as well.
-	//
-	// In general, we want to advance least-costly iterators first in order to skip over non-matching
-	// documents as fast as possible.
-	//
-	// Here however we are advancing every iterator anyway, so iterating ovedr iterators in (roughly) cost-descending
-	// order might help avoid some permutations in the head heap.
-	auto data{tail.data()};
+void Trinity::DocsSetIterators::DisjunctionSome::update_matched_cnt() {
+        // We return the next document when there are matchThreshold matching iterators
+        // but some of the iterators in tail might match as well.
+        //
+        // In general, we want to advance least-costly iterators first in order to skip over non-matching
+        // documents as fast as possible.
+        //
+        // Here however we are advancing every iterator anyway, so iterating ovedr iterators in (roughly) cost-descending
+        // order might help avoid some permutations in the head heap.
+        auto data{tail.data()};
 
         for (auto i{tail.size()}; i;)
                 advance_tail(data[--i]);

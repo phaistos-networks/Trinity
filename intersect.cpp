@@ -1,5 +1,4 @@
 #include "intersect.h"
-#include <ext/flat_hash_map.h>
 
 using namespace Trinity;
 
@@ -281,7 +280,7 @@ std::vector<std::pair<range_base<str8_t *, uint8_t>, std::pair<uint8_t, std::siz
 
         uint8_t                             indices[64];
         Buffer                              b, b2;
-        ska::flat_hash_map<uint8_t, str8_t> map;
+        std::unordered_map<uint8_t, str8_t> map;
         std::vector<str8_t>                 tokens;
 
         // So that we can map original query index => original query token at index

@@ -145,7 +145,12 @@ namespace Trinity {
 
                         res->match_some.size  = cnt;
                         res->match_some.min   = min;
-                        res->match_some.nodes = a.CopyOf(nodes, cnt);
+
+			if (const auto required = sizeof(ast_node *) * cnt; a.can_allocate(required))
+                        	res->match_some.nodes = a.CopyOf(nodes, cnt);
+			else {
+				throw Switch::data_error("Can't fit");
+			}
 
                         return res;
                 }
@@ -158,10 +163,10 @@ namespace Trinity {
                         return res;
                 }
 
-                ast_node *copy(simple_allocator *const a);
+                ast_node *copy(simple_allocator *const a, std::vector<void *> *);
 
                 // same as copy(), except we are not copying tokens
-                ast_node *shallow_copy(simple_allocator *const a);
+                ast_node *shallow_copy(simple_allocator *const a, std::vector<void *> *);
 
                 // see query::leader_nodes() comments
                 bool any_leader_tokens() const;
@@ -227,6 +232,7 @@ namespace Trinity {
                         // Treat AND as a regular token
                         ANDAsToken         = 1u << 2,
                         ParseConstTrueExpr = 1u << 3,
+			ParseMatchSomeExpr = 1u << 4,
                 };
 
                 str32_t           content;
@@ -467,9 +473,13 @@ namespace Trinity {
         struct query final {
                 ast_node *       root;
                 uint16_t         final_index_;
-                simple_allocator allocator{512};
+                simple_allocator allocator{512 * 3};
                 // parse() will set tokensParser; this may come in handy elsewhere, e.g see rewrite_query() impl.
                 std::pair<uint32_t, uint8_t> (*tokensParser)(const str32_t, char_t *, const bool);
+
+		// if we can't satisfy the allocation, we use malloc() and keep track of that here
+		std::vector<void *> large_allocs;
+
 
                 // Normalize a query.
                 // This is invoked when you initially parse the query, but if you
@@ -512,6 +522,11 @@ namespace Trinity {
                     : root{nullptr}, final_index_{0}, tokensParser{nullptr} {
                 }
 
+		~query() {
+			for (auto p : large_allocs)
+				std::free(p);
+		}
+
                 inline operator bool() const noexcept {
                         return root;
                 }
@@ -537,7 +552,7 @@ namespace Trinity {
 
                 explicit query(const query &o, const bool shallow = false) {
                         tokensParser = o.tokensParser;
-                        root         = o.root ? (shallow ? o.root->shallow_copy(&allocator) : o.root->copy(&allocator)) : nullptr;
+                        root         = o.root ? (shallow ? o.root->shallow_copy(&allocator, &large_allocs) : o.root->copy(&allocator, &large_allocs)) : nullptr;
                         final_index_ = o.final_index_;
                         if (root && false == shallow)
                                 bind_tokens_to_allocator(root, &allocator);
@@ -553,7 +568,7 @@ namespace Trinity {
                 query &operator=(const query &o) {
                         allocator.reuse();
 
-                        root         = o.root ? o.root->copy(&allocator) : nullptr;
+                        root         = o.root ? o.root->copy(&allocator, &large_allocs) : nullptr;
                         final_index_ = o.final_index_;
                         tokensParser = o.tokensParser;
                         if (root)
@@ -654,8 +669,11 @@ namespace Trinity {
                                                 break;
 
                                         case ast_node::Type::MatchSome:
-                                                for (size_t i{0}; i != n->match_some.size; ++i)
-                                                        stack.push_back({seg, n->match_some.nodes[i]});
+                                                for (size_t i{0}; i != n->match_some.size; ++i) {
+							// we shouldn't be treating whatever's here as a run
+							// we should treat each as a new segment
+                                                        stack.push_back({++segments, n->match_some.nodes[i]});
+						}
                                                 break;
 
                                         case ast_node::Type::BinOp:

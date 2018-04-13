@@ -1,5 +1,4 @@
 #include "queries.h"
-#include <ext/flat_hash_map.h>
 #include <mutex>
 #include <unordered_set>
 
@@ -286,7 +285,14 @@ void PrintImpl(Buffer &b, const Trinity::ast_node &n) {
                         break;
 
                 case ast_node::Type::MatchSome:
-                        b.append('[', n.match_some.min, '/', n.match_some.size, ']');
+                        b.append("MatchSome("_s32, n.match_some.min, '/', n.match_some.size, ")["_s32);
+                        for (size_t i{0}; i != n.match_some.size; ++i) {
+                                PrintImpl(b, *n.match_some.nodes[i]);
+                                b.append(',');
+                        }
+                        if (n.match_some.size)
+                                b.pop_back();
+                        b.append(']');
                         break;
 
                 case ast_node::Type::ConstFalse:
@@ -371,6 +377,34 @@ static ast_node *parse_unary(ast_parser &ctx, const uint32_t parser_flags) {
 
                         res->expr = e;
                         return res;
+                }
+        }
+
+        if (parser_flags & unsigned(ast_parser::Flags::ParseMatchSomeExpr)) {
+                if (ctx.content.StripPrefix(_S("["))) {
+			std::vector<ast_node *> nodes;
+
+                        ctx.groupTerm.push_back(']');
+                        for (;;) {
+                                ctx.skip_ws();
+
+                                if (ctx.content.StripPrefix(_S("]"))) {
+                                        ctx.groupTerm.pop_back();
+                                        break;
+                                }
+
+                        	ctx.groupTerm.push_back(',');
+                                auto e = parse_expr(ctx) ?: ctx.parse_failnode();
+				ctx.groupTerm.pop_back();
+
+                                ctx.skip_ws();
+                                nodes.emplace_back(e);
+
+                                if (!ctx.content.StripPrefix(_S(",")))
+                                        break;
+                        }
+
+                        return ast_node::make_match_some(ctx.allocator, nodes.data(), nodes.size(), 1);
                 }
         }
 
@@ -892,9 +926,13 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx) {
                 }
 
                 if (n->match_some.min > n->match_some.size) {
-                        ++ctx.updates;
                         n->set_const_false();
-                }
+                        ++ctx.updates;
+                } else if (n->match_some.size == 1) {
+			// pull it out, single node
+			*n = *n->match_some.nodes[0];
+			++ctx.updates;
+		}
         } else if (n->type == ast_node::Type::UnaryOp) {
                 normalize(n->unaryop.expr, ctx);
                 if (n->unaryop.expr->is_dummy()) {
@@ -1093,7 +1131,6 @@ static void assign_query_indices(ast_node *const n, query_assign_ctx &ctx) {
 
 // See: IMPLEMENTATION.md
 std::pair<ast_node *, uint16_t> normalize_root(ast_node *root) {
-	static constexpr bool traceParser{true};
 
         if (!root)
                 return { nullptr, 0 };
@@ -1192,7 +1229,7 @@ std::pair<ast_node *, uint16_t> normalize_root(ast_node *root) {
 }
 
 #pragma mark query utility functions
-ast_node *   ast_node::copy(simple_allocator *const a) {
+ast_node *   ast_node::copy(simple_allocator *const a, std::vector<void *> *const large_allocs) {
         const ast_node *const n{this};
         auto                  res = ast_node::make(*a, n->type);
 
@@ -1218,24 +1255,31 @@ ast_node *   ast_node::copy(simple_allocator *const a) {
                 case ast_node::Type::MatchSome:
                         res->match_some.size  = n->match_some.size;
                         res->match_some.min   = n->match_some.min;
-                        res->match_some.nodes = static_cast<ast_node **>(a->Alloc(sizeof(ast_node *) * res->match_some.size));
+
+			if (const auto required = sizeof(ast_node *) * res->match_some.size; a->can_allocate(required))
+                        	res->match_some.nodes = static_cast<ast_node **>(a->Alloc(required));
+			else {
+                        	res->match_some.nodes = static_cast<ast_node **>(malloc(required));
+				large_allocs->emplace_back(res->match_some.nodes);
+			}
+				
                         for (size_t i{0}; i != res->match_some.size; ++i)
-                                res->match_some.nodes[i] = n->match_some.nodes[i]->copy(a);
+                                res->match_some.nodes[i] = n->match_some.nodes[i]->copy(a, large_allocs);
                         break;
 
                 case ast_node::Type::ConstTrueExpr:
-                        res->expr = n->expr->copy(a);
+                        res->expr = n->expr->copy(a, large_allocs);
                         break;
 
                 case ast_node::Type::UnaryOp:
                         res->unaryop.op   = n->unaryop.op;
-                        res->unaryop.expr = n->unaryop.expr->copy(a);
+                        res->unaryop.expr = n->unaryop.expr->copy(a, large_allocs);
                         break;
 
                 case ast_node::Type::BinOp:
                         res->binop.op  = n->binop.op;
-                        res->binop.lhs = n->binop.lhs->copy(a);
-                        res->binop.rhs = n->binop.rhs->copy(a);
+                        res->binop.lhs = n->binop.lhs->copy(a, large_allocs);
+                        res->binop.rhs = n->binop.rhs->copy(a, large_allocs);
                         break;
 
                 default:
@@ -1244,7 +1288,7 @@ ast_node *   ast_node::copy(simple_allocator *const a) {
         return res;
 }
 
-ast_node *ast_node::shallow_copy(simple_allocator *const a) {
+ast_node *ast_node::shallow_copy(simple_allocator *const a, std::vector<void *> *const large_allocs) {
         const ast_node *const n{this};
         auto                  res = ast_node::make(*a, n->type);
 
@@ -1257,24 +1301,31 @@ ast_node *ast_node::shallow_copy(simple_allocator *const a) {
                 case ast_node::Type::MatchSome:
                         res->match_some.size  = n->match_some.size;
                         res->match_some.min   = n->match_some.min;
-                        res->match_some.nodes = static_cast<ast_node **>(a->Alloc(sizeof(ast_node *) * res->match_some.size));
+
+			if (const auto required = sizeof(ast_node *) * res->match_some.size; a->can_allocate(required))
+                        	res->match_some.nodes = static_cast<ast_node **>(a->Alloc(required));
+			else {
+                        	res->match_some.nodes = static_cast<ast_node **>(malloc(required));
+				large_allocs->emplace_back(res->match_some.nodes);
+			}
+			
                         for (size_t i{0}; i != res->match_some.size; ++i)
-                                res->match_some.nodes[i] = n->match_some.nodes[i]->shallow_copy(a);
+                                res->match_some.nodes[i] = n->match_some.nodes[i]->shallow_copy(a, large_allocs);
                         break;
 
                 case ast_node::Type::ConstTrueExpr:
-                        res->expr = n->expr->shallow_copy(a);
+                        res->expr = n->expr->shallow_copy(a, large_allocs);
                         break;
 
                 case ast_node::Type::UnaryOp:
                         res->unaryop.op   = n->unaryop.op;
-                        res->unaryop.expr = n->unaryop.expr->shallow_copy(a);
+                        res->unaryop.expr = n->unaryop.expr->shallow_copy(a, large_allocs);
                         break;
 
                 case ast_node::Type::BinOp:
                         res->binop.op  = n->binop.op;
-                        res->binop.lhs = n->binop.lhs->shallow_copy(a);
-                        res->binop.rhs = n->binop.rhs->shallow_copy(a);
+                        res->binop.lhs = n->binop.lhs->shallow_copy(a, large_allocs);
+                        res->binop.rhs = n->binop.rhs->shallow_copy(a, large_allocs);
                         break;
 
                 default:
@@ -1329,7 +1380,7 @@ ast_node *query::trim(const std::size_t maxQueryTokens) {
 
                         if (n > maxQueryTokens) {
                                 if (!first)
-                                        first = node->shallow_copy(&allocator);
+                                        first = node->shallow_copy(&allocator, &large_allocs);
                                 node->set_dummy();
                         }
                 }
@@ -1344,6 +1395,9 @@ ast_node *query::trim(const std::size_t maxQueryTokens) {
 
 bool query::normalize() {
         if (root) {
+		if constexpr (traceParser)
+			SLog("normalizing:", *root, "\n");
+
                 const auto[r, i] = normalize_root(root);
 
                 root         = r;
@@ -1537,7 +1591,7 @@ bool ast_node::any_leader_tokens() const {
 				break;
 
                         case ast_node::Type::MatchSome:
-                                stack.insert(stack.end(), n->match_some.nodes, n->match_some.nodes + n->match_some.size * sizeof(ast_node *));
+                                stack.insert(stack.end(), n->match_some.nodes, n->match_some.nodes + n->match_some.size);
                                 break;
 
                         case ast_node::Type::Token:
@@ -1642,7 +1696,7 @@ bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str
 
 void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a) {
         std::vector<ast_node *>              stack;
-        ska::flat_hash_map<str8_t, char_t *> map;
+        std::unordered_map<str8_t, char_t *> map;
 
         stack.push_back(n);
         do {

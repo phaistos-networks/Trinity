@@ -251,7 +251,8 @@ static exec_node compile_node(const ast_node *const n, compilation_ctx &cctx, si
                 case ast_node::Type::MatchSome:
                         res.fp = ENT::matchsome;
                         {
-                                auto pm = static_cast<compilation_ctx::partial_match_ctx *>(a.Alloc(sizeof(compilation_ctx::partial_match_ctx) + sizeof(exec_node) * n->match_some.size));
+				const auto size = sizeof(compilation_ctx::partial_match_ctx) + sizeof(exec_node) * n->match_some.size;
+                                auto pm = static_cast<compilation_ctx::partial_match_ctx *>(cctx.allocate(size));
 
                                 pm->min  = n->match_some.min;
                                 pm->size = n->match_some.size;
@@ -335,14 +336,58 @@ static void collapse_node(exec_node &n, compilation_ctx &cctx, simple_allocator 
                 collapse_node(ctx->expr, cctx, a, terms, phrases, stack);
         } else if (n.fp == ENT::matchsome) {
                 auto pm = static_cast<compilation_ctx::partial_match_ctx *>(n.ptr);
+		std::size_t dummy_nodes{0}, false_nodes{0}, true_nodes{0};
+		const auto size{pm->size};
 
-                for (size_t i{0}; i != pm->size; ++i)
+                for (size_t i{0}; i != size; ++i) {
                         collapse_node(pm->nodes[i], cctx, a, terms, phrases, stack);
+
+			if (const auto p = pm->nodes[i].fp; p == ENT::consttrue)
+				++true_nodes;
+			else if (p == ENT::constfalse)
+				++false_nodes;
+			else if (p == ENT::dummyop)
+				++dummy_nodes;
+		}
+
+		if (false_nodes == size) {
+			n.fp = ENT::constfalse;
+			return;
+		} else if (true_nodes == size) {
+			n.fp = ENT::consttrue;
+			return;
+		} else if (dummy_nodes == size) {
+			n.fp = ENT::dummyop;
+			return;
+		}
+
         } else if (n.fp == ENT::matchallnodes || n.fp == ENT::matchanynodes) {
                 auto g = static_cast<compilation_ctx::nodes_group *>(n.ptr);
+		std::size_t dummy_nodes{0}, false_nodes{0}, true_nodes{0};
+		const auto size{g->size};
 
-                for (size_t i{0}; i != g->size; ++i)
+                for (size_t i{0}; i != size; ++i) {
                         collapse_node(g->nodes[i], cctx, a, terms, phrases, stack);
+
+			if (const auto p = g->nodes[i].fp; p == ENT::consttrue)
+				++true_nodes;
+			else if (p == ENT::constfalse)
+				++false_nodes;
+			else if (p == ENT::dummyop)
+				++dummy_nodes;
+		}
+
+		if (false_nodes == size) {
+			n.fp = ENT::constfalse;
+			return;
+		} else if (true_nodes == size) {
+			n.fp = ENT::consttrue;
+			return;
+		} else if (dummy_nodes == size) {
+			n.fp = ENT::dummyop;
+			return;
+		}
+
         } else if (n.fp == ENT::logicaland || n.fp == ENT::logicalor || n.fp == ENT::logicalnot) {
                 auto                        ctx = static_cast<compilation_ctx::binop_ctx *>(n.ptr);
                 compilation_ctx::binop_ctx *otherCtx;
@@ -722,7 +767,7 @@ static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_alloca
                 auto       ctx = static_cast<compilation_ctx::partial_match_ctx *>(n.ptr);
                 const auto saved{ctx->size};
 
-                for (size_t i{0}; i < ctx->size; ++i) {
+                for (size_t i{0}; i < ctx->size; ) {
                         ctx->nodes[i] = optimize_node(ctx->nodes[i], cctx, a, terms, phrases, stack, updates, root);
 
                         if (ctx->nodes[i].fp == ENT::constfalse || ctx->nodes[i].fp == ENT::dummyop)
@@ -1429,6 +1474,19 @@ void PrintImpl(Buffer &b, const exec_node &n) {
 			b.append(',');
 		}
 		if (b.back() == ',')
+			b.pop_back();
+		b.append(']');
+	} else if (n.fp == ENT::matchsome) {
+		const auto ctx = static_cast<compilation_ctx::partial_match_ctx *>(n.ptr);
+
+		b.append("MatchSome("_s32, ctx->min,',', ctx->size, ")["_s32);
+
+		for (size_t i{0}; i != ctx->size; ++i) {
+			PrintImpl(b, ctx->nodes[i]);
+			b.append(',');
+		}
+
+		if (ctx->size)
 			b.pop_back();
 		b.append(']');
         } else {

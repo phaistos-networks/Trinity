@@ -34,7 +34,7 @@ void Trinity::queryexec_ctx::gc_retained_docs(const isrc_docid_t base) {
         std::size_t n{0};
         auto        cnt{tracked_docrefs.size};
 
-        // Tirim back, and front
+        // Trim back, and front
         // this is not optimal because the documents are not ordered by id in tracked_docrefs.data[]
         // but short of using e.g a binary heap/prio.queue, which would provide this guarantee, at the expense of
         // higher maintenance, this is an good compromise.
@@ -100,6 +100,9 @@ DocsSetIterators::Iterator *Trinity::queryexec_ctx::reg_docset_it(DocsSetIterato
 queryexec_ctx::~queryexec_ctx() {
         if constexpr (trace_docrefs)
                 SLog("Flushing ", tracked_docrefs.size, "\n");
+
+	for (auto p: large_allocs)
+		std::free(p);
 
         while (tracked_docrefs.size) {
                 auto d = tracked_docrefs.data[--tracked_docrefs.size];

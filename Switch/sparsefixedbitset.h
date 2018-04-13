@@ -1,5 +1,6 @@
 #pragma once
 #include <switch.h>
+#include <switch_bitops.h>
 
 // Port of Lucene's SparseFixedBitSet
 // A bit-set that only stores u64 that have at least one bit which is set

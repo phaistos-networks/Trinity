@@ -110,6 +110,7 @@ static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, queryexec_ctx
                         sum += phrase_cost(rctx, run->phrases[i]);
                 return sum;
         } else {
+		SLog("Unexpected:", n, "\n");
                 std::abort();
         }
 }
@@ -162,7 +163,7 @@ static exec_node prepare_tree(exec_node root, queryexec_ctx &rctx) {
                                 v.emplace_back(termID, rctx.term_ctx(termID).documents);
                         }
 
-                        std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) { return a.second < b.second; });
+                        std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) noexcept { return a.second < b.second; });
 
                         for (size_t i{0}; i != ctx->size; ++i)
                                 ctx->terms[i] = v[i].first;
@@ -181,7 +182,7 @@ static exec_node prepare_tree(exec_node root, queryexec_ctx &rctx) {
                                 v.emplace_back(termID, rctx.term_ctx(termID).documents);
                         }
 
-                        std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) { return a.second < b.second; });
+                        std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) noexcept { return a.second < b.second; });
 
                         for (size_t i{0}; i != ctx->size; ++i)
                                 ctx->terms[i] = v[i].first;
@@ -194,7 +195,14 @@ static exec_node prepare_tree(exec_node root, queryexec_ctx &rctx) {
                         auto ctx = static_cast<compilation_ctx::unaryop_ctx *>(n.ptr);
 
                         stackP.push_back(&ctx->expr);
-                }
+                } else if (n.fp == ENT::matchsome) {
+			auto ctx = static_cast<compilation_ctx::partial_match_ctx *>(n.ptr);
+
+			for (size_t i{0}; i != ctx->size; ++i) {
+				stackP.emplace_back(&ctx->nodes[i]);
+
+			}
+		}
         } while (!stackP.empty());
 
         if (traceMetrics)
@@ -635,7 +643,7 @@ void Trinity::exec_query(const query &in,
         auto       rootExecNode = compile_query(q.root, compilationCtx);
 
         if constexpr (traceCompile)
-                SLog(duration_repr(Timings::Microseconds::Since(before)), " to compile, ", duration_repr(Timings::Microseconds::Since(_start)), " since start\n");
+                SLog(duration_repr(Timings::Microseconds::Since(before)), " to compile, ", duration_repr(Timings::Microseconds::Since(_start)), " since start:", rootExecNode, "\n");
 
         if (unlikely(rootExecNode.fp == ENT::dummyop || rootExecNode.fp == ENT::constfalse)) {
                 if constexpr (traceCompile)
@@ -742,7 +750,12 @@ void Trinity::exec_query(const query &in,
 
                 // See docwordspace.h comments
                 // we are allocated (maxIndex + 8) and memset() that to 0 in order to make some optimizations possible in consider()
-                queryIndicesTerms = static_cast<query_index_terms **>(rctx.allocator.Alloc(sizeof(query_index_terms *) * (maxIndex + 8)));
+		if (const auto required = sizeof(query_index_terms *) * (maxIndex + 8); rctx.allocator.can_allocate(required))
+                	queryIndicesTerms = static_cast<query_index_terms **>(rctx.allocator.Alloc(required));
+		else {
+                	queryIndicesTerms = static_cast<query_index_terms **>(malloc(required));
+			rctx.large_allocs.emplace_back(queryIndicesTerms);
+		}
 
                 memset(queryIndicesTerms, 0, sizeof(queryIndicesTerms[0]) * (maxIndex + 8));
                 std::sort(originalQueryTokensTracker.begin(), originalQueryTokensTracker.end(), [](const auto &a, const auto &b) noexcept {

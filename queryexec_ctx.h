@@ -252,7 +252,7 @@ namespace Trinity
 
                 void forget_document(candidate_document *);
 
-                ska::flat_hash_map<str8_t, exec_term_id_t> termsDict;
+                std::unordered_map<str8_t, exec_term_id_t> termsDict;
                 // TODO: determine suitable allocator bank size based on some meaningful metric
                 // e.g total distinct tokens in the query, otherwise we may just end up allocating more memory than
                 // we need and for environments where memory pressure is a concern, this may be important.
@@ -260,7 +260,8 @@ namespace Trinity
                 // We should also track allocated (from allocators) memory that is no longer needed so that we can reuse it
                 // Maybe we just need a method for allocating arbitrary amount of memory and releasing it back to the runtime ctx
                 simple_allocator allocator{4096 * 6};
-                ska::flat_hash_map<exec_term_id_t, std::pair<term_index_ctx, str8_t>> tctxMap;
+		std::vector<void *> large_allocs;
+                std::unordered_map<exec_term_id_t, std::pair<term_index_ctx, str8_t>> tctxMap;
                 std::vector<DocsSetIterators::Iterator *> docsetsIterators;
                 std::vector<Codecs::PostingsListIterator *> allIterators;
                 docstracker_bank *lastBank{nullptr};

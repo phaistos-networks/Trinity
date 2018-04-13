@@ -51,6 +51,23 @@ namespace Trinity
         {
                 simple_allocator allocator{4096 * 6};
                 simple_allocator runsAllocator{4096}, ctxAllocator{4096};
+		std::vector<void *> large_allocs;
+		
+		~compilation_ctx() {
+			for (auto p : large_allocs)
+				std::free(p);
+		}
+
+		void *allocate(const std::size_t size) { 
+			if (ctxAllocator.can_allocate(size))
+				return ctxAllocator.Alloc(size);
+			else {
+				auto ptr = malloc(size);
+
+				large_allocs.emplace_back(ptr);
+				return ptr;
+			}
+		}
 
                 struct partial_match_ctx final
                 {
