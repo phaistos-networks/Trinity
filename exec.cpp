@@ -682,7 +682,13 @@ void Trinity::exec_query(const query &in,
                 // to capture the original query instances before we optimise.
                 //
                 // We need access to that information for scoring documents -- see matches.h
-                rctx.originalQueryTermCtx = static_cast<query_term_ctx **>(rctx.allocator.Alloc(sizeof(query_term_ctx *) * maxQueryTermIDPlus1));
+		if (const auto required = sizeof(query_term_ctx *) * maxQueryTermIDPlus1; rctx.allocator.can_allocate(required))
+                	rctx.originalQueryTermCtx = static_cast<query_term_ctx **>(rctx.allocator.Alloc(required));
+		else {
+                	rctx.originalQueryTermCtx = static_cast<query_term_ctx **>(malloc(required));
+			rctx.large_allocs.emplace_back(rctx.originalQueryTermCtx);
+		}
+
 
                 memset(rctx.originalQueryTermCtx, 0, sizeof(query_term_ctx *) * maxQueryTermIDPlus1);
                 std::sort(originalQueryTokenInstances.begin(), originalQueryTokenInstances.end(), [](const auto &a, const auto &b) noexcept { return terms_cmp(a.token.data(), a.token.size(), b.token.data(), b.token.size()) < 0; });
@@ -827,7 +833,15 @@ void Trinity::exec_query(const query &in,
                                 }
 
                                 const uint16_t cnt = list.size();
-                                auto           ptr = static_cast<query_index_terms *>(rctx.allocator.Alloc(sizeof(query_index_terms) + cnt * sizeof(query_index_term)));
+				query_index_terms *ptr;
+
+
+				if (const auto required = sizeof(query_index_terms) + cnt * sizeof(query_index_term); rctx.allocator.can_allocate(required))
+					ptr = static_cast<query_index_terms *>(rctx.allocator.Alloc(required));
+				else {
+					ptr = static_cast<query_index_terms *>(malloc(required));
+					rctx.large_allocs.emplace_back(ptr);
+				}
 
                                 ptr->cnt = cnt;
                                 memcpy(ptr->uniques, list.data(), cnt * sizeof(query_index_term));

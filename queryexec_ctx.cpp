@@ -319,7 +319,13 @@ Trinity::candidate_document::candidate_document(queryexec_ctx *const rctx) {
 
         curDocQueryTokensCaptured    = (isrc_docid_t *)calloc(sizeof(isrc_docid_t), maxQueryTermIDPlus1);
         termHits                     = new term_hits[maxQueryTermIDPlus1];
-        matchedDocument.matchedTerms = (matched_query_term *)rctx->allocator.Alloc(sizeof(matched_query_term) * maxQueryTermIDPlus1);
+
+	if (const auto required = sizeof(matched_query_term) * maxQueryTermIDPlus1;  rctx->allocator.can_allocate(required))
+        	matchedDocument.matchedTerms = (matched_query_term *)rctx->allocator.Alloc(required);
+	else {
+        	matchedDocument.matchedTerms = (matched_query_term *)malloc(required);
+		rctx->large_allocs.emplace_back(matchedDocument.matchedTerms);
+	}
 }
 
 void queryexec_ctx::_reusable_cds::push_back(candidate_document *const d) {
