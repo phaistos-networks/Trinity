@@ -54,7 +54,7 @@ static std::pair<str32_t, range_base<uint16_t, uint16_t>> parse_term(ast_parser 
                         continue;
                 }
 
-                if (ctx.content.empty() || (!ctx.groupTerm.empty() && ctx.groupTerm.back() == ctx.content.front())) {
+                if (ctx.content.empty() || (!ctx.groupTerm.empty() && strchr(ctx.groupTerm.back(), ctx.content.front()))) {
                         return {{}, {}};
                 } else if (ctx.content) {
                         // whitespace or other content here
@@ -65,6 +65,7 @@ static std::pair<str32_t, range_base<uint16_t, uint16_t>> parse_term(ast_parser 
 
 static ast_node *parse_phrase_or_token(ast_parser &ctx) {
         ctx.skip_ws();
+
         if (ctx.content && ctx.content.StripPrefix(_S("\""))) {
                 auto &                         terms = ctx.terms;
                 uint8_t                        n{0};
@@ -136,6 +137,7 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx) {
                 p->flags                              = 0;
                 p->inputRange                         = pair.second;
                 node->p                               = p;
+
                 return node;
         } else
                 return nullptr;
@@ -177,7 +179,7 @@ static std::pair<Operator, uint8_t> parse_operator_impl(ast_parser &ctx) {
                                         return {Operator::AND, 1};
                 }
 
-                if (!ctx.groupTerm.empty() && ctx.groupTerm.back() == f)
+                if (!ctx.groupTerm.empty() && strchr(ctx.groupTerm.back(), f))
                         return {Operator::NONE, 0};
                 else
                         return {Operator::AND, 0};
@@ -257,6 +259,8 @@ void PrintImpl(Buffer &b, const Trinity::phrase &p) {
 }
 
 static void print_token(Buffer &b, const phrase *const p) {
+	EXPECT(p);
+
         b.append(p->terms[0].token);
 #if defined(_VERBOSE_DESCR)
         b.append('<');
@@ -362,7 +366,7 @@ static ast_node *parse_unary(ast_parser &ctx, const uint32_t parser_flags) {
         if (parser_flags & unsigned(ast_parser::Flags::ParseConstTrueExpr)) {
 		// this is useful for debugging, and for query rewrites
                 if (ctx.content.StripPrefix(_S("<"))) {
-                        ctx.groupTerm.push_back('>');
+                        ctx.groupTerm.emplace_back(">");
 
                         auto e = parse_expr(ctx) ?: ctx.parse_failnode();
 
@@ -384,24 +388,27 @@ static ast_node *parse_unary(ast_parser &ctx, const uint32_t parser_flags) {
                 if (ctx.content.StripPrefix(_S("["))) {
 			std::vector<ast_node *> nodes;
 
-                        ctx.groupTerm.push_back(']');
+                        ctx.groupTerm.emplace_back("],");
                         for (;;) {
                                 ctx.skip_ws();
 
-                                if (ctx.content.StripPrefix(_S("]"))) {
-                                        ctx.groupTerm.pop_back();
-                                        break;
-                                }
-
-                        	ctx.groupTerm.push_back(',');
-                                auto e = parse_expr(ctx) ?: ctx.parse_failnode();
-				ctx.groupTerm.pop_back();
+                                auto e = parse_expr(ctx);
 
                                 ctx.skip_ws();
-                                nodes.emplace_back(e);
 
-                                if (!ctx.content.StripPrefix(_S(",")))
+                                if (ctx.content.StripPrefix(_S("]"))) {
+                                        if (e)
+                                                nodes.emplace_back(e);
+					ctx.groupTerm.pop_back();
                                         break;
+                                } else if (ctx.content.StripPrefix(_S(","))) {
+                                        nodes.emplace_back(e ?: ctx.parse_failnode());
+                                } else {
+					// what's this?
+					ctx.groupTerm.pop_back();
+					return ctx.parse_failnode();
+				}
+					
                         }
 
                         return ast_node::make_match_some(ctx.allocator, nodes.data(), nodes.size(), 1);
@@ -409,7 +416,7 @@ static ast_node *parse_unary(ast_parser &ctx, const uint32_t parser_flags) {
         }
 
         if (ctx.content.StripPrefix(_S("("))) {
-                ctx.groupTerm.push_back(')');
+                ctx.groupTerm.emplace_back(")");
 
                 auto e = parse_expr(ctx) ?: ctx.parse_failnode();
 
@@ -447,6 +454,7 @@ static ast_node *parse_subexpr(ast_parser &ctx, const uint16_t limit) {
         auto    cur = parse_unary(ctx, parser_flags);
 
         Drequire(cur); // can't fail
+
         for (auto op = parse_operator(ctx); op.first != Operator::NONE && (prio = OpPrio(op.first)) < limit; op = parse_operator(ctx)) {
                 ctx.content.strip_prefix(op.second);
                 ctx.skip_ws();
@@ -486,6 +494,7 @@ ast_node *parse_expr(ast_parser &ctx) {
         return parse_subexpr(ctx, UnaryOperatorPrio);
 }
 
+// another benefit: string interning for quick checks
 void ast_parser::track_term(term &t) {
         for (const auto &it : distinctTokens) {
                 if (it == t.token) {
@@ -881,6 +890,9 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx) {
 
         if (n->binop.op == Operator::NOT && lhs->is_unary() && rhs->type == ast_node::Type::BinOp && rhs->binop.op == Operator::OR && ((rhs->binop.lhs->is_unary() && *lhs->p == *rhs->binop.lhs->p) || (rhs->binop.rhs->is_unary() && *lhs->p == *rhs->binop.rhs->p))) {
                 // iphone NOT (ipad OR iphone)
+		if (traceParser)
+			SLog("here\n");
+
                 n->set_const_false();
                 ++ctx.updates;
                 return;
@@ -888,6 +900,9 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx) {
 
         if (n->binop.op == Operator::NOT && lhs->is_unary() && rhs->type == ast_node::Type::BinOp && rhs->binop.rhs->is_unary() && *lhs->p == *rhs->binop.rhs->p) {
                 // foo NOT (ipad AND foo)
+		if (traceParser)
+			SLog("here\n");
+
                 n->set_const_false();
                 ++ctx.updates;
                 return;
@@ -914,6 +929,9 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx) {
                         ++ctx.updates;
                 }
         } else if (n->type == ast_node::Type::MatchSome) {
+		if constexpr (traceParser)
+			SLog("Normalizing MatchSome\n");
+
                 for (size_t i{0}; i < n->match_some.size;) {
                         auto it = n->match_some.nodes[i];
 
@@ -933,6 +951,10 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx) {
 			*n = *n->match_some.nodes[0];
 			++ctx.updates;
 		}
+
+		if constexpr (traceParser)
+			SLog("Normalized matchsome\n");
+
         } else if (n->type == ast_node::Type::UnaryOp) {
                 normalize(n->unaryop.expr, ctx);
                 if (n->unaryop.expr->is_dummy()) {
@@ -966,6 +988,8 @@ struct query_assign_ctx final {
         std::vector<std::vector<phrase *> *> stack;
 	std::vector<phrase *> phrases;
 };
+
+static thread_local std::vector<ast_node *> stackTLS;
 
 #if 0
 // debug impl.
@@ -1087,7 +1111,49 @@ static void assign_query_indices(ast_node *const n, query_assign_ctx &ctx) {
                 for (size_t i{0}; i != n->match_some.size; ++i) {
                         auto it = n->match_some.nodes[i];
 
-                        it->p->index = std::numeric_limits<uint16_t>::max();
+                        if (it->is_unary()) {
+                                // fast path
+                                it->p->index = std::numeric_limits<uint16_t>::max();
+                        } else {
+                                auto &stack{stackTLS};
+
+                                stack.clear();
+                                stack.emplace_back(it);
+
+                                do {
+                                        auto it = stack.back();
+
+                                        stack.pop_back();
+
+                                        switch (it->type) {
+                                                case ast_node::Type::Token:
+                                                case ast_node::Type::Phrase:
+                                                        it->p->index = std::numeric_limits<uint16_t>::max();
+                                                        break;
+
+                                                case ast_node::Type::BinOp:
+                                                        stack.emplace_back(it->binop.lhs);
+                                                        stack.emplace_back(it->binop.rhs);
+                                                        break;
+
+                                                case ast_node::Type::UnaryOp:
+                                                        stack.emplace_back(it->unaryop.expr);
+                                                        break;
+
+                                                case ast_node::Type::ConstTrueExpr:
+                                                        stack.emplace_back(it->expr);
+                                                        break;
+
+                                                case ast_node::Type::MatchSome:
+                                                        stack.insert(stack.end(), n->match_some.nodes, n->match_some.nodes + n->match_some.size);
+                                                        break;
+
+						case ast_node::Type::Dummy:
+						case ast_node::Type::ConstFalse:
+							break;
+                                        }
+                                } while (!stack.empty());
+                        }
                 }
         } else if (n->type == ast_node::Type::BinOp) {
                 const auto lhs = n->binop.lhs, rhs = n->binop.rhs;
@@ -1141,8 +1207,10 @@ std::pair<ast_node *, uint16_t> normalize_root(ast_node *root) {
         do {
                 ctx.updates   = 0;
                 ctx.tokensCnt = 0;
+
                 normalize(root, ctx);
         } while (ctx.updates);
+
 
         if (unlikely(ctx.tokensCnt > Limits::MaxQueryTokens)) {
                 if (traceParser)
@@ -1202,8 +1270,8 @@ std::pair<ast_node *, uint16_t> normalize_root(ast_node *root) {
 		phrase *firstPhrase{nullptr}, *lastPhrase{nullptr};
                 assign_query_indices(root, ctx, firstPhrase, lastPhrase);
 #else
-                assign_query_indices(root, ctx);
 
+                assign_query_indices(root, ctx);
 
 		// We are not going to assign (it->toNextSpan = ctx.nextIndex - it->index)
 		// for each it in ctx.phrases here
@@ -1224,6 +1292,7 @@ std::pair<ast_node *, uint16_t> normalize_root(ast_node *root) {
 		}
 #endif
         }
+
 
         return {root, findex};
 }
@@ -1395,19 +1464,15 @@ ast_node *query::trim(const std::size_t maxQueryTokens) {
 
 bool query::normalize() {
         if (root) {
-		if constexpr (traceParser)
-			SLog("normalizing:", *root, "\n");
-
                 const auto[r, i] = normalize_root(root);
 
                 root         = r;
                 final_index_ = i;
-                return root;
+                return true;
         } else
                 return false;
 }
 
-static thread_local std::vector<ast_node *> stackTLS;
 
 bool query::can_intersect() const {
         auto &                     stack{stackTLS};
@@ -1683,6 +1748,7 @@ bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str
         const auto [r, i] = normalize_root(root);
 
         root         = r;
+
         final_index_ = i;
 
         if (!root)

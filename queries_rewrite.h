@@ -243,7 +243,7 @@ namespace Trinity {
         // generate a list of expressions(ast_nodes) from a run, starting at (i), upto (i + maxSpan)
         template <typename L>
         static auto run_next(std::size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l, gen_ctx &genCtx) {
-                static constexpr bool trace{false};
+                static constexpr bool trace{true};
                 require(i < run.size());
                 const auto                                                                                  token = run[i]->p->terms[0].token;
                 static thread_local std::vector<std::pair<std::pair<str32_t, query_term_flags_t>, uint8_t>> vTLS;
@@ -258,7 +258,7 @@ namespace Trinity {
                 auto                                                                                        tokensParser = q.tokensParser;
                 auto &                                                                                      allocator    = q.allocator;
 
-                if (trace)
+                if constexpr (trace)
                         SLog(ansifmt::bold, ansifmt::color_green, "AT ", i, " ", token, ansifmt::reset, " (maxSpan = ", maxSpan, "(", normalizedMaxSpan, "), budget = ", budget, ")\n");
 
                 alts.clear();
@@ -268,7 +268,7 @@ namespace Trinity {
                         // special care for reps
                         auto n = allocator.Alloc<ast_node>();
 
-                        if (trace)
+                        if constexpr (trace)
                                 SLog("Special case, rep = ", run[i]->p->rep, " ", run[i]->p->flags, "\n");
 
                         n->type = ast_node::Type::Token;
@@ -301,7 +301,7 @@ namespace Trinity {
                         alts.clear();
                         l(runCtx, tokens, n, altAllocator, &alts);
 
-                        if (trace)
+                        if constexpr (trace)
                                 SLog("FOR n = ", n, " => ", alts.size(), "\n");
 
                         for (const auto &it : alts)
@@ -330,7 +330,7 @@ namespace Trinity {
                         ast_node * node;
                         const auto saved = alts.size();
 
-                        if (trace)
+                        if constexpr (trace)
                                 SLog("For SPAN ", span, "\n");
 
                         do {
@@ -343,11 +343,11 @@ namespace Trinity {
 
                                 if (k == alts.size()) {
                                         // ignore duplicates or already seen
-                                        if (trace)
+                                        if constexpr (trace)
                                                 SLog("Accepting Alt [", s, "] ", p->first.second, "\n");
 
                                         alts.emplace_back(s, p->first.second);
-                                } else if (trace)
+                                } else if constexpr (trace)
                                         SLog("Ignoring Alt [", s, "] ", p->first.second, ": seen already\n");
 
                         } while (++p != e && p->second == span);
@@ -380,7 +380,7 @@ namespace Trinity {
                                 }
 
                                 if (const auto flags = alts[saved].second) {
-                                        if (trace)
+                                        if constexpr (trace)
                                                 SLog("FLAGS:", flags, "\n");
 
                                         lhs->set_alltokens_flags(flags);
@@ -397,7 +397,7 @@ namespace Trinity {
                                         n->binop.rhs = ast_parser(alts[i + saved].first, allocator, tokensParser, parser_flags).parse();
                                         lhs          = n;
 
-                                        if (trace)
+                                        if constexpr (trace)
                                                 SLog("[", alts[i + saved].first, "] to [", *n->binop.rhs, "]\n");
 
                                         if (unlikely(nullptr == n->binop.rhs))
@@ -416,13 +416,13 @@ namespace Trinity {
                                         }
 
                                         if (const auto flags = alts[i + saved].second) {
-                                                if (trace)
+                                                if constexpr (trace)
                                                         SLog("FLAGS:", flags, " for [", *n->binop.rhs, "]\n");
 
                                                 n->binop.rhs->set_alltokens_flags(flags);
                                         }
 
-                                        if (trace)
+                                        if constexpr (trace)
                                                 SLog("CREATED:", *n, "\n");
                                 }
 
@@ -440,7 +440,7 @@ namespace Trinity {
 
                                 node->set_rewrite_translation_coeff(span);
 
-                                if (trace)
+                                if constexpr (trace)
                                         SLog("Parsed [", alts[saved], "] ", *node, "\n");
 
                                 if (budget && budget != std::numeric_limits<std::size_t>::max()) {
@@ -451,7 +451,7 @@ namespace Trinity {
                                 }
 
                                 if (const auto flags = alts[saved].second) {
-                                        if (trace)
+                                        if constexpr (trace)
                                                 SLog("FLAGS:", flags, "\n");
 
                                         node->set_alltokens_flags(flags);
@@ -460,11 +460,11 @@ namespace Trinity {
 
                         expressions.emplace_back(node, span);
 
-                        if (trace)
+                        if constexpr (trace)
                                 SLog(ansifmt::color_brown, "<<<<<< [", *node, "] ", span, ansifmt::reset, "\n");
                 }
 
-                if (trace) {
+                if constexpr (trace) {
                         SLog(ansifmt::bold, ansifmt::color_blue, "CAPTURED EXPRESSIONS", ansifmt::reset, "\n");
                         for (const auto &it : expressions)
                                 SLog(it.second, ":", *it.first, "\n");
@@ -477,7 +477,7 @@ namespace Trinity {
         // not sure the use of replace_self() makes sense. Need to reproduce the problem though
         template <typename L>
         static std::pair<ast_node *, uint8_t> run_capture(const uint32_t rewriteFlags, std::size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan, gen_ctx &genCtx) {
-                static constexpr bool                                             trace{false};
+                static constexpr bool                                             trace{true};
                 [[maybe_unused]] auto &                                           allocator = q.allocator;
                 static thread_local std::vector<std::pair<range32_t, ast_node *>> list_tl;
                 auto &                                                            list{list_tl};
@@ -941,7 +941,7 @@ namespace Trinity {
 
         template <typename L, typename RCB = void (*)(const std::vector<ast_node *> &)>
         void rewrite_query(const uint32_t rewriteFlags, Trinity::query &q, std::size_t budget, const uint8_t K, L &&l, RCB &&rcb = dummy_rcb) {
-                static constexpr bool trace{false};
+                static constexpr bool trace{true};
 
                 if (!q)
                         return;
@@ -953,7 +953,7 @@ namespace Trinity {
 
                 genCtx.clear(K);
 
-                if (trace)
+                if constexpr (trace)
                         SLog("Initial budget: ", budget, "\n");
 
                 if (budget && budget != std::numeric_limits<std::size_t>::max()) {
@@ -963,12 +963,12 @@ namespace Trinity {
                                 budget = 0;
                 }
 
-                if (trace)
+                if constexpr (trace)
                         SLog("Then budget ", budget, "\n");
 
                 DEXPECT(K && K < 16);
 
-                if (trace)
+                if constexpr (trace)
                         SLog("REWRITING:", q, "\n");
 
                 // If we are going to be processing lots of OR sub-expressions, where
@@ -984,7 +984,7 @@ namespace Trinity {
                 q.process_runs(false, true, true, [&](const auto &run) {
                         ast_node *lhs{nullptr};
 
-                        if (trace) {
+                        if constexpr (trace) {
                                 SLog("Processing run of ", run.size(), "\n");
                                 for (const auto n : run)
                                         Print(*n->p, "\n");
@@ -998,7 +998,7 @@ namespace Trinity {
                                 const auto pair = run_capture(rewriteFlags, budget, q, run, i, l, K, genCtx);
                                 auto       expr = pair.first;
 
-                                if (trace)
+                                if constexpr (trace)
                                         SLog("last index ", pair.second, " ", run.size(), "\n");
 
                                 if (!lhs)
@@ -1021,14 +1021,17 @@ namespace Trinity {
                         for (size_t i{1}; i != run.size(); ++i)
                                 run[i]->set_dummy();
 
-                        if (trace)
+                        if constexpr (trace)
                                 SLog("Final:", *lhs, "\n");
                 });
 
-                if (trace)
-                        SLog(duration_repr(Timings::Microseconds::Since(before)), " to rewrite the query\n");
+                if constexpr (trace)
+                        SLog(duration_repr(Timings::Microseconds::Since(before)), " to rewrite the query:", q, "\n");
 
                 q.normalize();
+
+		if constexpr (trace)
+			SLog("Normalized rewritten query to ", q, "\n");
         }
 } // namespace Trinity
 

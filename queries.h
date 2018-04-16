@@ -98,7 +98,7 @@ namespace Trinity {
 
                 // this is handy if you want to delete a node
                 // normalize_root() will GC those nodes
-                constexpr void set_dummy() noexcept {
+                void set_dummy() noexcept {
                         type = Type::Dummy;
                 }
 
@@ -244,7 +244,7 @@ namespace Trinity {
                 const uint32_t      parserFlags;
                 std::vector<str8_t> distinctTokens;
                 // facilitates parsing
-                std::vector<char_t> groupTerm;
+                std::vector<const char *> groupTerm;
                 char_t              lastParsedToken[255];
 
                 auto *alloc_node(const ast_node::Type t) {
