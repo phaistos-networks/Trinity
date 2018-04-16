@@ -336,58 +336,16 @@ static void collapse_node(exec_node &n, compilation_ctx &cctx, simple_allocator 
                 collapse_node(ctx->expr, cctx, a, terms, phrases, stack);
         } else if (n.fp == ENT::matchsome) {
                 auto pm = static_cast<compilation_ctx::partial_match_ctx *>(n.ptr);
-		std::size_t dummy_nodes{0}, false_nodes{0}, true_nodes{0};
 		const auto size{pm->size};
 
-                for (size_t i{0}; i != size; ++i) {
+                for (size_t i{0}; i != size; ++i)
                         collapse_node(pm->nodes[i], cctx, a, terms, phrases, stack);
-
-			if (const auto p = pm->nodes[i].fp; p == ENT::consttrue)
-				++true_nodes;
-			else if (p == ENT::constfalse)
-				++false_nodes;
-			else if (p == ENT::dummyop)
-				++dummy_nodes;
-		}
-
-		if (false_nodes == size) {
-			n.fp = ENT::constfalse;
-			return;
-		} else if (true_nodes == size) {
-			n.fp = ENT::consttrue;
-			return;
-		} else if (dummy_nodes == size) {
-			n.fp = ENT::dummyop;
-			return;
-		}
-
         } else if (n.fp == ENT::matchallnodes || n.fp == ENT::matchanynodes) {
                 auto g = static_cast<compilation_ctx::nodes_group *>(n.ptr);
-		std::size_t dummy_nodes{0}, false_nodes{0}, true_nodes{0};
 		const auto size{g->size};
 
-                for (size_t i{0}; i != size; ++i) {
+                for (size_t i{0}; i != size; ++i)
                         collapse_node(g->nodes[i], cctx, a, terms, phrases, stack);
-
-			if (const auto p = g->nodes[i].fp; p == ENT::consttrue)
-				++true_nodes;
-			else if (p == ENT::constfalse)
-				++false_nodes;
-			else if (p == ENT::dummyop)
-				++dummy_nodes;
-		}
-
-		if (false_nodes == size) {
-			n.fp = ENT::constfalse;
-			return;
-		} else if (true_nodes == size) {
-			n.fp = ENT::consttrue;
-			return;
-		} else if (dummy_nodes == size) {
-			n.fp = ENT::dummyop;
-			return;
-		}
-
         } else if (n.fp == ENT::logicaland || n.fp == ENT::logicalor || n.fp == ENT::logicalnot) {
                 auto                        ctx = static_cast<compilation_ctx::binop_ctx *>(n.ptr);
                 compilation_ctx::binop_ctx *otherCtx;
@@ -741,18 +699,41 @@ static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_alloca
                         set_dirty();
 			return n;
                 } else {
-			// if they are all tokens, switch to respective matchanyterm or matchallterms
-			size_t i{0};
+                        // if they are all tokens, switch to respective matchanyterm or matchallterms
+                        std::size_t  dummy_nodes{0}, false_nodes{0}, true_nodes{0}, term_nodes{0};
+                        const size_t size = g->size;
 
-			while (i < g->size && g->nodes[i].fp == ENT::matchterm)
-				++i;
+                        for (size_t i{0}; i < size; ++i) {
+                                if (const auto p = g->nodes[i].fp; p == ENT::matchterm)
+                                        ++term_nodes;
+                                else if (p == ENT::dummyop) {
+                                        if (n.fp == ENT::matchallnodes) {
+                                                n.fp = ENT::constfalse;
+                                                set_dirty();
+                                                return n;
+                                        } else {
+                                                ++dummy_nodes;
+                                        }
+                                } else if (p == ENT::consttrue)
+                                        ++true_nodes;
+                                else if (p == ENT::constfalse) {
+                                        if (n.fp == ENT::matchallnodes) {
+                                                n.fp = ENT::constfalse;
+                                                set_dirty();
+                                                return n;
+                                        } else {
+                                                ++false_nodes;
+                                        }
+                                } else
+                                        break;
+                        }
 
-                        if (i == g->size) {
+                        if (term_nodes == size) {
                                 exec_node new_node;
                                 auto      tr = static_cast<compilation_ctx::termsrun *>(a.Alloc(sizeof(compilation_ctx::termsrun) + sizeof(exec_term_id_t) * g->size));
 
                                 tr->size = g->size;
-                                for (i = 0; i != g->size; ++i)
+                                for (size_t i = 0; i != g->size; ++i)
                                         tr->terms[i] = g->nodes[i].u16;
 
                                 new_node.fp  = n.fp == ENT::matchallnodes ? ENT::matchallterms : ENT::matchanyterms;
@@ -761,10 +742,23 @@ static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_alloca
                                 n = new_node;
                                 set_dirty();
                                 return n;
+                        } else if (dummy_nodes == size) {
+                                n.fp = ENT::dummyop;
+                                set_dirty();
+                                return n;
+                        } else if (true_nodes == size) {
+                                n.fp = ENT::consttrue;
+                                set_dirty();
+                                return n;
+                        } else if (false_nodes == size) {
+                                n.fp = ENT::constfalse;
+                                set_dirty();
+                                return n;
                         }
                 }
         } else if (n.fp == ENT::matchsome) {
                 auto       ctx = static_cast<compilation_ctx::partial_match_ctx *>(n.ptr);
+		std::size_t  true_nodes{0}, term_nodes{0};
                 const auto saved{ctx->size};
 
                 for (size_t i{0}; i < ctx->size; ) {
@@ -772,22 +766,50 @@ static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_alloca
 
                         if (ctx->nodes[i].fp == ENT::constfalse || ctx->nodes[i].fp == ENT::dummyop)
                                 ctx->nodes[i] = ctx->nodes[--(ctx->size)];
-                        else
+			else {
+                        	if (const auto p = ctx->nodes[i].fp; p == ENT::matchterm) 
+					++term_nodes;
+				else if (p == ENT::consttrue)
+					++true_nodes;
+			
                                 ++i;
+			}
                 }
 
-                if (ctx->min > ctx->size) {
+		const size_t size = ctx->size;
+
+                if (ctx->min > size) {
                         n.fp = ENT::constfalse;
                         set_dirty();
+			return n;
                 } else {
-                        if (ctx->size == 1) {
+                        if (size == 1) {
                                 n = ctx->nodes[0];
                                 set_dirty();
-                        } else if (ctx->min == ctx->size) {
+				return n;
+			} else if (size == term_nodes && size == ctx->min) {
+				// turn this into a matchallterms
+				const auto required = sizeof(compilation_ctx::termsrun) + sizeof(exec_term_id_t) * size;
+				auto ptr = static_cast<compilation_ctx::termsrun *>(cctx.allocate(required));
+
+				ptr->size = size;
+				for (size_t i{0}; i < size; ++i)
+					ptr->terms[i] = ctx->nodes[i].u16;
+
+				n.fp = ENT::matchallterms;
+				n.ptr = ptr;
+
+				set_dirty();
+				return n;
+			} else if (size == true_nodes) {
+				n.fp = ENT::consttrue;
+				set_dirty();
+				return n;
+                        } else if (ctx->min == size) {
                                 // transform to binary op that includes all those
                                 auto en = ctx->nodes[0];
 
-                                for (size_t i{1}; i != ctx->size; ++i) {
+                                for (size_t i{1}; i != size; ++i) {
                                         auto b = static_cast<compilation_ctx::binop_ctx *>(a.Alloc(sizeof(compilation_ctx::binop_ctx)));
 
                                         b->lhs = en;
@@ -798,9 +820,10 @@ static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_alloca
 
                                 n = en;
                                 set_dirty();
+				return n;
                         } else if (ctx->min == 1) {
                                 // TODO(markp): consider expanding to OR sequence
-                        } else if (ctx->size != saved) {
+                        } else if (size != saved) {
                                 set_dirty();
                         }
                 }

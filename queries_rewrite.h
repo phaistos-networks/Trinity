@@ -243,7 +243,7 @@ namespace Trinity {
         // generate a list of expressions(ast_nodes) from a run, starting at (i), upto (i + maxSpan)
         template <typename L>
         static auto run_next(std::size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, const uint8_t maxSpan, L &&l, gen_ctx &genCtx) {
-                static constexpr bool trace{true};
+                static constexpr bool trace{false};
                 require(i < run.size());
                 const auto                                                                                  token = run[i]->p->terms[0].token;
                 static thread_local std::vector<std::pair<std::pair<str32_t, query_term_flags_t>, uint8_t>> vTLS;
@@ -477,7 +477,7 @@ namespace Trinity {
         // not sure the use of replace_self() makes sense. Need to reproduce the problem though
         template <typename L>
         static std::pair<ast_node *, uint8_t> run_capture(const uint32_t rewriteFlags, std::size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan, gen_ctx &genCtx) {
-                static constexpr bool                                             trace{true};
+                static constexpr bool                                             trace{false};
                 [[maybe_unused]] auto &                                           allocator = q.allocator;
                 static thread_local std::vector<std::pair<range32_t, ast_node *>> list_tl;
                 auto &                                                            list{list_tl};
@@ -941,7 +941,7 @@ namespace Trinity {
 
         template <typename L, typename RCB = void (*)(const std::vector<ast_node *> &)>
         void rewrite_query(const uint32_t rewriteFlags, Trinity::query &q, std::size_t budget, const uint8_t K, L &&l, RCB &&rcb = dummy_rcb) {
-                static constexpr bool trace{true};
+                static constexpr bool trace{false};
 
                 if (!q)
                         return;

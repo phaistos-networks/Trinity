@@ -8,7 +8,7 @@ EXTRA_CFLAGS:=
 ifeq ($(HOST), origin)
 # When building on our dev.system
 	include /home/system/Development/Switch/Makefile.dfl
-	CPPFLAGS:=$(CPPFLAGS_SANITY) #$(OPTIMIZER_CFLAGS) $(EXTRA_CFLAGS)
+	CPPFLAGS:=$(CPPFLAGS_SANITY) $(OPTIMIZER_CFLAGS) $(EXTRA_CFLAGS)
 	#CPPFLAGS:=$(CPPFLAGS_SANITY) -fsanitize=address
 	#CPPFLAGS:=$(CPPFLAGS_SANITY) 
 
