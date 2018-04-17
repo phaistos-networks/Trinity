@@ -787,8 +787,8 @@ static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_alloca
                                 n = ctx->nodes[0];
                                 set_dirty();
 				return n;
-			} else if (size == term_nodes && size == ctx->min) {
-				// turn this into a matchallterms
+			} else if (size == term_nodes && (size == ctx->min || ctx->min == 1)) {
+				// turn this into a matchallterms or matchanyterms(if only 1 is enough to accept match)
 				const auto required = sizeof(compilation_ctx::termsrun) + sizeof(exec_term_id_t) * size;
 				auto ptr = static_cast<compilation_ctx::termsrun *>(cctx.allocate(required));
 
@@ -796,7 +796,7 @@ static exec_node optimize_node(exec_node n, compilation_ctx &cctx, simple_alloca
 				for (size_t i{0}; i < size; ++i)
 					ptr->terms[i] = ctx->nodes[i].u16;
 
-				n.fp = ENT::matchallterms;
+				n.fp = ctx->min == 1 ? ENT::matchanyterms : ENT::matchallterms;
 				n.ptr = ptr;
 
 				set_dirty();
