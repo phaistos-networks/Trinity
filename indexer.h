@@ -25,7 +25,7 @@ namespace Trinity {
         class SegmentIndexSession final {
               private:
                 // We needed a faster way for tracking committed document IDs
-                struct bank {
+                struct bank final {
                         static constexpr std::size_t SPAN{1 << 20};
 
                         SparseFixedBitSet bs{SPAN};
@@ -44,7 +44,7 @@ namespace Trinity {
                 // one implicit "field"/namespace for all tokens.
                 // Also, this is about tracking positions hits only.
                 // This is a per-document state
-                struct field_doc_stats {
+                struct field_doc_stats final {
                         // this is just for terms where position is specified
                         std::uint16_t distinctTermsCnt{0};
 
@@ -72,15 +72,19 @@ namespace Trinity {
                 IOBuffer b;
                 IOBuffer hitsBuf;
                 int      backingFileFD{-1};
-                // by partitioning in hits based on term we save about 2s in a previous runtime of 39s down to 37s
+                // by partitioning hits based on term we save about 2s in a previous runtime of 39s down to 37s
                 // maybe we can use radix sort there?
                 std::vector<std::pair<uint32_t, std::pair<uint32_t, range_base<uint32_t, uint8_t>>>> hits[16];
                 std::vector<isrc_docid_t>                                                            updatedDocumentIDs;
                 simple_allocator                                                                     dictionaryAllocator;
+
                 // flat_hash_map<> is about 11% faster than alternative dictionaries
                 // so we are using it now here
+		// UPDATE: issues discovered with flat_hash_map<>; will switch to it again when
+		// we can be certain that it is no longer broken
                 std::unordered_map<str8_t, uint32_t> dictionary;
                 std::unordered_map<uint32_t, str8_t> invDict;
+
                 //See IndexSession::indexOutFlushed comments
                 uint32_t flushFreq{0}, intermediateStateFlushFreq{0};
 
@@ -143,6 +147,8 @@ namespace Trinity {
                 void commit_document_impl(const document_proxy &proxy, const bool replace);
 
                 bool track(const isrc_docid_t);
+
+		void consider_update(const isrc_docid_t);
 
               public:
                 uint32_t term_id(const str8_t term);

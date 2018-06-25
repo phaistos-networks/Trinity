@@ -36,8 +36,7 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
         field_doc_stats fs;
 
         // we can't update the same document more than once in the same session
-        if (unlikely(!track(proxy.did)))
-                throw Switch::data_error("Already committed document ", proxy.did);
+	consider_update(proxy.did);
 
         b.pack(proxy.did);
 
@@ -115,7 +114,9 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
         // and then invokes a Similarity::computeNorm() which is passed that FieldInvertState
         // and this is where subclasses of Similarity, e.g BP25 get to compute a normalization value for a (field, document)
         // given the acumulated state of the term processing for this (field, document)
-        // e.g lucene's BM25Similarity::computeNorm(FieldInvertState state) { final int numTerms = discountOverlaps ? state.getLength() - state.getNumOverlap() : state.getLength(); return encodeNormValue(state.getBoost(), numTerms); }
+        // e.g lucene's BM25Similarity::computeNorm(FieldInvertState state) { 
+	//	final int numTerms = discountOverlaps ? state.getLength() - state.getNumOverlap() : state.getLength(); return encodeNormValue(state.getBoost(), numTerms); 
+	// }
         //
         // Notice how Lucene uses a NormValuesWriter and in finish() which is invoked when a (field, document) is parsed
         // it invokes norm.addValue(docState.docID, similarity.computeNorm(invertState));
@@ -163,7 +164,7 @@ uint32_t SegmentIndexSession::term_id(const str8_t term) {
         // but we use transient term IDs (integers) for simplicity and performance
         // SegmentIndexSession::commit() will store actual terms, not their transient IDs.
         // See CONCEPTS.md
-        auto it = dictionary.insert({term, 0});
+        auto it = dictionary.emplace(term, 0);
 
         if (it.second) {
                 // got to abuse it because..well, whatever
@@ -174,7 +175,7 @@ uint32_t SegmentIndexSession::term_id(const str8_t term) {
                 const auto k = dictionary.size();
 
                 it.first->second = k;
-                invDict.insert({k, *key});
+                invDict.emplace(static_cast<uint32_t>(k), *key);
                 return k;
         } else
                 return it.first->second;
@@ -187,7 +188,7 @@ bool SegmentIndexSession::track(const isrc_docid_t documentID) {
 // The cost is neglible anwyay
 #if 1
         static_assert(0 == (bank::SPAN & 1));
-        const auto base       = documentID & (~(bank::SPAN - 1));
+        const auto base       = documentID & (~(bank::SPAN - 1)); 	// align down
         const auto normalized = documentID - base;
 
         if (likely(curBank) && curBank->base == base)
@@ -202,7 +203,7 @@ bool SegmentIndexSession::track(const isrc_docid_t documentID) {
 
         auto b = new bank();
 
-        banks.push_back(b);
+        banks.emplace_back(b);
         b->base = base;
         b->bs.set(normalized);
         curBank = b;
@@ -212,10 +213,13 @@ bool SegmentIndexSession::track(const isrc_docid_t documentID) {
 #endif
 }
 
-void SegmentIndexSession::erase(const isrc_docid_t documentID) {
-        if (!track(documentID))
-                throw Switch::data_error("Already committed document ", documentID);
+void SegmentIndexSession::consider_update(const isrc_docid_t document_id) {
+        if (!track(document_id))
+                throw Switch::data_error("Already committed document ", document_id);
+}
 
+void SegmentIndexSession::erase(const isrc_docid_t documentID) {
+	consider_update(documentID);
         updatedDocumentIDs.push_back(documentID);
 }
 
@@ -250,8 +254,6 @@ void Trinity::persist_segment(const Trinity::IndexSource::field_statistics &fs, 
         }
 
         // Persist codec info
-        // TODO: Use a different name e.g info, that holds the codec and stats etc
-        // instead of using the file for just the codec
         int fd = open(Buffer{}.append(sess->basePath, "/id").c_str(), O_WRONLY | O_LARGEFILE | O_TRUNC | O_CREAT, 0775);
 
         if (fd == -1)
@@ -280,7 +282,7 @@ void Trinity::persist_segment(const Trinity::IndexSource::field_statistics &fs, 
         if (fd == -1)
                 throw Switch::system_error("Failed to persist index ", path.AsS32(), ":", strerror(errno));
 
-        Defer({
+        DEFER({
                 close(fd);
         });
 

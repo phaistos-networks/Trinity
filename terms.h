@@ -5,22 +5,20 @@
 
 // Prefic compressed terms dictionary
 // Maps from str8_t=>term_index_ctx
-namespace Trinity
-{
+namespace Trinity {
 
         // We can no longer ommit (term, term_index_ctx) from the terms data file and keep
         // that just in the index, beause while it works great for lookups, it means we can't trivially iterate
         // over all terms in the terms data file (see terms_data_view struct), and this is important for merging segments.
-	//
+        //
         // For other applications that do not need to access to all terms, one couild get those structures, make sure TRINITY_TERMS_FAT_INDEX is defined
         // and use it .
         //#define TRINITY_TERMS_FAT_INDEX
-        struct terms_skiplist_entry final
-        {
+        struct terms_skiplist_entry final {
                 str8_t term;
 #ifdef TRINITY_TERMS_FAT_INDEX
-                uint32_t blockOffset; // offset in the terms datafile
-                term_index_ctx tctx;  // payload
+                uint32_t       blockOffset; // offset in the terms datafile
+                term_index_ctx tctx;        // payload
 #else
                 uint32_t blockOffset; // offset in the terms datafile
 #endif
@@ -32,87 +30,73 @@ namespace Trinity
 
         void pack_terms(std::vector<std::pair<str8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index);
 
-
-
         // An abstract index source terms access wrapper
-	//
+        //
         // For segments, you will likely use the prefix-compressed terms infra. but you may have
         // an index source that is e.g storing all those terms in an in-memory std::unordered_map<> or whatever else
         // for some reason and you can just write an IndexSourceTermsView subclass to access that.
         //
         // IndexSourceTermsView subclasses are used while merging index sources.
         // see merge.h
-        struct IndexSourceTermsView
-        {
+        struct IndexSourceTermsView {
                 virtual std::pair<str8_t, term_index_ctx> cur() = 0;
 
                 virtual void next() = 0;
 
                 virtual bool done() = 0;
 
-		virtual ~IndexSourceTermsView()
-		{
-
-		}
+                virtual ~IndexSourceTermsView() {
+                }
         };
 
         // iterator access to the terms data
         // this is very useful for merging terms dictionaries (see IndexSourcePrefixCompressedTermsView)
-        struct terms_data_view final
-        {
+        struct terms_data_view final {
               public:
-                struct iterator final
-                {
+                struct iterator final {
                         friend struct terms_data_view;
 
                       private:
-                        const uint8_t *p;
+                        const uint8_t *    p;
                         str8_t::value_type termStorage[Limits::MaxTermLength];
 
                       public:
                         struct
                         {
-                                str8_t term;
+                                str8_t         term;
                                 term_index_ctx tctx;
                         } cur;
 
                         iterator(const uint8_t *ptr)
-                            : p{ptr}
-                        {
-                                cur.term.p = termStorage;
+                            : p{ptr} {
+                                cur.term.p   = termStorage;
                                 cur.term.len = 0;
                         }
 
-                        inline bool operator==(const iterator &o) const noexcept
-                        {
+                        inline bool operator==(const iterator &o) const noexcept {
                                 return p == o.p;
                         }
 
-                        inline bool operator!=(const iterator &o) const noexcept
-                        {
+                        inline bool operator!=(const iterator &o) const noexcept {
                                 return p != o.p;
                         }
 
-                        str8_t term() noexcept
-                        {
+                        str8_t term() noexcept {
                                 decode_cur();
                                 return cur.term;
                         }
 
-                        term_index_ctx tctx() noexcept
-                        {
+                        term_index_ctx tctx() noexcept {
                                 decode_cur();
                                 return cur.tctx;
                         }
 
-                        inline iterator &operator++()
-                        {
+                        inline iterator &operator++() {
                                 cur.term.len = 0;
                                 return *this;
                         }
 
-                        inline std::pair<str8_t, term_index_ctx> operator*() noexcept
-                        {
+                        inline std::pair<str8_t, term_index_ctx> operator*() noexcept {
                                 decode_cur();
                                 return {cur.term, cur.tctx};
                         }
@@ -125,82 +109,69 @@ namespace Trinity
                 const range_base<const uint8_t *, uint32_t> termsData;
 
               public:
-                iterator begin() const
-                {
+                iterator begin() const {
                         return {termsData.start()};
                 }
 
-                iterator end() const
-                {
+                iterator end() const {
                         return {termsData.stop()};
                 }
 
                 terms_data_view(const range_base<const uint8_t *, uint32_t> d)
-                    : termsData{d}
-                {
+                    : termsData{d} {
                 }
         };
 
         // A specialised IndexSourceTermsView for accessing prefix-encoded terms dictionaries
         struct IndexSourcePrefixCompressedTermsView final
-            : public IndexSourceTermsView
-        {
+            : public IndexSourceTermsView {
               private:
-                terms_data_view::iterator it;
-		const terms_data_view::iterator end;
+                terms_data_view::iterator       it;
+                const terms_data_view::iterator end;
 
               public:
                 IndexSourcePrefixCompressedTermsView(const range_base<const uint8_t *, uint32_t> termsData)
-                    : it{termsData.start()}, end{termsData.stop()}
-                {
+                    : it{termsData.start()}, end{termsData.stop()} {
                 }
 
-                std::pair<str8_t, term_index_ctx> cur() override final
-                {
+                std::pair<str8_t, term_index_ctx> cur() override final {
                         return *it;
                 }
 
-                void next() override final
-                {
+                void next() override final {
                         ++it;
                 }
 
-                bool done() override final
-                {
+                bool done() override final {
                         return it == end;
                 }
         };
 
         //A handy wrapper for memory mapped terms data and a skiplist from the terms index
-        class SegmentTerms final
-        {
+        class SegmentTerms final {
               private:
-                std::vector<terms_skiplist_entry> skiplist;
-                simple_allocator allocator;
+                std::vector<terms_skiplist_entry>     skiplist;
+                simple_allocator                      allocator;
                 range_base<const uint8_t *, uint32_t> termsData;
 
               public:
                 SegmentTerms(const char *segmentBasePath);
 
-                ~SegmentTerms()
-                {
+                ~SegmentTerms() {
                         if (auto ptr = (void *)(termsData.offset))
                                 munmap(ptr, termsData.size());
                 }
 
-                term_index_ctx lookup(const str8_t term)
-                {
+                term_index_ctx lookup(const str8_t term) {
                         return lookup_term(termsData, term, skiplist);
                 }
 
-                auto terms_data_access() const
-                {
+                auto terms_data_access() const {
                         return terms_data_view(termsData);
                 }
 
-                auto new_terms_view() const
-                {
+                auto new_terms_view() const {
                         return new IndexSourcePrefixCompressedTermsView(termsData);
                 }
         };
-}
+} // namespace Trinity

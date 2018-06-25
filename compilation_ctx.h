@@ -4,10 +4,8 @@
 #include "runtime.h"
 #include <switch_mallocators.h>
 
-namespace Trinity
-{
-        enum class ENT : uint8_t
-        {
+namespace Trinity {
+        enum class ENT : uint8_t {
                 matchterm = 0,
                 constfalse,
                 consttrue,
@@ -32,12 +30,11 @@ namespace Trinity
                 SPECIALIMPL_COLLECTION_LOGICALAND,
         };
 
-        struct exec_node final
-        {
+        struct exec_node final {
                 ENT fp;
 
                 union {
-                        void *ptr;
+                        void *   ptr;
                         uint32_t u32;
                         uint16_t u16;
                 };
@@ -47,44 +44,40 @@ namespace Trinity
                 uint64_t cost;
         };
 
-        struct compilation_ctx
-        {
-                simple_allocator allocator{4096 * 6};
-                simple_allocator runsAllocator{4096}, ctxAllocator{4096};
-		std::vector<void *> large_allocs;
-		
-		~compilation_ctx() {
-			for (auto p : large_allocs)
-				std::free(p);
-		}
+        struct compilation_ctx {
+                simple_allocator    allocator{4096 * 6};
+                simple_allocator    runsAllocator{4096}, ctxAllocator{4096};
+                std::vector<void *> large_allocs;
 
-		void *allocate(const std::size_t size) { 
-			if (ctxAllocator.can_allocate(size))
-				return ctxAllocator.Alloc(size);
-			else {
-				auto ptr = malloc(size);
+                ~compilation_ctx() {
+                        for (auto p : large_allocs)
+                                std::free(p);
+                }
 
-				large_allocs.emplace_back(ptr);
-				return ptr;
-			}
-		}
+                void *allocate(const std::size_t size) {
+                        if (ctxAllocator.can_allocate(size))
+                                return ctxAllocator.Alloc(size);
+                        else {
+                                auto ptr = malloc(size);
 
-                struct partial_match_ctx final
-                {
-                        uint16_t size;
-                        uint16_t min;
+                                large_allocs.emplace_back(ptr);
+                                return ptr;
+                        }
+                }
+
+                struct partial_match_ctx final {
+                        uint16_t  size;
+                        uint16_t  min;
                         exec_node nodes[0];
                 };
 
-                struct nodes_group final
-                {
-                        uint16_t size;
+                struct nodes_group final {
+                        uint16_t  size;
                         exec_node nodes[0];
                 };
 
-                struct termsrun final
-                {
-                        uint16_t size;
+                struct termsrun final {
+                        uint16_t       size;
                         exec_term_id_t terms[0];
 
                         static_assert(std::numeric_limits<decltype(size)>::max() >= Limits::MaxTermLength);
@@ -97,22 +90,19 @@ namespace Trinity
 
                         bool erase(const termsrun &o);
 
-                        auto empty() const noexcept
-                        {
+                        auto empty() const noexcept {
                                 return !size;
                         }
                 };
 
-                struct cacheable_termsrun
-                {
-                        isrc_docid_t lastConsideredDID;
+                struct cacheable_termsrun final {
+                        isrc_docid_t    lastConsideredDID;
                         const termsrun *run;
-                        bool res;
+                        bool            res;
                 };
 
-                struct phrase final
-                {
-                        uint8_t size;
+                struct phrase final {
+                        uint8_t        size;
                         exec_term_id_t termIDs[0];
 
                         static_assert(std::numeric_limits<decltype(size)>::max() >= Trinity::Limits::MaxPhraseSize);
@@ -131,32 +121,27 @@ namespace Trinity
                         bool is_set(const exec_term_id_t *const l, const uint8_t n) const noexcept;
                 };
 
-                struct phrasesrun final
-                {
+                struct phrasesrun final {
                         uint16_t size;
-                        phrase *phrases[0];
+                        phrase * phrases[0];
                 };
 
-                struct binop_ctx final
-                {
+                struct binop_ctx final {
                         exec_node lhs;
                         exec_node rhs;
                 };
 
-                struct unaryop_ctx final
-                {
+                struct unaryop_ctx final {
                         exec_node expr;
                 };
 
-                inline uint16_t register_token(const Trinity::phrase *p)
-                {
+                inline uint16_t register_token(const Trinity::phrase *p) {
                         return resolve_query_term(p->terms[0].token);
                 }
 
                 phrase *register_phrase(const Trinity::phrase *p);
 
-                binop_ctx *register_binop(const exec_node lhs, const exec_node rhs)
-                {
+                binop_ctx *register_binop(const exec_node lhs, const exec_node rhs) {
                         auto ptr = ctxAllocator.New<binop_ctx>();
 
                         ptr->lhs = lhs;
@@ -164,8 +149,7 @@ namespace Trinity
                         return ptr;
                 }
 
-                unaryop_ctx *register_unaryop(const exec_node expr)
-                {
+                unaryop_ctx *register_unaryop(const exec_node expr) {
                         auto ptr = ctxAllocator.New<unaryop_ctx>();
 
                         ptr->expr = expr;
@@ -175,7 +159,7 @@ namespace Trinity
                 virtual uint16_t resolve_query_term(const str8_t term) = 0;
         };
 
-	exec_node compile_query(ast_node *root, compilation_ctx &cctx);
+        exec_node compile_query(ast_node *root, compilation_ctx &cctx);
 
         void group_execnodes(exec_node &, simple_allocator &);
-}
+} // namespace Trinity

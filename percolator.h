@@ -24,14 +24,14 @@ namespace Trinity {
                         std::vector<str8_t>                  allTerms; // we need to keep track of those here
 
                         uint16_t resolve_query_term(const str8_t term) override final {
-                                const auto res = localMap.insert({term, 0});
+                                const auto res = localMap.emplace(term, 0);	 // intern string
 
                                 if (res.second) {
                                         res.first->second = localMap.size();
                                         const_cast<str8_t *>(&res.first->first)->Set(allocator.CopyOf(term.data(), term.size()), term.size());
 
                                         require(allTerms.size() == localMap.size() - 1);
-                                        allTerms.push_back(res.first->first);
+                                        allTerms.emplace_back(res.first->first);
                                 }
 
                                 return res.first->second;
