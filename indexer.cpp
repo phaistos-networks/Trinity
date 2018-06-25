@@ -300,7 +300,7 @@ We clearly need to optimize the encoding process, the remaining time can be redu
 Need to consider means to optimize the encoder impl.
 */
 void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess) {
-        struct segment_data {
+        struct segment_data final {
                 uint32_t     termID;
                 isrc_docid_t documentID;
                 uint32_t     hitsOffset;
@@ -318,11 +318,13 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess) {
         if (indexFd == -1)
                 throw Switch::system_error("Failed to persist index: ", path.AsS32());
 
-        Defer({
+        DEFER({
                 if (indexFd != -1)
                         close(indexFd);
         });
 
+	// TODO: We could track all terms (document, terms)
+	// in order to propertly reserve() enough storage for all[] so that we 'll avoid reallocations
         const auto scan = [&defaultFieldStats = this->defaultFieldStats, flushFreq = this->flushFreq, indexFd, enc = enc_.get(), &map, sess ](const auto &ranges) {
                 uint8_t                   payloadSize;
                 std::vector<segment_data> all[32];
@@ -374,7 +376,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess) {
                                                 p += payloadSize;
                                         } while (--hitsCnt);
 
-                                        all[term & (sizeof_array(all) - 1)].push_back({term, documentID, uint32_t(base - data), saved, i});
+                                        all[term & (sizeof_array(all) - 1)].emplace_back(segment_data{term, documentID, uint32_t(base - data), saved, i});
                                 } while (--termsCnt);
                         }
                 }
@@ -389,7 +391,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess) {
 
                         before = Timings::Microseconds::Tick();
                         for (auto &v : all) {
-                                futures.push_back(
+                                futures.emplace_back(
                                     std::async(std::launch::async, [](auto v) {
                                             std::sort(v->begin(), v->end(), [](const auto &a, const auto &b) noexcept {
                                                     return a.termID < b.termID || (a.termID == b.termID && a.documentID < b.documentID);
@@ -440,7 +442,6 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess) {
                                                 const auto deltaMask{_t};
 
                                                 if (0 == (deltaMask & 1)) {
-                                                        //payloadSize = Compression::decode_varuint32(p);
                                                         varbyte_get32(p, payloadSize);
                                                 }
 
@@ -458,7 +459,7 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess) {
                                 } while (likely(++it != e) && it->termID == term);
 
                                 enc->end_term(&tctx);
-                                map.insert({term, tctx});
+                                map.emplace(term, tctx);
 
                                 ++defaultFieldStats.totalTerms;
 
@@ -477,25 +478,26 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess) {
         std::vector<range_base<const uint8_t *, size_t>> ranges;
 
         if (b.size())
-                ranges.push_back({reinterpret_cast<const uint8_t *>(b.data()), b.size()});
+                ranges.emplace_back(reinterpret_cast<const uint8_t *>(b.data()), b.size());
 
         if (backingFileFD != -1) {
-                const auto fileSize = lseek64(backingFileFD, 0, SEEK_END);
+                const auto file_size = lseek64(backingFileFD, 0, SEEK_END);
 
-                if (fileSize == off64_t(-1))
+                if (file_size == off64_t(-1))
                         throw Switch::data_error("Failed to access backing file");
 
-                auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, backingFileFD, 0);
+		const auto vma_dtor = [file_size](void *ptr) {
+			if (ptr && ptr != MAP_FAILED)
+				munmap(ptr, file_size);
+		};
+		std::unique_ptr<void,  decltype(vma_dtor)> vma( mmap(nullptr, file_size, PROT_READ, MAP_SHARED, backingFileFD, 0), vma_dtor);
+		auto file_data{vma.get()};
 
-                if (fileData == MAP_FAILED)
+                if (file_data == MAP_FAILED)
                         throw Switch::data_error("Failed to access backing file");
 
-                Defer({
-                        munmap(fileData, fileSize);
-                });
-
-                madvise(fileData, fileSize, MADV_SEQUENTIAL);
-                ranges.push_back({reinterpret_cast<const uint8_t *>(fileData), size_t(fileSize)});
+                madvise(file_data, file_size, MADV_SEQUENTIAL | MADV_DONTDUMP);
+                ranges.emplace_back(reinterpret_cast<const uint8_t *>(file_data), size_t(file_size));
 
                 scan(ranges);
 

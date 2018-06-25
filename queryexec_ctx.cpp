@@ -251,7 +251,7 @@ queryexec_ctx::decode_ctx_struct::~decode_ctx_struct() {
 #if 0 // SOLVED
 static void will_materialize(void *ptr, const isrc_docid_t did, const uint32_t ref, Trinity::candidate_document *cd)
 {
-        static ska::flat_hash_map<uintptr_t, std::unique_ptr<std::unordered_set<isrc_docid_t>>> map;
+        static std::unordered_map<uintptr_t, std::unique_ptr<std::unordered_set<isrc_docid_t>>> map;
         auto res = map.emplace(uintptr_t(ptr), std::unique_ptr<std::unordered_set<isrc_docid_t>>{});
 	static void *tracked{nullptr};
 	static void *tracked_cd{nullptr};

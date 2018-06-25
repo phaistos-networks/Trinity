@@ -5,23 +5,18 @@
 #pragma once
 #include "docset_iterators.h"
 
-
-namespace Trinity
-{
+namespace Trinity {
         // DocsSetSpan::process() requires a MatchesProxy *. It's process() method
         // will be invoked for every matched document.
         // The relevant_document_provider::document() and relevant_document_provider::score()
         // can be used by MatchesProxy subclasses to accomplish whatever's necessary.
-        class MatchesProxy
-        {
+        class MatchesProxy {
               public:
-                virtual void process(relevant_document_provider *)
-		{
-		}
+                virtual void process(relevant_document_provider *) {
+                }
 
-		~MatchesProxy()
-		{
-		}
+                ~MatchesProxy() {
+                }
         };
 
         // Instead of accessing documents sets directly using Iterators, using
@@ -37,8 +32,7 @@ namespace Trinity
         // iterators or sub-spans.
         //
         // Check FilteredDocsSetSpan and GenericDocsSetSpan for how that works.
-        class DocsSetSpan
-        {
+        class DocsSetSpan {
               protected:
                 // This is based on/inspired by Lucene's BooleanScorer design.
                 // Effectively, instead of naively merge-scanning all leaders, there is a prio.queue we use to track
@@ -88,28 +82,24 @@ namespace Trinity
                 // returns an estimate of the next matching document, after max(unless max == DocIDsEND)
                 virtual isrc_docid_t process(MatchesProxy *, const isrc_docid_t min, const isrc_docid_t max) = 0;
 
-                virtual ~DocsSetSpan()
-                {
+                virtual ~DocsSetSpan() {
                 }
 
                 virtual uint64_t cost() = 0;
         };
 
         class GenericDocsSetSpan final
-            : public DocsSetSpan
-        {
+            : public DocsSetSpan {
                 Trinity::DocsSetIterators::Iterator *const it;
 
               public:
                 GenericDocsSetSpan(Trinity::DocsSetIterators::Iterator *const i)
-                    : it{i}
-                {
+                    : it{i} {
                 }
 
                 isrc_docid_t process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max) override final;
 
-                uint64_t cost() override final
-                {
+                uint64_t cost() override final {
                         return it->cost();
                 }
         };
@@ -122,20 +112,17 @@ namespace Trinity
         //
         // This is faster than using a DocsSetIterators::Filter which will match required and then filter whatever's matched
         class FilteredDocsSetSpan final
-            : public DocsSetSpan
-        {
+            : public DocsSetSpan {
               private:
-                DocsSetSpan *const req;
+                DocsSetSpan *const                         req;
                 Trinity::DocsSetIterators::Iterator *const exclIt;
 
               public:
                 FilteredDocsSetSpan(DocsSetSpan *const r, Trinity::DocsSetIterators::Iterator *const i)
-                    : req{r}, exclIt{i}
-                {
+                    : req{r}, exclIt{i} {
                 }
 
-                ~FilteredDocsSetSpan()
-                {
+                ~FilteredDocsSetSpan() {
                         // We will assume ownership here
                         // not elegant, but practical
                         delete req;
@@ -143,56 +130,48 @@ namespace Trinity
 
                 isrc_docid_t process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max) override final;
 
-                uint64_t cost() override final
-                {
+                uint64_t cost() override final {
                         return req->cost();
                 }
         };
 
         class DocsSetSpanForDisjunctions final
-            : public DocsSetSpan
-        {
+            : public DocsSetSpan {
               private:
-                struct Compare
-                {
-                        [[gnu::always_inline]] inline bool operator()(const DocsSetIterators::Iterator *a, const DocsSetIterators::Iterator *b) const noexcept
-                        {
+                struct Compare {
+                        [[gnu::always_inline]] inline bool operator()(const DocsSetIterators::Iterator *a, const DocsSetIterators::Iterator *b) const noexcept {
                                 return a->current() < b->current();
                         }
                 };
 
               private:
-                uint64_t *const matching;
+                uint64_t *const                                               matching;
                 Switch::priority_queue<DocsSetIterators::Iterator *, Compare> pq;
-                DocsSetIterators::Iterator **const collected;
+                DocsSetIterators::Iterator **const                            collected;
 
               public:
                 DocsSetSpanForDisjunctions(std::vector<Trinity::DocsSetIterators::Iterator *> &its)
-                    : matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1)))
-                {
+                    : matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1))) {
 
-                        for (auto it : its)
-			{
-				// See comments in DocsSetSpanForDisjunctionsWithThreshold::process() collection loop
-				require(it->current() ==0);
-				it->next();
+                        for (auto it : its) {
+                                // See comments in DocsSetSpanForDisjunctionsWithThreshold::process() collection loop
+                                require(it->current() == 0);
+                                it->next();
 
                                 pq.push(it);
-			}
+                        }
 
                         require(pq.size());
                 }
 
-                ~DocsSetSpanForDisjunctions()
-                {
+                ~DocsSetSpanForDisjunctions() {
                         std::free(matching);
                         std::free(collected);
                 }
 
                 isrc_docid_t process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max) override final;
 
-                uint64_t cost() override final
-                {
+                uint64_t cost() override final {
                         uint64_t res{0};
 
                         for (auto it : pq)
@@ -203,44 +182,38 @@ namespace Trinity
         };
 
         class DocsSetSpanForDisjunctionsWithThreshold final
-            : public DocsSetSpan
-        {
+            : public DocsSetSpan {
               private:
-                struct Compare
-                {
-                        [[gnu::always_inline]] inline bool operator()(const DocsSetIterators::Iterator *a, const DocsSetIterators::Iterator *b) const noexcept
-                        {
+                struct Compare {
+                        [[gnu::always_inline]] inline bool operator()(const DocsSetIterators::Iterator *a, const DocsSetIterators::Iterator *b) const noexcept {
                                 return a->current() < b->current();
                         }
                 };
 
               private:
-		const bool needScores;
-                const uint16_t matchThreshold;
-                uint64_t *const matching;
-                std::pair<double, uint32_t> *const tracker;
+                const bool                                                    needScores;
+                const uint16_t                                                matchThreshold;
+                uint64_t *const                                               matching;
+                std::pair<double, uint32_t> *const                            tracker;
                 Switch::priority_queue<DocsSetIterators::Iterator *, Compare> pq;
-                DocsSetIterators::Iterator **const collected;
+                DocsSetIterators::Iterator **const                            collected;
 
               public:
                 DocsSetSpanForDisjunctionsWithThreshold(const uint16_t min, std::vector<Trinity::DocsSetIterators::Iterator *> &its, const bool ns)
-                    : needScores{ns}, matchThreshold{min}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1))), tracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>)))
-                {
+                    : needScores{ns}, matchThreshold{min}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1))), tracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>))) {
                         EXPECT(min && min <= its.size());
                         EXPECT(its.size() > 1);
 
-                        for (auto it : its)
-			{
-				// See comments in DocsSetSpanForDisjunctionsWithThreshold::process() collection loop
-				require(it->current() ==0);
-				it->next();
+                        for (auto it : its) {
+                                // See comments in DocsSetSpanForDisjunctionsWithThreshold::process() collection loop
+                                require(it->current() == 0);
+                                it->next();
 
-				pq.push(it);
-			}
+                                pq.push(it);
+                        }
                 }
 
-                ~DocsSetSpanForDisjunctionsWithThreshold()
-                {
+                ~DocsSetSpanForDisjunctionsWithThreshold() {
                         std::free(matching);
                         std::free(collected);
                         std::free(tracker);
@@ -248,8 +221,7 @@ namespace Trinity
 
                 isrc_docid_t process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max) override final;
 
-                uint64_t cost() override final
-                {
+                uint64_t cost() override final {
                         uint64_t res{0};
 
                         for (auto it : pq)
@@ -260,42 +232,36 @@ namespace Trinity
         };
 
         class DocsSetSpanForPartialMatch final
-            : public DocsSetSpan
-        {
+            : public DocsSetSpan {
               private:
-                struct Compare
-                {
-                        [[gnu::always_inline]] inline bool operator()(const DocsSetIterators::Iterator *a, const DocsSetIterators::Iterator *b) const noexcept
-                        {
+                struct Compare final {
+                        [[gnu::always_inline]] inline bool operator()(const DocsSetIterators::Iterator *a, const DocsSetIterators::Iterator *b) const noexcept {
                                 return a->current() < b->current();
                         }
                 };
 
               private:
-                const uint16_t matchThreshold;
-                uint64_t *const matching;
-                std::pair<double, uint32_t> *const tracker;
+                const uint16_t                                                matchThreshold;
+                uint64_t *const                                               matching;
+                std::pair<double, uint32_t> *const                            tracker;
                 Switch::priority_queue<DocsSetIterators::Iterator *, Compare> pq;
-                DocsSetIterators::Iterator **const collected;
+                DocsSetIterators::Iterator **const                            collected;
 
               public:
                 DocsSetSpanForPartialMatch(std::vector<Trinity::DocsSetIterators::Iterator *> &its, const uint16_t min)
-                    : matchThreshold{min}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), tracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>))), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1)))
-                {
-                        for (auto it : its)
-			{
-				// See comments in DocsSetSpanForDisjunctionsWithThreshold::process() collection loop
-				require(it->current() ==0);
-				it->next();
+                    : matchThreshold{min}, matching((uint64_t *)calloc(SET_SIZE, sizeof(uint64_t))), pq(its.size() + 16), tracker((std::pair<double, uint32_t> *)calloc(SIZE, sizeof(std::pair<double, uint32_t>))), collected((DocsSetIterators::Iterator **)malloc(sizeof(DocsSetIterators::Iterator *) * (its.size() + 1))) {
+                        for (auto it : its) {
+                                // See comments in DocsSetSpanForDisjunctionsWithThreshold::process() collection loop
+                                require(it->current() == 0);
+                                it->next();
 
-				pq.push(it);
-			}
+                                pq.push(it);
+                        }
 
                         EXPECT(pq.size());
                 }
 
-                ~DocsSetSpanForPartialMatch()
-                {
+                ~DocsSetSpanForPartialMatch() {
                         std::free(matching);
                         std::free(collected);
                         std::free(tracker);
@@ -303,8 +269,7 @@ namespace Trinity
 
                 isrc_docid_t process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max) override final;
 
-                uint64_t cost() override final
-                {
+                uint64_t cost() override final {
                         auto res{0};
 
                         for (auto it : pq)
@@ -317,55 +282,46 @@ namespace Trinity
         // This is similar to DocsSetSpanForDisjunctions, except
         // it operates on DocsSetSpan's instead, and the impl. is somewhat different to account for that, but the core algorithm is the same.
         class DocsSetSpanForDisjunctionsWithSpans final
-            : public DocsSetSpan
-        {
+            : public DocsSetSpan {
               private:
-                struct span_ctx final
-                {
+                struct span_ctx final {
                         DocsSetSpan *span;
                         isrc_docid_t next{0};
 
-                        inline void advance(const isrc_docid_t min)
-                        {
+                        inline void advance(const isrc_docid_t min) {
                                 // we can safely pass nullptr here, because we are restricting to [min, min) so
                                 // in practice it will just advance the span to >= span but won't attempt to invoke the provided MatchesProxy::process()
                                 process(nullptr, min, min);
                         }
 
-                        inline void process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max)
-                        {
+                        inline void process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max) {
                                 next = span->process(mp, min, max);
                         }
 
-                        struct Compare
-                        {
-                                [[gnu::always_inline]] inline bool operator()(const span_ctx &a, const span_ctx &b) const noexcept
-                                {
+                        struct Compare {
+                                [[gnu::always_inline]] inline bool operator()(const span_ctx &a, const span_ctx &b) const noexcept {
                                         return a.next < b.next;
                                 }
                         };
                 };
 
               private:
-                uint64_t *const matching;
+                uint64_t *const                                     matching;
                 Switch::priority_queue<span_ctx, span_ctx::Compare> pq;
-                span_ctx *const collected;
+                span_ctx *const                                     collected;
 
                 struct Tracker final
-                    : public MatchesProxy
-                {
-                        uint32_t m{0};
-                        uint64_t *const matching;
+                    : public MatchesProxy {
+                        uint32_t             m{0};
+                        uint64_t *const      matching;
                         queryexec_ctx *const rctx;
 
                         Tracker(uint64_t *const m, queryexec_ctx *const ctx)
-                            : matching{m}, rctx{ctx}
-                        {
+                            : matching{m}, rctx{ctx} {
                         }
 
                         // See Tracker::process() def. comments
-                        inline void reset()
-                        {
+                        inline void reset() {
                                 m = 0;
                         }
 
@@ -378,16 +334,14 @@ namespace Trinity
               public:
                 DocsSetSpanForDisjunctionsWithSpans(std::vector<DocsSetSpan *> &its);
 
-                ~DocsSetSpanForDisjunctionsWithSpans()
-                {
+                ~DocsSetSpanForDisjunctionsWithSpans() {
                         std::free(matching);
                         std::free(collected);
                 }
 
                 isrc_docid_t process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max) override final;
 
-                uint64_t cost() override final
-                {
+                uint64_t cost() override final {
                         uint64_t res{0};
 
                         for (auto it : pq)
@@ -402,68 +356,57 @@ namespace Trinity
         // DisjunctionSome for efficiency (though this only makes sense if e.g
         // you know that evaluating iterators can be expensive to be worth it)
         class DocsSetSpanForDisjunctionsWithSpansAndCost final
-            : public DocsSetSpan
-        {
+            : public DocsSetSpan {
               private:
-                struct span_ctx final
-                {
+                struct span_ctx final {
                         DocsSetSpan *span;
-                        uint64_t cost;
+                        uint64_t     cost;
                         isrc_docid_t next{0};
 
-                        inline void advance(const isrc_docid_t min)
-                        {
+                        inline void advance(const isrc_docid_t min) {
                                 process(nullptr, min, min);
                         }
 
-                        inline void process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max)
-                        {
+                        inline void process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max) {
                                 next = span->process(mp, min, max);
                         }
 
-                        struct CompareByNext
-                        {
-                                [[gnu::always_inline]] inline bool operator()(const span_ctx *const a, const span_ctx *const b) const noexcept
-                                {
+                        struct CompareByNext {
+                                [[gnu::always_inline]] inline bool operator()(const span_ctx *const a, const span_ctx *const b) const noexcept {
                                         return a->next < b->next;
                                 }
                         };
 
-                        struct CompareByCost
-                        {
-                                [[gnu::always_inline]] inline bool operator()(const span_ctx *const a, const span_ctx *const b) const noexcept
-                                {
+                        struct CompareByCost {
+                                [[gnu::always_inline]] inline bool operator()(const span_ctx *const a, const span_ctx *const b) const noexcept {
                                         return a->cost < b->cost;
                                 }
                         };
                 };
 
               private:
-                std::pair<double, uint32_t> *const matchesTracker;
-                uint64_t *const matching;
-                span_ctx **const leads;
+                std::pair<double, uint32_t> *const                          matchesTracker;
+                uint64_t *const                                             matching;
+                span_ctx **const                                            leads;
                 Switch::priority_queue<span_ctx *, span_ctx::CompareByNext> head;
                 Switch::priority_queue<span_ctx *, span_ctx::CompareByCost> tail;
-                const uint16_t matchThreshold;
-                span_ctx *const storage;
-                uint64_t cost_;
+                const uint16_t                                              matchThreshold;
+                span_ctx *const                                             storage;
+                uint64_t                                                    cost_;
 
                 struct Tracker final
-                    : public MatchesProxy
-                {
-                        uint32_t m{0};
+                    : public MatchesProxy {
+                        uint32_t                           m{0};
                         std::pair<double, uint32_t> *const matchesTracker;
-                        uint64_t *const matching;
-                        queryexec_ctx *const rctx;
+                        uint64_t *const                    matching;
+                        queryexec_ctx *const               rctx;
 
                         Tracker(uint64_t *const m, std::pair<double, uint32_t> *const t, queryexec_ctx *const ctx)
-                            : matchesTracker{t}, matching{m}, rctx{ctx}
-                        {
+                            : matchesTracker{t}, matching{m}, rctx{ctx} {
                         }
 
                         // See Tracker::process() def. comments
-                        inline void reset()
-                        {
+                        inline void reset() {
                                 m = 0;
                         }
 
@@ -482,8 +425,7 @@ namespace Trinity
               public:
                 DocsSetSpanForDisjunctionsWithSpansAndCost(const uint16_t min, std::vector<DocsSetSpan *> &its);
 
-                ~DocsSetSpanForDisjunctionsWithSpansAndCost()
-                {
+                ~DocsSetSpanForDisjunctionsWithSpansAndCost() {
                         std::free(matching);
                         std::free(leads);
                         std::free(storage);
@@ -492,54 +434,46 @@ namespace Trinity
 
                 isrc_docid_t process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max) override final;
 
-                uint64_t cost() override final
-                {
+                uint64_t cost() override final {
                         return cost_;
                 }
         };
 
         class DocsSetSpanForDisjunctionsWithThresholdAndCost final
-            : public DocsSetSpan
-        {
+            : public DocsSetSpan {
               private:
-                struct it_ctx final
-                {
+                struct it_ctx final {
                         DocsSetIterators::Iterator *it;
-                        uint64_t cost;
-                        isrc_docid_t next{0};
+                        uint64_t                    cost;
+                        isrc_docid_t                next{0};
 
-                        inline void advance(const isrc_docid_t min)
-                        {
+                        inline void advance(const isrc_docid_t min) {
                                 next = it->advance(min);
                         }
 
-                        struct CompareByNext
-                        {
-                                [[gnu::always_inline]] inline bool operator()(const it_ctx *const a, const it_ctx *const b) const noexcept
-                                {
+                        struct CompareByNext {
+                                [[gnu::always_inline]] inline bool operator()(const it_ctx *const a, const it_ctx *const b) const noexcept {
                                         return a->next < b->next;
                                 }
                         };
 
-                        struct CompareByCost
-                        {
-                                [[gnu::always_inline]] inline bool operator()(const it_ctx *const a, const it_ctx *const b) const noexcept
-                                {
+                        struct CompareByCost {
+                                [[gnu::always_inline]] inline bool operator()(const it_ctx *const a, const it_ctx *const b) const noexcept {
                                         return a->cost < b->cost;
                                 }
                         };
                 };
 
               private:
-                std::pair<double, uint32_t> *const matchesTracker;
-                uint64_t *const matching;
-                it_ctx **const leads;
+                std::pair<double, uint32_t> *const                      matchesTracker;
+                uint64_t *const                                         matching;
+                it_ctx **const                                          leads;
                 Switch::priority_queue<it_ctx *, it_ctx::CompareByNext> head;
                 Switch::priority_queue<it_ctx *, it_ctx::CompareByCost> tail;
-		const bool needScores;
-                const uint16_t matchThreshold;
-                it_ctx *const storage;
-                uint64_t cost_;
+                const bool                                              needScores;
+                const uint16_t                                          matchThreshold;
+                it_ctx *const                                           storage;
+                uint64_t                                                cost_;
 
               private:
                 it_ctx *advance(const isrc_docid_t);
@@ -553,8 +487,7 @@ namespace Trinity
               public:
                 DocsSetSpanForDisjunctionsWithThresholdAndCost(const uint16_t min, std::vector<DocsSetIterators::Iterator *> &its, const bool needScores);
 
-                ~DocsSetSpanForDisjunctionsWithThresholdAndCost()
-                {
+                ~DocsSetSpanForDisjunctionsWithThresholdAndCost() {
                         std::free(matching);
                         std::free(leads);
                         std::free(storage);
@@ -563,9 +496,8 @@ namespace Trinity
 
                 isrc_docid_t process(MatchesProxy *const mp, const isrc_docid_t min, const isrc_docid_t max) override final;
 
-                uint64_t cost() override final
-                {
+                uint64_t cost() override final {
                         return cost_;
                 }
         };
-}
+} // namespace Trinity

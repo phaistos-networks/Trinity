@@ -81,6 +81,6 @@ namespace Trinity {
                         return root.fp != ENT::constfalse && root.fp != ENT::dummyop;
                 }
 
-                bool match(percolator_document_proxy &) const;
+                bool match(percolator_document_proxy &) const; // percolator_document_proxy is not const, because you may want to do whatever there
         };
 } // namespace Trinity
