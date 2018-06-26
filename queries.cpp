@@ -104,8 +104,9 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx) {
 
                         p->size = n;
                         std::copy(terms, terms + n, p->terms);
-                        p->rep        = 1;
-                        p->toNextSpan = DefaultToNextSpan;
+                        p->rep           = 1;
+                        p->app_phrase_id = 0;
+                        p->toNextSpan    = DefaultToNextSpan;
                         p->rewrite_ctx.range.reset();
                         p->rewrite_ctx.srcSeqSize             = 0;
                         p->rewrite_ctx.translationCoefficient = 1.0;
@@ -127,10 +128,11 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx) {
 
                 ctx.track_term(t);
 
-                p->size       = 1;
-                p->terms[0]   = t;
-                p->rep        = 1;
-                p->toNextSpan = DefaultToNextSpan;
+                p->size          = 1;
+                p->terms[0]      = t;
+                p->rep           = 1;
+                p->app_phrase_id = 0;
+                p->toNextSpan    = DefaultToNextSpan;
                 p->rewrite_ctx.range.reset();
                 p->rewrite_ctx.srcSeqSize             = 0;
                 p->rewrite_ctx.translationCoefficient = 1.0;
@@ -259,7 +261,7 @@ void PrintImpl(Buffer &b, const Trinity::phrase &p) {
 }
 
 static void print_token(Buffer &b, const phrase *const p) {
-	EXPECT(p);
+        EXPECT(p);
 
         b.append(p->terms[0].token);
 #if defined(_VERBOSE_DESCR)
@@ -364,7 +366,7 @@ static ast_node *parse_unary(ast_parser &ctx, const uint32_t parser_flags) {
         ctx.skip_ws();
 
         if (parser_flags & unsigned(ast_parser::Flags::ParseConstTrueExpr)) {
-		// this is useful for debugging, and for query rewrites
+                // this is useful for debugging, and for query rewrites
                 if (ctx.content.StripPrefix(_S("<"))) {
                         ctx.groupTerm.emplace_back(">");
 
@@ -386,7 +388,7 @@ static ast_node *parse_unary(ast_parser &ctx, const uint32_t parser_flags) {
 
         if (parser_flags & unsigned(ast_parser::Flags::ParseMatchSomeExpr)) {
                 if (ctx.content.StripPrefix(_S("["))) {
-			std::vector<ast_node *> nodes;
+                        std::vector<ast_node *> nodes;
 
                         ctx.groupTerm.emplace_back("],");
                         for (;;) {
@@ -399,16 +401,15 @@ static ast_node *parse_unary(ast_parser &ctx, const uint32_t parser_flags) {
                                 if (ctx.content.StripPrefix(_S("]"))) {
                                         if (e)
                                                 nodes.emplace_back(e);
-					ctx.groupTerm.pop_back();
+                                        ctx.groupTerm.pop_back();
                                         break;
                                 } else if (ctx.content.StripPrefix(_S(","))) {
                                         nodes.emplace_back(e ?: ctx.parse_failnode());
                                 } else {
-					// what's this?
-					ctx.groupTerm.pop_back();
-					return ctx.parse_failnode();
-				}
-					
+                                        // what's this?
+                                        ctx.groupTerm.pop_back();
+                                        return ctx.parse_failnode();
+                                }
                         }
 
                         return ast_node::make_match_some(ctx.allocator, nodes.data(), nodes.size(), 1);
@@ -449,9 +450,9 @@ static ast_node *parse_unary(ast_parser &ctx, const uint32_t parser_flags) {
 }
 
 static ast_node *parse_subexpr(ast_parser &ctx, const uint16_t limit) {
-	const auto parser_flags{ctx.parserFlags};
-        uint8_t prio;
-        auto    cur = parse_unary(ctx, parser_flags);
+        const auto parser_flags{ctx.parserFlags};
+        uint8_t    prio;
+        auto       cur = parse_unary(ctx, parser_flags);
 
         Drequire(cur); // can't fail
 
@@ -890,8 +891,8 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx) {
 
         if (n->binop.op == Operator::NOT && lhs->is_unary() && rhs->type == ast_node::Type::BinOp && rhs->binop.op == Operator::OR && ((rhs->binop.lhs->is_unary() && *lhs->p == *rhs->binop.lhs->p) || (rhs->binop.rhs->is_unary() && *lhs->p == *rhs->binop.rhs->p))) {
                 // iphone NOT (ipad OR iphone)
-		if (traceParser)
-			SLog("here\n");
+                if (traceParser)
+                        SLog("here\n");
 
                 n->set_const_false();
                 ++ctx.updates;
@@ -900,8 +901,8 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx) {
 
         if (n->binop.op == Operator::NOT && lhs->is_unary() && rhs->type == ast_node::Type::BinOp && rhs->binop.rhs->is_unary() && *lhs->p == *rhs->binop.rhs->p) {
                 // foo NOT (ipad AND foo)
-		if (traceParser)
-			SLog("here\n");
+                if (traceParser)
+                        SLog("here\n");
 
                 n->set_const_false();
                 ++ctx.updates;
@@ -929,8 +930,8 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx) {
                         ++ctx.updates;
                 }
         } else if (n->type == ast_node::Type::MatchSome) {
-		if constexpr (traceParser)
-			SLog("Normalizing MatchSome\n");
+                if constexpr (traceParser)
+                        SLog("Normalizing MatchSome\n");
 
                 for (size_t i{0}; i < n->match_some.size;) {
                         auto it = n->match_some.nodes[i];
@@ -947,13 +948,13 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx) {
                         n->set_const_false();
                         ++ctx.updates;
                 } else if (n->match_some.size == 1) {
-			// pull it out, single node
-			*n = *n->match_some.nodes[0];
-			++ctx.updates;
-		}
+                        // pull it out, single node
+                        *n = *n->match_some.nodes[0];
+                        ++ctx.updates;
+                }
 
-		if constexpr (traceParser)
-			SLog("Normalized matchsome\n");
+                if constexpr (traceParser)
+                        SLog("Normalized matchsome\n");
 
         } else if (n->type == ast_node::Type::UnaryOp) {
                 normalize(n->unaryop.expr, ctx);
@@ -986,7 +987,7 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx) {
 struct query_assign_ctx final {
         uint32_t                             nextIndex;
         std::vector<std::vector<phrase *> *> stack;
-	std::vector<phrase *> phrases;
+        std::vector<phrase *>                phrases;
 };
 
 static thread_local std::vector<ast_node *> stackTLS;
@@ -1087,12 +1088,12 @@ static void assign_query_indices(ast_node *const n, query_assign_ctx &ctx, phras
 #else
 static void assign_query_indices(ast_node *const n, query_assign_ctx &ctx) {
         if (n->is_unary()) {
-		// need to collect them all all here, in case
-		// we want to set phrase::toNextSpan to 
-		// (ctx.nextIndex  - unary_node->index)
-		// which is argulably faster and "safer" than altering the impl. of this method to 
-		// accomplish this without relying on this vector<>
-		ctx.phrases.emplace_back(n->p);
+                // need to collect them all all here, in case
+                // we want to set phrase::toNextSpan to
+                // (ctx.nextIndex  - unary_node->index)
+                // which is argulably faster and "safer" than altering the impl. of this method to
+                // accomplish this without relying on this vector<>
+                ctx.phrases.emplace_back(n->p);
 
                 if (!ctx.stack.empty())
                         ctx.stack.back()->push_back(n->p);
@@ -1148,9 +1149,9 @@ static void assign_query_indices(ast_node *const n, query_assign_ctx &ctx) {
                                                         stack.insert(stack.end(), n->match_some.nodes, n->match_some.nodes + n->match_some.size);
                                                         break;
 
-						case ast_node::Type::Dummy:
-						case ast_node::Type::ConstFalse:
-							break;
+                                                case ast_node::Type::Dummy:
+                                                case ast_node::Type::ConstFalse:
+                                                        break;
                                         }
                                 } while (!stack.empty());
                         }
@@ -1199,10 +1200,10 @@ static void assign_query_indices(ast_node *const n, query_assign_ctx &ctx) {
 std::pair<ast_node *, uint16_t> normalize_root(ast_node *root) {
 
         if (!root)
-                return { nullptr, 0 };
+                return {nullptr, 0};
 
         normalizer_ctx ctx;
-	uint16_t findex{0};
+        uint16_t       findex{0};
 
         do {
                 ctx.updates   = 0;
@@ -1210,7 +1211,6 @@ std::pair<ast_node *, uint16_t> normalize_root(ast_node *root) {
 
                 normalize(root, ctx);
         } while (ctx.updates);
-
 
         if (unlikely(ctx.tokensCnt > Limits::MaxQueryTokens)) {
                 if (traceParser)
@@ -1273,15 +1273,15 @@ std::pair<ast_node *, uint16_t> normalize_root(ast_node *root) {
 
                 assign_query_indices(root, ctx);
 
-		// We are not going to assign (it->toNextSpan = ctx.nextIndex - it->index)
-		// for each it in ctx.phrases here
-		// because that could break semantics of applications relying on the set assumption that
-		// (phrase::toNextSpan == 0) if there is no logical next token past that token/phrase
-		// (we are still going to collect them all in ctx.phrases because it's cheap and maybe
-		// we will need to do this later)
-		//
-		// We will however need to return ctx.nextIndex here
-		findex = ctx.nextIndex;
+                // We are not going to assign (it->toNextSpan = ctx.nextIndex - it->index)
+                // for each it in ctx.phrases here
+                // because that could break semantics of applications relying on the set assumption that
+                // (phrase::toNextSpan == 0) if there is no logical next token past that token/phrase
+                // (we are still going to collect them all in ctx.phrases because it's cheap and maybe
+                // we will need to do this later)
+                //
+                // We will however need to return ctx.nextIndex here
+                findex = ctx.nextIndex;
 #endif
 
 #if 0
@@ -1292,7 +1292,6 @@ std::pair<ast_node *, uint16_t> normalize_root(ast_node *root) {
 		}
 #endif
         }
-
 
         return {root, findex};
 }
@@ -1310,6 +1309,7 @@ ast_node *   ast_node::copy(simple_allocator *const a, std::vector<void *> *cons
                         np->size                               = n->p->size;
                         np->rep                                = n->p->rep;
                         np->index                              = n->p->index;
+                        np->app_phrase_id                      = n->p->app_phrase_id;
                         np->toNextSpan                         = n->p->toNextSpan;
                         np->flags                              = n->p->flags;
                         np->inputRange                         = n->p->inputRange;
@@ -1322,16 +1322,16 @@ ast_node *   ast_node::copy(simple_allocator *const a, std::vector<void *> *cons
                 } break;
 
                 case ast_node::Type::MatchSome:
-                        res->match_some.size  = n->match_some.size;
-                        res->match_some.min   = n->match_some.min;
+                        res->match_some.size = n->match_some.size;
+                        res->match_some.min  = n->match_some.min;
 
-			if (const auto required = sizeof(ast_node *) * res->match_some.size; a->can_allocate(required))
-                        	res->match_some.nodes = static_cast<ast_node **>(a->Alloc(required));
-			else {
-                        	res->match_some.nodes = static_cast<ast_node **>(malloc(required));
-				large_allocs->emplace_back(res->match_some.nodes);
-			}
-				
+                        if (const auto required = sizeof(ast_node *) * res->match_some.size; a->can_allocate(required))
+                                res->match_some.nodes = static_cast<ast_node **>(a->Alloc(required));
+                        else {
+                                res->match_some.nodes = static_cast<ast_node **>(malloc(required));
+                                large_allocs->emplace_back(res->match_some.nodes);
+                        }
+
                         for (size_t i{0}; i != res->match_some.size; ++i)
                                 res->match_some.nodes[i] = n->match_some.nodes[i]->copy(a, large_allocs);
                         break;
@@ -1368,16 +1368,16 @@ ast_node *ast_node::shallow_copy(simple_allocator *const a, std::vector<void *> 
                         break;
 
                 case ast_node::Type::MatchSome:
-                        res->match_some.size  = n->match_some.size;
-                        res->match_some.min   = n->match_some.min;
+                        res->match_some.size = n->match_some.size;
+                        res->match_some.min  = n->match_some.min;
 
-			if (const auto required = sizeof(ast_node *) * res->match_some.size; a->can_allocate(required))
-                        	res->match_some.nodes = static_cast<ast_node **>(a->Alloc(required));
-			else {
-                        	res->match_some.nodes = static_cast<ast_node **>(malloc(required));
-				large_allocs->emplace_back(res->match_some.nodes);
-			}
-			
+                        if (const auto required = sizeof(ast_node *) * res->match_some.size; a->can_allocate(required))
+                                res->match_some.nodes = static_cast<ast_node **>(a->Alloc(required));
+                        else {
+                                res->match_some.nodes = static_cast<ast_node **>(malloc(required));
+                                large_allocs->emplace_back(res->match_some.nodes);
+                        }
+
                         for (size_t i{0}; i != res->match_some.size; ++i)
                                 res->match_some.nodes[i] = n->match_some.nodes[i]->shallow_copy(a, large_allocs);
                         break;
@@ -1472,7 +1472,6 @@ bool query::normalize() {
         } else
                 return false;
 }
-
 
 bool query::can_intersect() const {
         auto &                     stack{stackTLS};
@@ -1605,6 +1604,38 @@ void ast_node::set_rewrite_range(const range_base<uint16_t, uint8_t> r) {
                         break;
 
                 case Type::MatchSome:
+			for (size_t i{0}; i != match_some.size; ++i) 
+				expr->match_some.nodes[i]->set_rewrite_range(r);
+                        break;
+
+                default:
+                        break;
+        }
+}
+
+void ast_node::set_app_phrase_id(const uint16_t id) {
+        switch (type) {
+                case Type::Token:
+                case Type::Phrase:
+                        p->app_phrase_id = id;
+                        break;
+
+                case Type::BinOp:
+                        binop.lhs->set_app_phrase_id(id);
+                        binop.rhs->set_app_phrase_id(id);
+                        break;
+
+                case Type::UnaryOp:
+                        unaryop.expr->set_app_phrase_id(id);
+                        break;
+
+                case Type::ConstTrueExpr:
+                        expr->set_app_phrase_id(id);
+                        break;
+
+                case Type::MatchSome:
+			for (size_t i{0}; i != match_some.size; ++i) 
+				expr->match_some.nodes[i]->set_app_phrase_id(id);
                         break;
 
                 default:
@@ -1633,6 +1664,8 @@ void ast_node::set_alltokens_flags(const uint16_t flags) {
                         break;
 
                 case Type::MatchSome:
+			for (size_t i{0}; i != match_some.size; ++i) 
+				expr->match_some.nodes[i]->set_alltokens_flags(flags);
                         break;
 
                 default:
@@ -1641,19 +1674,19 @@ void ast_node::set_alltokens_flags(const uint16_t flags) {
 }
 
 bool ast_node::any_leader_tokens() const {
-	auto &stack{stackTLS};
+        auto &stack{stackTLS};
 
-	stack.clear();
-	stack.emplace_back(const_cast<ast_node *>(this));
+        stack.clear();
+        stack.emplace_back(const_cast<ast_node *>(this));
         do {
                 auto n = stack.back();
 
                 stack.pop_back();
                 switch (n->type) {
-			// UPDATE:(markp) 12.04.2018
-			case ast_node::Type::ConstTrueExpr:
-				stack.emplace_back(n->expr);
-				break;
+                        // UPDATE:(markp) 12.04.2018
+                        case ast_node::Type::ConstTrueExpr:
+                                stack.emplace_back(n->expr);
+                                break;
 
                         case ast_node::Type::MatchSome:
                                 stack.insert(stack.end(), n->match_some.nodes, n->match_some.nodes + n->match_some.size);
@@ -1745,9 +1778,9 @@ bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str
                 Print(ansifmt::bold, ansifmt::color_blue, "OPTIMIZING AST", ansifmt::reset, "\n");
         }
 
-        const auto [r, i] = normalize_root(root);
+        const auto[r, i] = normalize_root(root);
 
-        root         = r;
+        root = r;
 
         final_index_ = i;
 
@@ -1815,7 +1848,7 @@ std::vector<uint16_t> query::subexpressions_offsets() const noexcept {
         auto &                      stack{stackTLS};
         std::vector<const phrase *> all;
 
-	stack.clear();
+        stack.clear();
         stack.emplace_back(root);
 
         do {
@@ -1880,7 +1913,7 @@ size_t query::subexpressions_count() const noexcept {
         std::vector<const phrase *> all;
         std::size_t                 cnt{0};
 
-	stack.clear();
+        stack.clear();
         stack.emplace_back(root);
 
         do {

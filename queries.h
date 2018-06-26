@@ -143,14 +143,14 @@ namespace Trinity {
                         EXPECT(cnt);
                         EXPECT(min <= cnt);
 
-                        res->match_some.size  = cnt;
-                        res->match_some.min   = min;
+                        res->match_some.size = cnt;
+                        res->match_some.min  = min;
 
-			if (const auto required = sizeof(ast_node *) * cnt; a.can_allocate(required))
-                        	res->match_some.nodes = a.CopyOf(nodes, cnt);
-			else {
-				throw Switch::data_error("Can't fit");
-			}
+                        if (const auto required = sizeof(ast_node *) * cnt; a.can_allocate(required))
+                                res->match_some.nodes = a.CopyOf(nodes, cnt);
+                        else {
+                                throw Switch::data_error("Can't fit");
+                        }
 
                         return res;
                 }
@@ -171,12 +171,14 @@ namespace Trinity {
                 // see query::leader_nodes() comments
                 bool any_leader_tokens() const;
 
-                // Revursively sets p->flags to `flags` to all nodes of this branch
+                // Recursively sets p->flags to `flags` to all nodes of this branch
                 //
                 // This is helpful when you for example rewrite an original query to incorporate synonyms etc
-                // and you want to know in your MatchedIndexDocumentsFilter::consume() impl if the term hit is for a token from
+                // and you want to know in your MatchedIndexDocumentsFilter::consume() impl. if the term hit is for a token from
                 // any of the tokens added to the query after the rewrite.
                 void set_alltokens_flags(const uint16_t flags);
+
+                void set_app_phrase_id(const uint16_t id);
 
                 void set_rewrite_range(const range_base<uint16_t, uint8_t>);
 
@@ -232,7 +234,7 @@ namespace Trinity {
                         // Treat AND as a regular token
                         ANDAsToken         = 1u << 2,
                         ParseConstTrueExpr = 1u << 3,
-			ParseMatchSomeExpr = 1u << 4,
+                        ParseMatchSomeExpr = 1u << 4,
                 };
 
                 str32_t           content;
@@ -245,7 +247,7 @@ namespace Trinity {
                 std::vector<str8_t> distinctTokens;
                 // facilitates parsing
                 std::vector<const char *> groupTerm;
-                char_t              lastParsedToken[255];
+                char_t                    lastParsedToken[255];
 
                 auto *alloc_node(const ast_node::Type t) {
                         return ast_node::make(allocator, t);
@@ -355,11 +357,15 @@ namespace Trinity {
                 // and maybe another 'context' score(based on personalization, popularity, recency, etc) and then fuse them together to come up with the final score.
                 //
                 // You can use it for encoding flags, and state or anything else
-                //
                 // This is not in rewrite_ctx because it's not specifically here for rewrites only.
                 //
                 // See ast_node::set_alltokens_flags()
                 query_term_flags_t flags;
+
+                // By default, this is set to 0
+                // If for example you wanted to use 2 sub-queries, and you wanted the document score to be based on wether the first or the second
+                // subequery was matched, you could assign the first sub-query app_phrase_id to 1 and for the same app_phrase_id to 2 and check accordingly.
+                uint16_t app_phrase_id;
 
                 // This is the range in the input query string
                 // This is handy for e.g spell checking runs where you want to highlight corrected tokens/phrases in the input query
@@ -434,6 +440,7 @@ namespace Trinity {
 
                 bool operator==(const phrase &o) const noexcept {
                         //WAS: if (size == o.size)
+                        // XXX: should we also check if (this->app_phrase_id == o.app_phrase_id) ?
                         if (size == o.size && flags == o.flags) {
                                 size_t i;
 
@@ -449,9 +456,10 @@ namespace Trinity {
                 static auto make(const str8_t *tokens, const size_t n, simple_allocator *const a) {
                         auto p = (phrase *)a->Alloc(sizeof(phrase) + sizeof(term) * n);
 
-                        p->flags = 0;
-                        p->rep   = 1;
+                        p->flags         = 0;
+                        p->rep           = 1;
                         p->inputRange.reset();
+                        p->app_phrase_id = 0;
                         p->toNextSpan = DefaultToNextSpan;
                         p->rewrite_ctx.range.reset();
                         p->rewrite_ctx.srcSeqSize             = 1;
@@ -477,9 +485,8 @@ namespace Trinity {
                 // parse() will set tokensParser; this may come in handy elsewhere, e.g see rewrite_query() impl.
                 std::pair<uint32_t, uint8_t> (*tokensParser)(const str32_t, char_t *, const bool);
 
-		// if we can't satisfy the allocation, we use malloc() and keep track of that here
-		std::vector<void *> large_allocs;
-
+                // if we can't satisfy the allocation, we use malloc() and keep track of that here
+                std::vector<void *> large_allocs;
 
                 // Normalize a query.
                 // This is invoked when you initially parse the query, but if you
@@ -522,10 +529,10 @@ namespace Trinity {
                     : root{nullptr}, final_index_{0}, tokensParser{nullptr} {
                 }
 
-		~query() {
-			for (auto p : large_allocs)
-				std::free(p);
-		}
+                ~query() {
+                        for (auto p : large_allocs)
+                                std::free(p);
+                }
 
                 inline operator bool() const noexcept {
                         return root;
@@ -595,7 +602,7 @@ namespace Trinity {
                 //
                 // XXX: This is not a particularly optimal implementation
                 // make sure you have normalize()d the query before invoking this method
-		// This is equivalent to subexpressions_offsets().size()
+                // This is equivalent to subexpressions_offsets().size()
                 size_t subexpressions_count() const noexcept;
 
                 // This returns the phrase::index for all query subexpressions
@@ -671,10 +678,10 @@ namespace Trinity {
 
                                         case ast_node::Type::MatchSome:
                                                 for (size_t i{0}; i != n->match_some.size; ++i) {
-							// we shouldn't be treating whatever's here as a run
-							// we should treat each as a new segment
+                                                        // we shouldn't be treating whatever's here as a run
+                                                        // we should treat each as a new segment
                                                         stack.push_back({++segments, n->match_some.nodes[i]});
-						}
+                                                }
                                                 break;
 
                                         case ast_node::Type::BinOp:
@@ -740,8 +747,8 @@ namespace Trinity {
         };
 } // namespace Trinity
 
-void        PrintImpl(Buffer &b, const Trinity::ast_node &n);
-void        PrintImpl(Buffer &b, const Trinity::phrase &);
+void PrintImpl(Buffer &b, const Trinity::ast_node &n);
+void PrintImpl(Buffer &b, const Trinity::phrase &);
 
 inline void PrintImpl(Buffer &b, const Trinity::query &q) {
         if (q.root)
