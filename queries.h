@@ -591,10 +591,11 @@ namespace Trinity {
 
                 // Computes number of sub-expressions, whereas sub-expressions are collated using AND operators
                 // OR expressions are properly counted as one, e.g
-                //  (usa OR (unites states of (america OR americas))) is a single expression
+                //  (usa OR (united states of (america OR americas))) is a single expression
                 //
                 // XXX: This is not a particularly optimal implementation
                 // make sure you have normalize()d the query before invoking this method
+		// This is equivalent to subexpressions_offsets().size()
                 size_t subexpressions_count() const noexcept;
 
                 // This returns the phrase::index for all query subexpressions
@@ -623,7 +624,7 @@ namespace Trinity {
                         // Just set all nodes _except_ the first to dummy
                         // and replace value of the first with the newExprNode
 
-                        for (uint32_t i{1}; i < cnt; ++i)
+                        for (size_t i{1}; i < cnt; ++i)
                                 run[i]->set_dummy();
 
                         *run[0] = *newExprNode;
@@ -741,6 +742,7 @@ namespace Trinity {
 
 void        PrintImpl(Buffer &b, const Trinity::ast_node &n);
 void        PrintImpl(Buffer &b, const Trinity::phrase &);
+
 inline void PrintImpl(Buffer &b, const Trinity::query &q) {
         if (q.root)
                 b.append(*q.root);

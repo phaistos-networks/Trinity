@@ -257,6 +257,9 @@ namespace Trinity {
                 }
 
 #define TRINITY_LASTBANK_OPTIMIZATION 1
+                // to do away with (lastBank != nullptr) tests
+                // we can instead assign lastBank to (&docstracker_bank::dummy_bank)
+                // and because its base is set to an 'impossible' value, it will work great
 
                 std::unordered_map<str8_t, exec_term_id_t> termsDict;
                 // TODO: determine suitable allocator bank size based on some meaningful metric
@@ -273,9 +276,6 @@ namespace Trinity {
 #ifndef TRINITY_LASTBANK_OPTIMIZATION
                 docstracker_bank *                                                    lastBank{nullptr};
 #else
-                // to do away with (lastBank != nullptr) tests
-                // we can instead assign lastBank to (&docstracker_bank::dummy_bank)
-                // and because its base is set to an 'impossible' value, it will work great
                 docstracker_bank *lastBank{&docstracker_bank::dummy_bank};
 #endif
 
@@ -343,4 +343,3 @@ namespace Trinity {
                 void prepare_match(candidate_document *);
         };
 } // namespace Trinity
-
