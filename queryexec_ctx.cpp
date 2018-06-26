@@ -46,6 +46,7 @@ void Trinity::queryexec_ctx::gc_retained_docs(const isrc_docid_t base) {
         // ring size a power of a 2. That way, we will only need to manipulate two indices, and not bother
         // with memmove(), at the expense of higher iteration costs. Need to consider that alternative impl.
 
+	// back
         while (cnt) {
                 if (auto r = tracked_docrefs.data[cnt - 1]; base > r->id) {
                         forget_document(r);
@@ -55,6 +56,7 @@ void Trinity::queryexec_ctx::gc_retained_docs(const isrc_docid_t base) {
                         break;
         }
 
+	// front
         while (n < cnt) {
                 if (auto r = tracked_docrefs.data[n]; base > r->id) {
                         forget_document(r);
@@ -80,7 +82,7 @@ Codecs::PostingsListIterator *Trinity::queryexec_ctx::reg_pli(Codecs::PostingsLi
         if (accumScoreMode)
                 wrap_iterator(this, it);
 
-        allIterators.push_back(it);
+        allIterators.emplace_back(it);
         return it;
 }
 
@@ -93,7 +95,7 @@ DocsSetIterators::Iterator *Trinity::queryexec_ctx::reg_docset_it(DocsSetIterato
                 res = static_cast<IteratorScorer *>(it->rdp)->iterator();
         }
 
-        docsetsIterators.push_back(it);
+        docsetsIterators.emplace_back(it);
         return res;
 }
 
@@ -248,42 +250,6 @@ queryexec_ctx::decode_ctx_struct::~decode_ctx_struct() {
                 std::free(decoders);
 }
 
-#if 0 // SOLVED
-static void will_materialize(void *ptr, const isrc_docid_t did, const uint32_t ref, Trinity::candidate_document *cd)
-{
-        static std::unordered_map<uintptr_t, std::unique_ptr<std::unordered_set<isrc_docid_t>>> map;
-        auto res = map.emplace(uintptr_t(ptr), std::unique_ptr<std::unordered_set<isrc_docid_t>>{});
-	static void *tracked{nullptr};
-	static void *tracked_cd{nullptr};
-
-	if (tracked_cd && did != 2155079078)
-	{
-		SLog("TRACKED CD already and now ", did, " ", ref, "\n");
-	}
-
-        if (res.second)
-                res.first->second.reset(new std::unordered_set<isrc_docid_t>());
-
-        auto s = res.first->second.get();
-
-        if (!s->insert(did).second)
-	{
-		Print("ALREADY materialized hits for ", ptr_repr(ptr), " ", did, ", ref = ", ref, "\n");
-		exit(1);
-	}
-
-	if (did == 2155079078)
-	{
-		SLog("OK materialized now at ", ref, "\n");
-		tracked = ptr;
-		tracked_cd = cd;
-	}
-	else if (tracked == ptr)
-	{
-		SLog("TRACKED now set to ", did, "\n");
-	}
-}
-#endif
 
 // In practice, this is only used by DocsSetIterators::Phrase::consider_phrase_match()
 Trinity::term_hits *candidate_document::materialize_term_hits(queryexec_ctx *rctx, Codecs::PostingsListIterator *const it, const exec_term_id_t termID) {
@@ -292,8 +258,6 @@ Trinity::term_hits *candidate_document::materialize_term_hits(queryexec_ctx *rct
 
         if (th->doc_id != did) {
                 const auto docHits = it->freq;
-
-                //will_materialize(it, did, __LINE__, this);
 
                 th->set_docid(did);
                 th->set_freq(docHits);
@@ -530,8 +494,8 @@ void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const do
                 if (trace)
                         SLog(ansifmt::color_green, "term id ", tid, ansifmt::reset, "\n");
 
-                if (const auto *const qti = originalQueryTermCtx[tid]) // not in a NOT branch
-                {
+                if (const auto *const qti = originalQueryTermCtx[tid]) {
+                        // not in a NOT branch
                         if (trace)
                                 SLog("YES, qti ", doc->curDocQueryTokensCaptured[tid], " ", doc->curDocSeq, "\n");
 
@@ -552,8 +516,6 @@ void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const do
 
                                         if (trace)
                                                 SLog(ansifmt::bold, ansifmt::color_green, "YES, need to materialize freq = ", docHits, ansifmt::reset, " ", ptr_repr(it), "\n");
-
-                                        //will_materialize(it, did, __LINE__, doc);
 
                                         th->set_docid(did);
                                         th->set_freq(docHits);
@@ -607,7 +569,7 @@ Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document(const isrc_
 
 #ifdef USE_BANKS
 Trinity::docstracker_bank *Trinity::queryexec_ctx::new_bank(const Trinity::isrc_docid_t base) {
-        if (reusableBanks.size()) {
+        if (!reusableBanks.empty()) {
                 auto b = reusableBanks.back();
 
                 reusableBanks.pop_back();
@@ -621,9 +583,11 @@ Trinity::docstracker_bank *Trinity::queryexec_ctx::new_bank(const Trinity::isrc_
                 b->setCnt = 0;
 
                 lastBank = b;
-                banks.push_back(b);
+                banks.emplace_back(b);
                 return b;
         }
+
+
 
         auto b = new docstracker_bank();
 
@@ -636,7 +600,7 @@ Trinity::docstracker_bank *Trinity::queryexec_ctx::new_bank(const Trinity::isrc_
         b->setCnt = 0;
 
         lastBank = b;
-        banks.push_back(b);
+        banks.emplace_back(b);
 
         return b;
 }
@@ -646,19 +610,27 @@ void Trinity::queryexec_ctx::forget_document_inbank(Trinity::candidate_document 
         auto       b  = bank_for(id);
 
         if (1 == b->setCnt--) {
-                if (lastBank == b)
+                if (lastBank == b) {
+#if 0
                         lastBank = nullptr;
+#else
+			lastBank = &docstracker_bank::dummy_bank;
+#endif
+		}
 
-                for (size_t i{0}; i != banks.size(); ++i) {
-                        if (banks[i] == b) {
-                                banks[i] = banks.back();
+		// TODO: use an STL algorithm for this instead?
+		const auto banks_size{banks.size()};
+		auto banks_data{banks.data()};
+
+                for (size_t i{0}; i != banks_size; ++i) {
+                        if (banks_data[i] == b) {
+                                banks_data[i] = banks_data[banks_size - 1];
                                 banks.pop_back();
                                 break;
                         }
                 }
 
-                reusableBanks.push_back(b);
-                lastBank = nullptr;
+                reusableBanks.emplace_back(b);
         } else {
                 const auto idx = id - b->base;
 

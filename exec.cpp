@@ -160,6 +160,7 @@ static exec_node prepare_tree(exec_node root, queryexec_ctx &rctx) {
 
                                 if constexpr (traceCompile)
                                         SLog("AND ", termID, " ", rctx.term_ctx(termID).documents, "\n");
+
                                 v.emplace_back(termID, rctx.term_ctx(termID).documents);
                         }
 
@@ -342,14 +343,14 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                                 auto internal = static_cast<DocsSetIterators::Disjunction *>(it);
 
                                 while (internal->pq.size()) {
-                                        its.push_back(internal->pq.top());
+                                        its.emplace_back(internal->pq.top());
                                         internal->pq.pop();
                                 }
                         } else if (it->type == DocsSetIterators::Type::DisjunctionAllPLI) {
                                 auto internal = static_cast<DocsSetIterators::DisjunctionAllPLI *>(it);
 
                                 while (internal->pq.size()) {
-                                        its.push_back(internal->pq.top());
+                                        its.emplace_back(internal->pq.top());
                                         internal->pq.pop();
                                 }
                         } else
@@ -365,6 +366,7 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
         } else if (n.fp == ENT::logicaland) {
                 const auto e = static_cast<const compilation_ctx::binop_ctx *>(n.ptr);
 
+		// specialize
                 if (e->lhs.fp == ENT::consttrueexpr) {
                         const auto op = static_cast<const compilation_ctx::unaryop_ctx *>(e->lhs.ptr);
 
@@ -380,11 +382,12 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                         for (size_t i{0}; i != 2; ++i) {
                                 auto it = v[i];
 
+				// see ENT::logicalor optimization
                                 if (it->type == DocsSetIterators::Type::Conjuction || it->type == DocsSetIterators::Type::ConjuctionAllPLI) {
                                         const auto internal = static_cast<DocsSetIterators::Conjuction *>(it);
 
                                         for (size_t i{0}; i != internal->size; ++i)
-                                                its.push_back(internal->its[i]);
+                                                its.emplace_back(internal->its[i]);
                                 } else
                                         its.push_back(it);
                         }
@@ -402,7 +405,7 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
 
                 its.reserve(g->size);
                 for (size_t i{0}; i != g->size; ++i)
-                        its.push_back(build_iterator(g->nodes[i], execFlags));
+                        its.emplace_back(build_iterator(g->nodes[i], execFlags));
 
                 return reg_docset_it(all_pli(its)
                                          ? static_cast<DocsSetIterators::Iterator *>(new DocsSetIterators::ConjuctionAllPLI(its.data(), its.size()))
@@ -413,7 +416,7 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
 
                 its.reserve(g->size);
                 for (size_t i{0}; i != g->size; ++i)
-                        its.push_back(build_iterator(g->nodes[i], execFlags));
+                        its.emplace_back(build_iterator(g->nodes[i], execFlags));
 
                 return reg_docset_it(all_pli(its)
                                          ? static_cast<DocsSetIterators::Iterator *>(new DocsSetIterators::DisjunctionAllPLI(its.data(), its.size()))
@@ -452,7 +455,7 @@ static std::unique_ptr<DocsSetSpan> build_span(DocsSetIterators::Iterator *root,
                 std::vector<Trinity::DocsSetIterators::Iterator *> its;
 
                 for (auto it{d->lead}; it; it = it->next)
-                        its.push_back(it->it);
+                        its.emplace_back(it->it);
 
                 // Either DocsSetSpanForDisjunctionsWithThresholdAndCost or DocsSetSpanForDisjunctionsWithThreshold
                 // take the same time if we are dealing with iterators that are just PostingsListIterator
@@ -466,12 +469,12 @@ static std::unique_ptr<DocsSetSpan> build_span(DocsSetIterators::Iterator *root,
                 switch (root->type) {
                         case DocsSetIterators::Type::Disjunction:
                                 for (auto containerIt : static_cast<DocsSetIterators::Disjunction *>(root)->pq)
-                                        its.push_back(containerIt);
+                                        its.emplace_back(containerIt);
                                 break;
 
                         case DocsSetIterators::Type::DisjunctionAllPLI:
                                 for (auto containerIt : static_cast<DocsSetIterators::DisjunctionAllPLI *>(root)->pq)
-                                        its.push_back(containerIt);
+                                        its.emplace_back(containerIt);
                                 break;
 
                         default:
@@ -566,7 +569,7 @@ void Trinity::exec_query(const query &in,
                         switch (n->type) {
                                 case ast_node::Type::Token:
                                 case ast_node::Type::Phrase:
-                                        collected.push_back(n->p);
+                                        collected.emplace_back(n->p);
                                         break;
 
                                 case ast_node::Type::MatchSome:
@@ -575,19 +578,19 @@ void Trinity::exec_query(const query &in,
 
                                 case ast_node::Type::UnaryOp:
                                         if (n->unaryop.op != Operator::NOT)
-                                                stack.push_back(n->unaryop.expr);
+                                                stack.emplace_back(n->unaryop.expr);
                                         break;
 
                                 case ast_node::Type::ConstTrueExpr:
-                                        stack.push_back(n->expr);
+                                        stack.emplace_back(n->expr);
                                         break;
 
                                 case ast_node::Type::BinOp:
                                         if (n->binop.op == Operator::AND || n->binop.op == Operator::STRICT_AND || n->binop.op == Operator::OR) {
-                                                stack.push_back(n->binop.lhs);
-                                                stack.push_back(n->binop.rhs);
+                                                stack.emplace_back(n->binop.lhs);
+                                                stack.emplace_back(n->binop.rhs);
                                         } else if (n->binop.op == Operator::NOT)
-                                                stack.push_back(n->binop.lhs);
+                                                stack.emplace_back(n->binop.lhs);
                                         break;
 
                                 default:
@@ -595,8 +598,8 @@ void Trinity::exec_query(const query &in,
                         }
                 } while (!stack.empty());
 
-                for (const auto it : collected) // collected phrases
-                {
+                // collected phrases
+                for (const auto it : collected) {
                         const uint8_t rep = it->size == 1 ? it->rep : 1;
                         const auto    toNextSpan{it->toNextSpan};
                         const auto    flags{it->flags};
@@ -697,11 +700,11 @@ void Trinity::exec_query(const query &in,
                         if constexpr (traceCompile)
                                 SLog("Collecting token [", token, "]\n");
 
-                        if (const auto termID = rctx.termsDict[token]) // only if this token has actually been used in the compiled query
-                        {
+			// only if this token has actually been used in the compiled query
+                        if (const auto termID = rctx.termsDict[token]) {
                                 collected.clear();
                                 do {
-                                        collected.push_back(p);
+                                        collected.emplace_back(p);
                                 } while (++p != e && p->token == token);
 
                                 if constexpr (traceCompile)
@@ -816,7 +819,7 @@ void Trinity::exec_query(const query &in,
                                 do {
                                         const auto info = p->second;
 
-                                        list.push_back(info);
+                                        list.emplace_back(info);
                                         do {
                                                 ++p;
                                         } while (p != e && p->first == idx && p->second == info);
@@ -862,6 +865,7 @@ void Trinity::exec_query(const query &in,
                 // this is probably a good idea (improved cache locality)
                 // but not likely a great idea
 #define DOCSONLY_BATCH_SIZE 0
+
 
 #pragma mark Execution
         try {

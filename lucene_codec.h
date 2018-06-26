@@ -221,7 +221,7 @@ namespace Trinity {
                                 FastPForLib::FastPFor<4> forUtil;
 #endif
 
-                                struct skiplist_struct {
+                                struct skiplist_struct final {
                                         skiplist_entry *data;
                                         uint16_t        size{0};
 

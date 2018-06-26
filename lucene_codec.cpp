@@ -635,19 +635,20 @@ uint32_t Trinity::Codecs::Lucene::Decoder::skiplist_search(PostingsListIterator 
 	  jne .L4
 	*
 	*/
-                  // which is pretty good - no branches, and few instructions
-                  const auto  idx{it->skipListIdx};
-                  const auto *data = skiplist.data + idx;
-                  uint32_t    n    = skiplist.size - idx;
+        // which is pretty good - no branches, and few instructions
 
-                  while (const auto h = n / 2) {
-                const auto m = data + h;
+	const auto  idx{it->skipListIdx};
+	const auto *data = skiplist.data + idx;
+	uint32_t    n    = skiplist.size - idx;
 
-                data = (m->lastDocID < target) ? m : data;
-                n -= h;
-                  }
+	while (const auto h = n / 2) {
+		const auto m = data + h;
 
-                  return target > data->lastDocID ? data - skiplist.data : UINT32_MAX;
+		data = (m->lastDocID < target) ? m : data;
+		n -= h;
+	}
+
+	return target > data->lastDocID ? data - skiplist.data : UINT32_MAX;
 #endif
 }
 
