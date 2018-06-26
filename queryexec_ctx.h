@@ -256,6 +256,8 @@ namespace Trinity {
                         return res;
                 }
 
+#define TRINITY_LASTBANK_OPTIMIZATION 1
+
                 std::unordered_map<str8_t, exec_term_id_t> termsDict;
                 // TODO: determine suitable allocator bank size based on some meaningful metric
                 // e.g total distinct tokens in the query, otherwise we may just end up allocating more memory than
@@ -268,7 +270,7 @@ namespace Trinity {
                 std::unordered_map<exec_term_id_t, std::pair<term_index_ctx, str8_t>> tctxMap;
                 std::vector<DocsSetIterators::Iterator *>                             docsetsIterators;
                 std::vector<Codecs::PostingsListIterator *>                           allIterators;
-#if 0
+#ifndef TRINITY_LASTBANK_OPTIMIZATION
                 docstracker_bank *                                                    lastBank{nullptr};
 #else
                 // to do away with (lastBank != nullptr) tests
@@ -291,7 +293,7 @@ namespace Trinity {
                 inline docstracker_bank *bank_for(const Trinity::isrc_docid_t id) {
                         const auto base = id & (~(docstracker_bank::SIZE - 1)); // rounded down
 
-#if 0
+#ifndef TRINITY_LASTBANK_OPTIMIZATION
                         if (lastBank && lastBank->base == base)
 #else
                         if (lastBank->base == base)

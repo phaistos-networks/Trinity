@@ -16,7 +16,9 @@ using namespace Trinity;
 static constexpr const bool trace_docrefs{false};
 
 
+#ifdef TRINITY_LASTBANK_OPTIMIZATION
 docstracker_bank docstracker_bank::dummy_bank{true};
+#endif
 
 void Trinity::queryexec_ctx::track_docref(candidate_document *doc) {
         track_document(doc);
@@ -617,7 +619,7 @@ void Trinity::queryexec_ctx::forget_document_inbank(Trinity::candidate_document 
         if (1 == b->setCnt--) {
 		// No remaining documents in tracked in this bank
                 if (lastBank == b) {
-#if 0
+#ifndef TRINITY_LASTBANK_OPTIMIZATION
                         lastBank = nullptr;
 #else
 			lastBank = &docstracker_bank::dummy_bank;
