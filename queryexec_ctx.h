@@ -58,7 +58,6 @@ namespace Trinity {
                         candidate_document *document;
                 };
 
-
 #ifdef BANKS_USE_BM
                 uint64_t *const bm;
 #endif
@@ -73,7 +72,7 @@ namespace Trinity {
                 {
                 }
 
-		// special constructor for dummy_bank
+                // special constructor for dummy_bank
                 docstracker_bank(const bool)
                     : base{std::numeric_limits<isrc_docid_t>::max()}, entries {
                         nullptr
@@ -96,9 +95,7 @@ namespace Trinity {
                 static docstracker_bank dummy_bank;
         };
 
-	docstracker_bank docstracker_bank::dummy_bank{true};
-
-        struct iterators_collector {
+        struct iterators_collector final {
                 Codecs::PostingsListIterator **data{nullptr};
                 uint16_t                       cnt{0};
 
@@ -152,7 +149,7 @@ namespace Trinity {
                 // we just track all created DocsSetIterators::Iterators along with its type, and in ~queryexec_ctx() we consider the type, cast and delete it
                 DocsSetIterators::Iterator *reg_docset_it(DocsSetIterators::Iterator *it);
 
-		// This is specific to PostingsListIterator`s
+                // This is specific to PostingsListIterator`s
                 Codecs::PostingsListIterator *reg_pli(Codecs::PostingsListIterator *it);
 
                 // indexed by termID
@@ -178,7 +175,7 @@ namespace Trinity {
                         uint32_t capacity{0};
                 } tracked_docrefs;
 
-                struct _reusable_cds {
+                struct _reusable_cds final {
                         candidate_document **data{nullptr};
                         uint16_t             size_{0}, capacity{0};
 
@@ -208,23 +205,41 @@ namespace Trinity {
                         }
                 }
 
+                // To support phrases semantics, where we need access to a document's materialized hits for 2+ terms
+                // we will need to materialise those documents in DocsSetIterators::Phrase::consider_phrase_match()
+                // so that will both be able to use the materialised (document, term) hits later if required(i.e won't need
+                // to materialise again) and to both be able to efficiently stop tracking those documents if they are no longer needed
                 void gc_retained_docs(const isrc_docid_t);
 
                 void track_docref(candidate_document *);
 
+// use of banks provides a noticeable speedup
+// 393ms down to 340ms. Not a huge difference, but it's welcome(~13%)
+#define USE_BANKS 1
+
+#ifdef USE_BANKS
+                inline candidate_document *lookup_document(const isrc_docid_t id) {
+                        return lookup_document_inbank(id);
+                }
+
+                inline void forget_document(candidate_document *doc) {
+                        forget_document_inbank(doc);
+                }
+#else
                 candidate_document *lookup_document(const isrc_docid_t);
+
+                void forget_document(candidate_document *);
+#endif
 
                 candidate_document *document_by_id(const isrc_docid_t id) {
                         if (id <= maxTrackedDocumentID) {
                                 if (auto ptr = lookup_document_inbank(id)) {
-                                        require(ptr->id == id);
                                         return ptr->retained();
                                 }
                         }
 
                         auto *const res = reusableCDS.pop_one() ?: new candidate_document(this);
 
-                        require(res->id == 0);
                         res->id       = id;
                         res->dwsInUse = false;
 
@@ -241,8 +256,6 @@ namespace Trinity {
                         return res;
                 }
 
-                void forget_document(candidate_document *);
-
                 std::unordered_map<str8_t, exec_term_id_t> termsDict;
                 // TODO: determine suitable allocator bank size based on some meaningful metric
                 // e.g total distinct tokens in the query, otherwise we may just end up allocating more memory than
@@ -258,15 +271,11 @@ namespace Trinity {
 #if 0
                 docstracker_bank *                                                    lastBank{nullptr};
 #else
-		// to do away with (lastBank != nullptr) tests
-		// we can instead assign lastBank to (&docstracker_bank::dummy_bank)
-		// and because its base is set to an 'impossible' value, it will work great
-		docstracker_bank *lastBank{&docstracker_bank::dummy_bank};
+                // to do away with (lastBank != nullptr) tests
+                // we can instead assign lastBank to (&docstracker_bank::dummy_bank)
+                // and because its base is set to an 'impossible' value, it will work great
+                docstracker_bank *lastBank{&docstracker_bank::dummy_bank};
 #endif
-
-// use of banks provides a noticeable speedup
-// 393ms down to 340ms. Not a huge difference, but it's welcome(~13%)
-#define USE_BANKS 1
 
                 struct
                 {
@@ -312,23 +321,24 @@ namespace Trinity {
 
                 void forget_document_inbank(candidate_document *);
 
+		// track_document() is responsible for tracking the document lookup_document_inbank() can later query for
                 candidate_document *lookup_document_inbank(const isrc_docid_t);
 
                 void track_document_inbank(candidate_document *);
-#endif
 
-                void prepare_match(candidate_document *);
-
+                inline void track_document(candidate_document *doc) {
+                        track_document_inbank(doc);
+                }
+#else
                 inline void track_document(candidate_document *const doc) {
-#ifndef USE_BANKS
                         auto &v = trackedDocuments[doc->id & (sizeof_array(trackedDocuments) - 1)];
 
                         v.emplace_back(doc);
-#else
-                        track_document_inbank(doc);
-#endif
                         maxTrackedDocumentID = std::max(maxTrackedDocumentID, doc->id);
                 }
+#endif
+
+                void prepare_match(candidate_document *);
         };
 } // namespace Trinity
 

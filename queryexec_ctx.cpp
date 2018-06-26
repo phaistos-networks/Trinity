@@ -15,6 +15,9 @@ using namespace Trinity;
 // TODO: quantify that overhead
 static constexpr const bool trace_docrefs{false};
 
+
+docstracker_bank docstracker_bank::dummy_bank{true};
+
 void Trinity::queryexec_ctx::track_docref(candidate_document *doc) {
         track_document(doc);
 
@@ -37,14 +40,16 @@ void Trinity::queryexec_ctx::gc_retained_docs(const isrc_docid_t base) {
         // Trim back, and front
         // this is not optimal because the documents are not ordered by id in tracked_docrefs.data[]
         // but short of using e.g a binary heap/prio.queue, which would provide this guarantee, at the expense of
-        // higher maintenance, this is an good compromise.
+        // higher maintenance, this is a good compromise.
         //
         // The only problem is that we are likely tracking too many candidate_document instances
         // and this could mean more memory pressure.
         //
         // TODO: we can eliminate memmove() by using a ring instead (front_index, back_index), and making
         // ring size a power of a 2. That way, we will only need to manipulate two indices, and not bother
-        // with memmove(), at the expense of higher iteration costs. Need to consider that alternative impl.
+        // with memmove(), at the expense of higher iteration costs. Need to consider that alternative impl., and the
+	// cost of memmove() -- it may not be worth it.
+
 
 	// back
         while (cnt) {
@@ -527,16 +532,12 @@ void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const do
         }
 }
 
+
+#ifndef USE_BANKS
 void Trinity::queryexec_ctx::forget_document(candidate_document *const doc) {
-#ifdef USE_BANKS
-        forget_document_inbank(doc);
-#endif
 }
 
 Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document(const isrc_docid_t id) {
-#ifdef USE_BANKS
-        return lookup_document_inbank(id);
-#else
         auto &v = trackedDocuments[id & (sizeof_array(trackedDocuments) - 1)];
 
         if (traceBindings)
@@ -564,8 +565,10 @@ Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document(const isrc_
                         ++i;
         }
         return nullptr;
-#endif
 }
+#endif
+
+
 
 #ifdef USE_BANKS
 Trinity::docstracker_bank *Trinity::queryexec_ctx::new_bank(const Trinity::isrc_docid_t base) {
@@ -573,6 +576,7 @@ Trinity::docstracker_bank *Trinity::queryexec_ctx::new_bank(const Trinity::isrc_
                 auto b = reusableBanks.back();
 
                 reusableBanks.pop_back();
+
 #ifdef BANKS_USE_BM
                 memset(b->bm, 0, docstracker_bank::BM_SIZE * sizeof(uint64_t));
 #else
@@ -596,6 +600,7 @@ Trinity::docstracker_bank *Trinity::queryexec_ctx::new_bank(const Trinity::isrc_
 #else
         memset(b->entries, 0, sizeof(docstracker_bank::entry) * docstracker_bank::SIZE);
 #endif
+
         b->base   = base;
         b->setCnt = 0;
 
@@ -610,6 +615,7 @@ void Trinity::queryexec_ctx::forget_document_inbank(Trinity::candidate_document 
         auto       b  = bank_for(id);
 
         if (1 == b->setCnt--) {
+		// No remaining documents in tracked in this bank
                 if (lastBank == b) {
 #if 0
                         lastBank = nullptr;
