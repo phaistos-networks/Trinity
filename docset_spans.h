@@ -6,8 +6,9 @@
 #include "docset_iterators.h"
 
 namespace Trinity {
-        // DocsSetSpan::process() requires a MatchesProxy *. It's process() method
+        // DocsSetSpan::process() requires a MatchesProxy *. Its process() method
         // will be invoked for every matched document.
+	//
         // The relevant_document_provider::document() and relevant_document_provider::score()
         // can be used by MatchesProxy subclasses to accomplish whatever's necessary.
         class MatchesProxy {
@@ -24,10 +25,10 @@ namespace Trinity {
         // for higher performance.
         //
         // There only two methods subclasses override.
-        // process() which will
+        // process():
         // process the span/range [min, max), i.e from min inclusive, to max exclusive
         // and will return an estimate of the next matching document, after max(unless max == DocIDsEND)
-        // and cost() which should
+        // cost():
         // return the evaluation cost; usually by considering the managed
         // iterators or sub-spans.
         //
@@ -352,8 +353,8 @@ namespace Trinity {
         };
 
         // This is similar to DocsSetSpanForDisjunctionsWithSpans, except
-        // except that it relies on the (leads, head, tail) scheme used in
-        // DisjunctionSome for efficiency (though this only makes sense if e.g
+        // that it relies on the (leads, head, tail) scheme used in
+        // Lucene's DisjunctionSome for efficiency (though this only makes sense if e.g
         // you know that evaluating iterators can be expensive to be worth it)
         class DocsSetSpanForDisjunctionsWithSpansAndCost final
             : public DocsSetSpan {

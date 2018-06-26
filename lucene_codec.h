@@ -23,23 +23,17 @@ static_assert(sizeof(Trinity::isrc_docid_t) <= sizeof(uint32_t));
 #define LUCENE_USE_FASTPFOR 1
 #endif
 
-
-
-namespace Trinity
-{
-        namespace Codecs
-        {
-                namespace Lucene
-                {
+namespace Trinity {
+        namespace Codecs {
+                namespace Lucene {
 
 #define LUCENE_SKIPLIST_SEEK_EARLY 1
 #define LUCENE_LAZY_SKIPLIST_INIT 1
 
-// We can't use this encoding idea because we can't handle deltas >=
-// (DocIDsEND>>1), so that if e.g the first document ID for a term
-// is (1<<31) + 15, this will fail. However, see IndexSource::translate_docid() for how that would work with docIDs translations
-//#define LUCENE_ENCODE_FREQ1_DOCDELTA 1
-
+                // We can't use this encoding idea because we can't handle deltas >=
+                // (DocIDsEND>>1), so that if e.g the first document ID for a term
+                // is (1<<31) + 15, this will fail. However, see IndexSource::translate_docid() for how that would work with docIDs translations
+                //#define LUCENE_ENCODE_FREQ1_DOCDELTA 1
 
 #ifdef LUCENE_USE_MASKEDVBYTE
                         static constexpr size_t BLOCK_SIZE{64};
@@ -49,36 +43,31 @@ namespace Trinity
                         static constexpr size_t SKIPLIST_STEP{1}; // every (SKIPLIST_STEP * BLOCK_SIZE) documents
 
                         struct IndexSession final
-                            : public Trinity::Codecs::IndexSession
-                        {
+                            : public Trinity::Codecs::IndexSession {
 #ifdef LUCENE_USE_FASTPFOR
                                 FastPForLib::FastPFor<4> forUtil; // handy for merge()
 #endif
-
 
                                 // TODO: support for periodic flushing
                                 // i.e in either Encoder::end_term() or Encoder::end_document()
                                 IOBuffer positionsOut;
                                 uint32_t positionsOutFlushed;
-                                int positionsOutFd;
+                                int      positionsOutFd;
                                 uint32_t flushFreq;
 
                                 // private
                                 void flush_positions_data();
 
                                 IndexSession(const char *bp)
-                                    : Trinity::Codecs::IndexSession{bp, unsigned(Capabilities::AppendIndexChunk) | unsigned(Capabilities::Merge)}, positionsOutFlushed{0}, positionsOutFd{-1}, flushFreq{0}
-                                {
+                                    : Trinity::Codecs::IndexSession{bp, unsigned(Capabilities::AppendIndexChunk) | unsigned(Capabilities::Merge)}, positionsOutFlushed{0}, positionsOutFd{-1}, flushFreq{0} {
                                 }
 
-                                ~IndexSession()
-                                {
+                                ~IndexSession() {
                                         if (positionsOutFd != -1)
                                                 close(positionsOutFd);
                                 }
 
-                                constexpr void set_flush_freq(const uint32_t f)
-                                {
+                                constexpr void set_flush_freq(const uint32_t f) {
                                         flushFreq = f;
                                 }
 
@@ -88,8 +77,7 @@ namespace Trinity
 
                                 Trinity::Codecs::Encoder *new_encoder() override final;
 
-                                strwlen8_t codec_identifier() override final
-                                {
+                                strwlen8_t codec_identifier() override final {
                                         return "LUCENE"_s8;
                                 }
 
@@ -99,11 +87,9 @@ namespace Trinity
                         };
 
                         class Encoder final
-                            : public Trinity::Codecs::Encoder
-                        {
+                            : public Trinity::Codecs::Encoder {
                               private:
-                                struct skiplist_entry final
-                                {
+                                struct skiplist_entry final {
                                         // offset to the index relative to the term base offset
                                         uint32_t indexOffset;
                                         // previous to the first document id in the block
@@ -118,17 +104,17 @@ namespace Trinity
 
                               private:
                                 std::vector<skiplist_entry> skiplist;
-                                isrc_docid_t lastDocID;
-                                uint32_t docDeltas[BLOCK_SIZE], docFreqs[BLOCK_SIZE], hitPayloadSizes[BLOCK_SIZE], hitPosDeltas[BLOCK_SIZE];
-                                uint32_t buffered, totalHits, sumHits;
-                                uint32_t termDocuments;
-                                tokenpos_t lastPosition;
-                                uint32_t termIndexOffset, termPositionsOffset;
+                                isrc_docid_t                lastDocID;
+                                uint32_t                    docDeltas[BLOCK_SIZE], docFreqs[BLOCK_SIZE], hitPayloadSizes[BLOCK_SIZE], hitPosDeltas[BLOCK_SIZE];
+                                uint32_t                    buffered, totalHits, sumHits;
+                                uint32_t                    termDocuments;
+                                tokenpos_t                  lastPosition;
+                                uint32_t                    termIndexOffset, termPositionsOffset;
 #ifdef LUCENE_USE_FASTPFOR
                                 FastPForLib::FastPFor<4> forUtil;
 #endif
-                                IOBuffer payloadsBuf;
-                                uint32_t skiplistCountdown, lastHitsBlockOffset, lastHitsBlockTotalHits;
+                                IOBuffer       payloadsBuf;
+                                uint32_t       skiplistCountdown, lastHitsBlockOffset, lastHitsBlockTotalHits;
                                 skiplist_entry cur_block;
 
                               private:
@@ -136,8 +122,7 @@ namespace Trinity
 
                               public:
                                 Encoder(Trinity::Codecs::IndexSession *s)
-                                    : Trinity::Codecs::Encoder{s}
-                                {
+                                    : Trinity::Codecs::Encoder{s} {
                                 }
 
                                 void begin_term() override final;
@@ -146,8 +131,7 @@ namespace Trinity
 
                                 void new_hit(const uint32_t pos, const range_base<const uint8_t *, const uint8_t> payload) override final;
 
-                                inline void new_position(const uint32_t pos)
-                                {
+                                inline void new_position(const uint32_t pos) {
                                         new_hit(pos, {});
                                 }
 
@@ -157,17 +141,15 @@ namespace Trinity
                         };
 
                         struct AccessProxy final
-                            : public Trinity::Codecs::AccessProxy
-                        {
+                            : public Trinity::Codecs::AccessProxy {
                                 const uint8_t *hitsDataPtr;
-				uint64_t hitsDataSize{0};
+                                uint64_t       hitsDataSize{0};
 
                                 AccessProxy(const char *bp, const uint8_t *p, const uint8_t *hd = nullptr);
 
-				~AccessProxy();
+                                ~AccessProxy();
 
-                                strwlen8_t codec_identifier() override final
-                                {
+                                strwlen8_t codec_identifier() override final {
                                         return "LUCENE"_s8;
                                 }
 
@@ -177,23 +159,22 @@ namespace Trinity
                         class Decoder;
 
                         struct PostingsListIterator final
-                            : public Trinity::Codecs::PostingsListIterator
-                        {
+                            : public Trinity::Codecs::PostingsListIterator {
                                 friend class Decoder;
 
                               protected:
                                 const uint8_t *p;
                                 const uint8_t *hdp;
                                 const uint8_t *payloadsIt, *payloadsEnd;
-                                isrc_docid_t lastDocID;
-                                uint32_t lastPosition{0};
-                                uint32_t docsLeft, hitsLeft;
-                                uint16_t docsIndex, hitsIndex;
-                                uint16_t bufferedDocs, bufferedHits;
-                                uint32_t skippedHits;
-                                uint32_t docDeltas[BLOCK_SIZE], docFreqs[BLOCK_SIZE], hitsPositionDeltas[BLOCK_SIZE], hitsPayloadLengths[BLOCK_SIZE];
-                                uint32_t skipListIdx;
-                                isrc_docid_t curSkipListLastDocID{DocIDsEND};
+                                isrc_docid_t   lastDocID;
+                                uint32_t       lastPosition{0};
+                                uint32_t       docsLeft, hitsLeft;
+                                uint16_t       docsIndex, hitsIndex;
+                                uint16_t       bufferedDocs, bufferedHits;
+                                uint32_t       skippedHits;
+                                uint32_t       docDeltas[BLOCK_SIZE], docFreqs[BLOCK_SIZE], hitsPositionDeltas[BLOCK_SIZE], hitsPayloadLengths[BLOCK_SIZE];
+                                uint32_t       skipListIdx;
+                                isrc_docid_t   curSkipListLastDocID{DocIDsEND};
 
                               public:
                                 inline isrc_docid_t next() override final;
@@ -203,27 +184,24 @@ namespace Trinity
                                 inline void materialize_hits(DocWordsSpace *dwspace, term_hit *out) override final;
 
                                 PostingsListIterator(Decoder *const d)
-                                    : Trinity::Codecs::PostingsListIterator{reinterpret_cast<Trinity::Codecs::Decoder *>(d)}
-                                {
+                                    : Trinity::Codecs::PostingsListIterator{reinterpret_cast<Trinity::Codecs::Decoder *>(d)} {
                                 }
                         };
 
                         class Decoder final
-                            : public Trinity::Codecs::Decoder
-                        {
+                            : public Trinity::Codecs::Decoder {
                                 friend struct PostingsListIterator;
 
                               private:
                                 // Pretty much the only shared state among iterators created by
                                 // this decoder is the skiplist, which may be initialized once and owned by the Decoder.
-                                struct skiplist_entry final
-                                {
-                                        uint32_t indexOffset;
+                                struct skiplist_entry final {
+                                        uint32_t     indexOffset;
                                         isrc_docid_t lastDocID;
-                                        uint32_t lastHitsBlockOffset;
-                                        uint32_t totalDocumentsSoFar;
-                                        uint32_t totalHitsSoFar;
-                                        uint16_t curHitsBlockHits;
+                                        uint32_t     lastHitsBlockOffset;
+                                        uint32_t     totalDocumentsSoFar;
+                                        uint32_t     totalHitsSoFar;
+                                        uint16_t     curHitsBlockHits;
                                 };
 
                               protected:
@@ -243,20 +221,18 @@ namespace Trinity
                                 FastPForLib::FastPFor<4> forUtil;
 #endif
 
-                                struct skiplist_struct
-                                {
+                                struct skiplist_struct {
                                         skiplist_entry *data;
-                                        uint16_t size{0};
+                                        uint16_t        size{0};
 
-                                        ~skiplist_struct()
-                                        {
+                                        ~skiplist_struct() {
                                                 if (size)
                                                         std::free(data);
                                         }
 
                                 } skiplist;
                                 const uint8_t *postingListBase, *hitsBase;
-                                uint32_t totalDocuments, totalHits;
+                                uint32_t       totalDocuments, totalHits;
 
                               private:
                                 void init_skiplist(const uint16_t);
@@ -267,17 +243,15 @@ namespace Trinity
 
                                 void refill_documents(PostingsListIterator *);
 
-                                [[gnu::always_inline]] void update_curdoc(PostingsListIterator *const __restrict__ it) noexcept
-                                {
+                                [[gnu::always_inline]] void update_curdoc(PostingsListIterator *const __restrict__ it) noexcept {
                                         const auto docsIndex{it->docsIndex};
-                                        auto &curDocument{it->curDocument};
+                                        auto &     curDocument{it->curDocument};
 
                                         curDocument.id = it->lastDocID + it->docDeltas[docsIndex];
-                                        it->freq = it->docFreqs[docsIndex];
+                                        it->freq       = it->docFreqs[docsIndex];
                                 }
 
-                                inline void finalize(PostingsListIterator *const it) noexcept
-                                {
+                                inline void finalize(PostingsListIterator *const it) noexcept {
                                         it->curDocument.id = DocIDsEND;
                                 }
 
@@ -291,22 +265,19 @@ namespace Trinity
                                 Trinity::Codecs::PostingsListIterator *new_iterator() override final;
                         };
 
-                        isrc_docid_t PostingsListIterator::next()
-                        {
+                        isrc_docid_t PostingsListIterator::next() {
                                 static_cast<Codecs::Lucene::Decoder *>(dec)->next(this);
                                 return curDocument.id;
                         }
 
-                        isrc_docid_t PostingsListIterator::advance(const isrc_docid_t target)
-                        {
+                        isrc_docid_t PostingsListIterator::advance(const isrc_docid_t target) {
                                 static_cast<Codecs::Lucene::Decoder *>(dec)->advance(this, target);
                                 return curDocument.id;
                         }
 
-                        void PostingsListIterator::materialize_hits(DocWordsSpace *dwspace, term_hit *out)
-                        {
+                        void PostingsListIterator::materialize_hits(DocWordsSpace *dwspace, term_hit *out) {
                                 static_cast<Codecs::Lucene::Decoder *>(dec)->materialize_hits(this, dwspace, out);
                         }
                 }
-        }
-}
+        } // namespace Codecs
+} // namespace Trinity

@@ -6,17 +6,15 @@
 #include "runtime.h"
 
 // Use of Codecs::Google results in a somewhat large index, while the access time is similar(maybe somewhat slower) to Lucene's codec
-namespace Trinity
-{
-	struct candidate_document;
-	struct queryexec_ctx;
+namespace Trinity {
+        struct candidate_document;
+        struct queryexec_ctx;
 
         // Information about a term's posting list and number of documents it matches.
         // We track the number of documents because it may be useful(and it is) to some codecs, and also
         // is extremely useful during execution where we re-order the query nodes based on evaluation cost which
         // is directly related to the a term's posting list size based on the number of documents it matches.
-        struct term_index_ctx final
-        {
+        struct term_index_ctx final {
                 uint32_t documents;
 
                 // For each each term, the inverted index contains a `posting list`, where
@@ -28,32 +26,27 @@ namespace Trinity
                 range32_t indexChunk;
 
                 term_index_ctx(const uint32_t d, const range32_t c)
-                    : documents{d}, indexChunk{c}
-                {
+                    : documents{d}, indexChunk{c} {
                 }
 
-                term_index_ctx(const term_index_ctx &o)
-                {
-                        documents = o.documents;
+                term_index_ctx(const term_index_ctx &o) {
+                        documents  = o.documents;
                         indexChunk = o.indexChunk;
                 }
 
-                term_index_ctx(term_index_ctx &&o)
-                {
-                        documents = o.documents;
+                term_index_ctx(term_index_ctx &&o) {
+                        documents  = o.documents;
                         indexChunk = o.indexChunk;
                 }
 
-                term_index_ctx &operator=(const term_index_ctx &o)
-                {
-                        documents = o.documents;
+                term_index_ctx &operator=(const term_index_ctx &o) {
+                        documents  = o.documents;
                         indexChunk = o.indexChunk;
                         return *this;
                 }
 
-                term_index_ctx &operator=(const term_index_ctx &&o)
-                {
-                        documents = o.documents;
+                term_index_ctx &operator=(const term_index_ctx &&o) {
+                        documents  = o.documents;
                         indexChunk = o.indexChunk;
                         return *this;
                 }
@@ -61,8 +54,7 @@ namespace Trinity
                 term_index_ctx() = default;
         };
 
-        namespace Codecs
-        {
+        namespace Codecs {
                 struct Encoder;
                 struct AccessProxy;
 
@@ -72,17 +64,15 @@ namespace Trinity
                 //
                 // The base path makes sense for disk based storage, but some codecs may only operate on in-memory
                 // data so it may not be used in those designs.
-                struct IndexSession
-                {
-			enum class Capabilities  : uint8_t
-			{
-				// append_index_chunk() is implemented
-				AppendIndexChunk = 1,
-				Merge = 1<<1
-			};
+                struct IndexSession {
+                        enum class Capabilities : uint8_t {
+                                // append_index_chunk() is implemented
+                                AppendIndexChunk = 1,
+                                Merge            = 1 << 1
+                        };
 
-			const uint8_t caps;
-                        IOBuffer indexOut;
+                        const uint8_t caps;
+                        IOBuffer      indexOut;
                         // Whenever you flush indexOut to disk, say, every few MBs or GBs,
                         // you need to adjust indexOutFlushed, because the various codecs implementations need to compute some offset in the index
                         //
@@ -98,20 +88,17 @@ namespace Trinity
                         //	serialize all them to disk, free their memory, and allocate memory for the index and load it from disk)
                         // - no need to resize the IOBuffer, i.e no need for memcpy() the data to new buffers on reallocation
                         uint32_t indexOutFlushed;
-                        char basePath[PATH_MAX];
-
+                        char     basePath[PATH_MAX];
 
                         // The segment name should be the generation
                         // e.g for path Trinity/Indices/Wikipedia/Segments/100
                         // the generation is extracted as 100, but, again, this is codec specific
                         IndexSession(const char *bp, const uint8_t capabilities = 0)
-                            : caps{capabilities}, indexOutFlushed{0}
-                        {
+                            : caps{capabilities}, indexOutFlushed{0} {
                                 strcpy(basePath, bp);
                         }
 
-                        virtual ~IndexSession()
-                        {
+                        virtual ~IndexSession() {
                         }
 
                         // Utility method
@@ -152,15 +139,14 @@ namespace Trinity
                         // really only used for queries as an IndexSource), then you can just implement this and merge() as no-ops.
                         //
                         // see MergeCandidatesCollection::merge() impl.
-			//
-			// UPDATE: this is now optional. If your codec implements it, make sure you set (Capabilities::AppendIndexChunk)
-			// in capabilities flags passed to Codecs::IndexSession::IndexSession(). Both Google and Lucene's do so.
-			// The default impl. does nothing/aborts
-                        virtual range32_t append_index_chunk(const AccessProxy *src, const term_index_ctx srcTCTX) 
-			{
-				std::abort();
-				return {};
-			}
+                        //
+                        // UPDATE: this is now optional. If your codec implements it, make sure you set (Capabilities::AppendIndexChunk)
+                        // in capabilities flags passed to Codecs::IndexSession::IndexSession(). Both Google and Lucene's do so.
+                        // The default impl. does nothing/aborts
+                        virtual range32_t append_index_chunk(const AccessProxy *src, const term_index_ctx srcTCTX) {
+                                std::abort();
+                                return {};
+                        }
 
                         // If we have multiple postng lists for the same term(i.e merging 2+ segments
                         // and same term exists in 2+ of them)
@@ -175,33 +161,27 @@ namespace Trinity
                         // the encoder the target codec encoder
                         //
                         // See MergeCandidatesCollection::merge() impl.
-                        struct merge_participant final
-                        {
-                                AccessProxy *ap;
-                                term_index_ctx tctx;
+                        struct merge_participant final {
+                                AccessProxy *              ap;
+                                term_index_ctx             tctx;
                                 masked_documents_registry *maskedDocsReg;
                         };
 
-			// UPDATE: now optional; if you override and implement it, make sure you set Capabilities::Merge in the constructo
-                        virtual void merge(merge_participant *participants, const uint16_t participantsCnt, Encoder *const encoder)
-			{
-
-			}
+                        // UPDATE: now optional; if you override and implement it, make sure you set Capabilities::Merge in the constructo
+                        virtual void merge(merge_participant *participants, const uint16_t participantsCnt, Encoder *const encoder) {
+                        }
                 };
 
                 // Encoder interface for encoding a single term's posting list
-                struct Encoder
-                {
+                struct Encoder {
                         IndexSession *const sess;
 
                         // You should have s->begin() before you use encode any postlists for that session
                         Encoder(IndexSession *s)
-                            : sess{s}
-                        {
+                            : sess{s} {
                         }
 
-                        virtual ~Encoder()
-                        {
+                        virtual ~Encoder() {
                         }
 
                         virtual void begin_term() = 0;
@@ -219,33 +199,29 @@ namespace Trinity
                         virtual void end_term(term_index_ctx *) = 0;
                 };
 
+                // This is how postings lists are accessed and hits are materialized.
+                // It is created by a Codecs::Decoder, and it should in practice hold a reference
+                // to the decoder and delegate work to it, but that should depend on your codec's impl.
+                //
+                // In the past, Decoder's implemented next() and advance()/seek(), but it turned to be a bad idea
+                // because it was somewhat challenging to support multiple terms in the query, where you want to access
+                // the same underlying decoder state, but traverse them independently.
+                struct Decoder;
 
-		// This is how postings lists are accessed and hits are materialized.
-		// It is created by a Codecs::Decoder, and it should in practice hold a reference
-		// to the decoder and delegate work to it, but that should depend on your codec's impl.
-		//
-		// In the past, Decoder's implemented next() and advance()/seek(), but it turned to be a bad idea 
-		// because it was somewhat challenging to support multiple terms in the query, where you want to access
-		// the same underlying decoder state, but traverse them independently.
-		struct Decoder;
-
-		struct PostingsListIterator
-			: public Trinity::DocsSetIterators::Iterator
-                {
-			// decoder that created this iterator
+                struct PostingsListIterator
+                    : public Trinity::DocsSetIterators::Iterator {
+                        // decoder that created this iterator
                         Decoder *const dec;
 
-			// For current document
+                        // For current document
                         tokenpos_t freq;
 
                         PostingsListIterator(Decoder *const d)
-                            : Iterator{Trinity::DocsSetIterators::Type::PostingsListIterator}, dec{d}
-                        {
+                            : Iterator{Trinity::DocsSetIterators::Type::PostingsListIterator}, dec{d} {
                         }
 
-                        virtual ~PostingsListIterator()
-			{
-			}
+                        virtual ~PostingsListIterator() {
+                        }
 
                         // Materializes hits for the _current_ document in the postings list
                         // You must also dwspace->set(termID, pos) for positions != 0
@@ -254,41 +230,37 @@ namespace Trinity
                         // so you should not materialize if have already done so.
                         virtual void materialize_hits(DocWordsSpace *dwspace, term_hit *out) = 0;
 
-                        inline auto decoder() noexcept
-                        {
+                        inline auto decoder() noexcept {
                                 return dec;
                         }
 
-			inline const Decoder *decoder() const noexcept
-			{
-				return dec;
-			}
+                        inline const Decoder *decoder() const noexcept {
+                                return dec;
+                        }
 
 #ifdef RDP_NEED_TOTAL_MATCHES
-			inline uint32_t total_matches() override final
-			{
-				return freq;
-			}
+                        inline uint32_t total_matches() override final {
+                                return freq;
+                        }
 #endif
-
                 };
 
                 // Decoder interface for decoding a single term's posting list.
                 // If a decoder makes use of skiplist data, they are expected to be serialized in the index
                 // and the decoder is responsible for deserializing and using them from there, although this is specific to the codec
                 //
-		// Decoder is responsible for maintaining term-specific segment state, and for creating new Posting Lists iterators, which in turn
-		// should just contain iterator-specific state and logic working in conjuction with the Decoder that created/provided it.
-                struct Decoder
-                {
+                // Decoder is responsible for maintaining term-specific segment state, and for creating new Posting Lists iterators, which in turn
+                // should just contain iterator-specific state and logic working in conjuction with the Decoder that created/provided it.
+                struct Decoder {
+			// Term specific data for the term of this decode
+			// see e.g DocsSetIterators::cost()
                         term_index_ctx indexTermCtx;
 
-			// use set_exec() to set those
+                        // use set_exec() to set those
                         exec_term_id_t execCtxTermID{0};
-			queryexec_ctx *rctx{nullptr};
+                        queryexec_ctx *rctx{nullptr};
 
-                        constexpr auto exec_ctx_termid() const noexcept
-                        {
+                        constexpr auto exec_ctx_termid() const noexcept {
                                 return execCtxTermID;
                         }
 
@@ -298,28 +270,24 @@ namespace Trinity
                         // we want to force subclasses to define a method with this signature
                         virtual void init(const term_index_ctx &, AccessProxy *) = 0;
 
-			// This is how you are going to access the postings list
-			virtual PostingsListIterator *new_iterator() = 0;
+                        // This is how you are going to access the postings list
+                        virtual PostingsListIterator *new_iterator() = 0;
 
-                        Decoder()
-                        {
+                        Decoder() {
                         }
 
-                        virtual ~Decoder()
-                        {
+                        virtual ~Decoder() {
                         }
 
-			void set_exec(exec_term_id_t tid, queryexec_ctx *const r)
-			{
-				execCtxTermID = tid;
-				rctx = r;
-			}
+                        void set_exec(exec_term_id_t tid, queryexec_ctx *const r) {
+                                execCtxTermID = tid;
+                                rctx          = r;
+                        }
                 };
 
                 // Responsible for initializing segment/codec specific state and for generating(factory) decoders for terms
                 // All AccessProxy instances have a pointer to the actual index(posts lists) in common
-                struct AccessProxy
-                {
+                struct AccessProxy {
                         const char *basePath;
                         // Index of the posting lists for all distinct terms
                         // This is typically a pointer to memory mapped index file, or a memory-resident anything, or
@@ -337,17 +305,15 @@ namespace Trinity
                         virtual Decoder *new_decoder(const term_index_ctx &tctx) = 0;
 
                         AccessProxy(const char *bp, const uint8_t *index_ptr)
-                            : basePath{bp}, indexPtr{index_ptr}
-                        {
+                            : basePath{bp}, indexPtr{index_ptr} {
                                 // Subclasses should open files, etc
                         }
 
                         // See IndexSession::codec_identifier()
                         virtual strwlen8_t codec_identifier() = 0;
 
-                        virtual ~AccessProxy()
-                        {
+                        virtual ~AccessProxy() {
                         }
                 };
-        }
-}
+        } // namespace Codecs
+} // namespace Trinity

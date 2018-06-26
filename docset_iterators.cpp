@@ -409,10 +409,9 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionAllPLI::advance(cons
 // we can use `lastRoundMin` to accomplish this in one step
 //
 // Leaving it here for posterity
-Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::advance(const isrc_docid_t target)
-{
+Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::advance(const isrc_docid_t target) {
         static constexpr bool trace{false};
-        isrc_docid_t min{DocIDsEND};
+        isrc_docid_t          min{DocIDsEND};
 
         if (trace)
                 SLog(ansifmt::color_blue, "advance to ", target, ", lastRoundMin = ", lastRoundMin, ansifmt::reset, "\n");
@@ -421,36 +420,30 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::advance(const isrc
         capturedCnt = 0;
 #endif
 
-        auto &rctx = *rctxRef;
+        auto &     rctx = *rctxRef;
         const auto base = rctx.cdSTM.size - (target != DocIDsEND);
 
-        for (size_t i{0}; i < size;)
-        {
+        for (size_t i{0}; i < size;) {
                 auto it = its[i];
 
                 if (trace)
                         SLog("IT.current = ", it->current(), "\n");
 
-                if (const auto cur = it->current(); cur < target)
-                {
+                if (const auto cur = it->current(); cur < target) {
                         if (trace)
                                 SLog("cur < lastRoundMin\n");
 
-                        if (const auto id = it->advance(target); id == DocIDsEND)
-                        {
+                        if (const auto id = it->advance(target); id == DocIDsEND) {
                                 // drained
                                 if (trace)
                                         SLog("Drained it\n");
 
                                 its[i] = its[--size];
-                        }
-                        else
-                        {
+                        } else {
                                 if (trace)
                                         SLog("OK, id from next = ", id, "\n");
 
-                                if (id < min)
-                                {
+                                if (id < min) {
 
 #ifdef ITERATORS_DISJUNCTION_TRACK_CAPTURED
                                         capturedCnt = 1;
@@ -458,9 +451,7 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::advance(const isrc
 #endif
 
                                         min = id;
-                                }
-                                else if (id == min)
-                                {
+                                } else if (id == min) {
 
 #ifdef ITERATORS_DISJUNCTION_TRACK_CAPTURED
                                         captured[capturedCnt++] = it;
@@ -469,23 +460,18 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::advance(const isrc
 
                                 ++i;
                         }
-                }
-                else
-                {
+                } else {
                         if (trace)
                                 SLog("cur(", cur, ") > lastRoundMin\n");
 
-                        if (cur < min)
-                        {
+                        if (cur < min) {
 
 #ifdef ITERATORS_DISJUNCTION_TRACK_CAPTURED
                                 capturedCnt = 1;
                                 captured[0] = it;
 #endif
                                 min = cur;
-                        }
-                        else if (cur == min)
-                        {
+                        } else if (cur == min) {
 
 #ifdef ITERATORS_DISJUNCTION_TRACK_CAPTURED
                                 captured[capturedCnt++] = it;
@@ -506,16 +492,15 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::advance(const isrc
         return curDocument.id = min;
 }
 
-Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::next()
-{
+Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::next() {
         // This is a nifty idea; we don't need to first check which to advance and then advance
         // we can use `lastRoundMin` to accomplish this in one step
         //
         // Problem with this and the CDS short-term-memory idea is that because
         static constexpr bool trace{false};
-        isrc_docid_t min{DocIDsEND};
-        auto &rctx = *curRCTX;
-        const auto base{rctx.cdSTM.size};
+        isrc_docid_t          min{DocIDsEND};
+        auto &                rctx = *curRCTX;
+        const auto            base{rctx.cdSTM.size};
 
         if (trace)
                 SLog(ansifmt::color_blue, "NEXT, lastRoundMin = ", lastRoundMin, ansifmt::reset, " ", rctx.cdSTM.size, "\n");
@@ -524,33 +509,27 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::next()
         capturedCnt = 0;
 #endif
 
-        for (size_t i{0}; i < size;)
-        {
+        for (size_t i{0}; i < size;) {
                 auto it = its[i];
 
                 if (trace)
                         SLog("IT.current = ", it->current(), "   ", rctx.cdSTM.size, "\n");
 
-                if (const auto cur = it->current(); cur <= lastRoundMin)
-                {
+                if (const auto cur = it->current(); cur <= lastRoundMin) {
                         if (trace)
                                 SLog("cur < lastRoundMin\n");
 
-                        if (const auto id = it->next(); id == DocIDsEND)
-                        {
+                        if (const auto id = it->next(); id == DocIDsEND) {
                                 // drained
                                 if (trace)
                                         SLog("Drained it\n");
 
                                 its[i] = its[--size];
-                        }
-                        else
-                        {
+                        } else {
                                 if (trace)
                                         SLog("OK, id from next = ", id, " (", rctx.cdSTM.size, "), min = ", min, "\n");
 
-                                if (id < min)
-                                {
+                                if (id < min) {
 
                                         if (trace)
                                                 SLog("id(", id, ") < min(", min, ") now ", rctx.cdSTM.size, "\n");
@@ -560,9 +539,7 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::next()
                                         captured[0] = it;
 #endif
                                         min = id;
-                                }
-                                else if (id == min)
-                                {
+                                } else if (id == min) {
 
 #ifdef ITERATORS_DISJUNCTION_TRACK_CAPTURED
                                         captured[capturedCnt++] = it;
@@ -571,14 +548,11 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::next()
 
                                 ++i;
                         }
-                }
-                else
-                {
+                } else {
                         if (trace)
                                 SLog("cur(", cur, ") > lastRoundMin, min = ", min, "\n");
 
-                        if (cur < min)
-                        {
+                        if (cur < min) {
                                 if (trace)
                                         SLog("Yes now cur < min ", rctx.cdSTM.size, "\n");
 
@@ -587,17 +561,13 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::next()
                                 captured[0] = it;
 #endif
                                 min = cur;
-                        }
-                        else if (cur == min)
-                        {
-// didn't get to push anything here
+                        } else if (cur == min) {
+                        // didn't get to push anything here
 
 #ifdef ITERATORS_DISJUNCTION_TRACK_CAPTURED
                                 captured[capturedCnt++] = it;
 #endif
-                        }
-                        else
-                        {
+                        } else {
                                 // didn't get to push anything here
                         }
 
@@ -712,11 +682,7 @@ void Trinity::DocsSetIterators::DisjunctionSome::update_current() {
 
         curDocument.id = lead->id;
 
-        require(lead->id == lead->it->current());
-
         while (head.size() && head.top()->id == curDocument.id) {
-                require(head.top()->id == head.top()->it->current());
-
                 add_lead(head.pop());
         }
 }
@@ -750,8 +716,10 @@ Trinity::DocsSetIterators::DisjunctionSome::DisjunctionSome(Trinity::DocsSetIter
         for (size_t i{0}; i != cnt; ++i) {
                 auto t = trackersStorage + i;
 
-                if (iterators[i]->type != DocsSetIterators::Type::PostingsListIterator)
+                if (iterators[i]->type != DocsSetIterators::Type::PostingsListIterator) {
+			// fast-path not possible
                         allPLI = false;
+		}
 
                 t->it   = iterators[i];
                 t->cost = t->it->cost();
@@ -799,8 +767,7 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::DisjunctionSome::advance(const 
                 }
         }
 
-        for (auto top              = head.top();
-             top->id < target; top = head.top()) {
+        for (auto top = head.top(); top->id < target; top = head.top()) {
                 // We know the tail is full, because it contains at most
                 // (matchThreshold - 1) entries, and we have moved at least matchThreshold entries to it, so try_push()
                 // would return false

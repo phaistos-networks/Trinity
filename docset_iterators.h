@@ -64,7 +64,7 @@ namespace Trinity {
                         friend struct IteratorScorer;
 
                       public:
-                        struct it_tracker {
+                        struct it_tracker final {
                                 Iterator *   it;
                                 uint64_t     cost;
                                 isrc_docid_t id; // we could just use it->current(), but this simplifies processing somewhat
@@ -266,7 +266,7 @@ namespace Trinity {
                 struct Disjunction final
                     : public Iterator {
                       private:
-                        struct Compare {
+                        struct Compare final {
                                 inline bool operator()(const Iterator *const a, const Iterator *const b) const noexcept {
                                         return a->current() < b->current();
                                 }
@@ -428,7 +428,7 @@ namespace Trinity {
                                 for (const auto id : list)
                                         ids.push_back(id);
 
-                                std::sort(ids.begin(), ids.end());
+                                std::sort(ids.begin(), ids.end());	 // TODO: use boost::spreadsort
                         }
 
                         inline isrc_docid_t next() override {

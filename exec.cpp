@@ -110,7 +110,7 @@ static uint64_t reorder_execnode_impl(exec_node &n, bool &updates, queryexec_ctx
                         sum += phrase_cost(rctx, run->phrases[i]);
                 return sum;
         } else {
-		SLog("Unexpected:", n, "\n");
+                SLog("Unexpected:", n, "\n");
                 std::abort();
         }
 }
@@ -196,13 +196,12 @@ static exec_node prepare_tree(exec_node root, queryexec_ctx &rctx) {
 
                         stackP.push_back(&ctx->expr);
                 } else if (n.fp == ENT::matchsome) {
-			auto ctx = static_cast<compilation_ctx::partial_match_ctx *>(n.ptr);
+                        auto ctx = static_cast<compilation_ctx::partial_match_ctx *>(n.ptr);
 
-			for (size_t i{0}; i != ctx->size; ++i) {
-				stackP.emplace_back(&ctx->nodes[i]);
-
-			}
-		}
+                        for (size_t i{0}; i != ctx->size; ++i) {
+                                stackP.emplace_back(&ctx->nodes[i]);
+                        }
+                }
         } while (!stackP.empty());
 
         if (traceMetrics)
@@ -331,8 +330,8 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                 std::vector<DocsSetIterators::Iterator *> its;
                 DocsSetIterators::Iterator *              v[2] = {build_iterator(e->lhs, execFlags), build_iterator(e->rhs, execFlags)};
 
-		if constexpr (traceCompile)
-			SLog("Compiling logical OR\n");
+                if constexpr (traceCompile)
+                        SLog("Compiling logical OR\n");
 
                 // Pulling Iterators from (lhs, rhs) to this disjunction when possible is extremely important
                 // Over 50% perf.improvement
@@ -433,8 +432,8 @@ DocsSetIterators::Iterator *queryexec_ctx::build_iterator(const exec_node n, con
                 // not part of a binary op.
                 const auto op = static_cast<const compilation_ctx::unaryop_ctx *>(n.ptr);
 
-		if constexpr (traceCompile)
-			SLog("ConstTrueExpr not part of a binary op?\n");
+                if constexpr (traceCompile)
+                        SLog("ConstTrueExpr not part of a binary op?\n");
 
                 return build_iterator(op->expr, execFlags);
         } else {
@@ -682,13 +681,12 @@ void Trinity::exec_query(const query &in,
                 // to capture the original query instances before we optimise.
                 //
                 // We need access to that information for scoring documents -- see matches.h
-		if (const auto required = sizeof(query_term_ctx *) * maxQueryTermIDPlus1; rctx.allocator.can_allocate(required))
-                	rctx.originalQueryTermCtx = static_cast<query_term_ctx **>(rctx.allocator.Alloc(required));
-		else {
-                	rctx.originalQueryTermCtx = static_cast<query_term_ctx **>(malloc(required));
-			rctx.large_allocs.emplace_back(rctx.originalQueryTermCtx);
-		}
-
+                if (const auto required = sizeof(query_term_ctx *) * maxQueryTermIDPlus1; rctx.allocator.can_allocate(required))
+                        rctx.originalQueryTermCtx = static_cast<query_term_ctx **>(rctx.allocator.Alloc(required));
+                else {
+                        rctx.originalQueryTermCtx = static_cast<query_term_ctx **>(malloc(required));
+                        rctx.large_allocs.emplace_back(rctx.originalQueryTermCtx);
+                }
 
                 memset(rctx.originalQueryTermCtx, 0, sizeof(query_term_ctx *) * maxQueryTermIDPlus1);
                 std::sort(originalQueryTokenInstances.begin(), originalQueryTokenInstances.end(), [](const auto &a, const auto &b) noexcept { return terms_cmp(a.token.data(), a.token.size(), b.token.data(), b.token.size()) < 0; });
@@ -756,12 +754,12 @@ void Trinity::exec_query(const query &in,
 
                 // See docwordspace.h comments
                 // we are allocated (maxIndex + 8) and memset() that to 0 in order to make some optimizations possible in consider()
-		if (const auto required = sizeof(query_index_terms *) * (maxIndex + 8); rctx.allocator.can_allocate(required))
-                	queryIndicesTerms = static_cast<query_index_terms **>(rctx.allocator.Alloc(required));
-		else {
-                	queryIndicesTerms = static_cast<query_index_terms **>(malloc(required));
-			rctx.large_allocs.emplace_back(queryIndicesTerms);
-		}
+                if (const auto required = sizeof(query_index_terms *) * (maxIndex + 8); rctx.allocator.can_allocate(required))
+                        queryIndicesTerms = static_cast<query_index_terms **>(rctx.allocator.Alloc(required));
+                else {
+                        queryIndicesTerms = static_cast<query_index_terms **>(malloc(required));
+                        rctx.large_allocs.emplace_back(queryIndicesTerms);
+                }
 
                 memset(queryIndicesTerms, 0, sizeof(queryIndicesTerms[0]) * (maxIndex + 8));
                 std::sort(originalQueryTokensTracker.begin(), originalQueryTokensTracker.end(), [](const auto &a, const auto &b) noexcept {
@@ -832,16 +830,15 @@ void Trinity::exec_query(const query &in,
                                                 SLog("(", it.termID, ", ", it.toNextSpan, ")\n");
                                 }
 
-                                const uint16_t cnt = list.size();
-				query_index_terms *ptr;
+                                const uint16_t     cnt = list.size();
+                                query_index_terms *ptr;
 
-
-				if (const auto required = sizeof(query_index_terms) + cnt * sizeof(query_index_term); rctx.allocator.can_allocate(required))
-					ptr = static_cast<query_index_terms *>(rctx.allocator.Alloc(required));
-				else {
-					ptr = static_cast<query_index_terms *>(malloc(required));
-					rctx.large_allocs.emplace_back(ptr);
-				}
+                                if (const auto required = sizeof(query_index_terms) + cnt * sizeof(query_index_term); rctx.allocator.can_allocate(required))
+                                        ptr = static_cast<query_index_terms *>(rctx.allocator.Alloc(required));
+                                else {
+                                        ptr = static_cast<query_index_terms *>(malloc(required));
+                                        rctx.large_allocs.emplace_back(ptr);
+                                }
 
                                 ptr->cnt = cnt;
                                 memcpy(ptr->uniques, list.data(), cnt * sizeof(query_index_term));
@@ -1040,8 +1037,6 @@ void Trinity::exec_query(const query &in,
                         rctx.reusableCDS.capacity = std::max<uint16_t>(512, capacity);
                         rctx.reusableCDS.data     = static_cast<candidate_document **>(malloc(sizeof(candidate_document *) * rctx.reusableCDS.capacity));
                         rctx.rootIterator         = sit;
-
-
 
                         // We will create different Handlers depending on the mode and other execution options so
                         // because process() is a hot method and we 'd like to reduce checks in there if we can
@@ -1298,8 +1293,8 @@ void Trinity::exec_query(const query &in,
                                 }
                         } else {
 
-				if constexpr (traceExec) 
-					SLog("Executing query\n");
+                                if constexpr (traceExec)
+                                        SLog("Executing query\n");
 
                                 if (documentsFilter) {
                                         if (maskedDocumentsRegistry && !maskedDocumentsRegistry->empty()) {

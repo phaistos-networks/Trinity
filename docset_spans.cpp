@@ -149,7 +149,7 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctions::process(MatchesProxy 
 
                         // Process the bitmap
                         for (uint32_t idx{0}; idx <= m; ++idx) {
-                                const uint64_t _b = uint64_t(idx) << 6;
+                                const uint64_t _b = uint64_t(idx) << 6; 	// TODO: just advance _b by 64
 
                                 for (auto b = matching[idx]; b;) {
                                         const auto bidx       = SwitchBitOps::TrailingZeros(b);
@@ -271,6 +271,7 @@ Trinity::isrc_docid_t Trinity::GenericDocsSetSpan::process(MatchesProxy *const m
         const auto rdp{it->rdp};
 
         if (id == 0 && min == 1 && max == DocIDsEND) {
+		// fast-path
                 for (id = it->next(); likely(id != DocIDsEND); id = it->next())
                         mp->process(rdp);
 
