@@ -46,7 +46,7 @@ OBJS:=percolator.o compilation_ctx.o similarity.o docset_iterators_scorers.o goo
 ifeq ($(HOST), origin)
 all : lib #app
 app:  app.o lib
-	$(CC) app.o -o T $(LDFLAGS_SANITY) -lswitch -lpthread $(SWITCH_TLS_LDFLAGS) -lz -L /home/system/Development/Switch/ext/MaskedVByte -lmaskedvbyte -L./ -lthe_trinity -lswitch #-fsanitize=address
+	$(CXX) app.o -o T $(LDFLAGS_SANITY) -lswitch -lpthread $(SWITCH_TLS_LDFLAGS) -lz -L /home/system/Development/Switch/ext/MaskedVByte -lmaskedvbyte -L./ -lthe_trinity -lswitch #-fsanitize=address
 else
 all: switch lib
 

@@ -68,7 +68,7 @@ namespace Trinity {
 
                 validate_flags(flags);
 
-                for (uint32_t i{0}; i != n; ++i) {
+                for (size_t i{0}; i != n; ++i) {
                         auto source  = collection->sources[i];
                         auto scanner = collection->scanner_registry_for(i);
                         auto filter  = std::make_unique<T>(std::forward<Arg>(args)...);
@@ -125,9 +125,9 @@ namespace Trinity {
 
                 // Schedule all but the first via std::async()
                 // we 'll handle the first here.
-                for (uint32_t i{1}; i != n; ++i) {
+                for (size_t i{1}; i != n; ++i) {
                         if (false == collection->sources[i]->index_empty()) {
-                                futures.push_back(
+                                futures.emplace_back(
                                     std::async(std::launch::async, [&, accumScoreScheme](const uint32_t i) {
                                             auto                                                source  = collection->sources[i];
                                             auto                                                scanner = collection->scanner_registry_for(i);
