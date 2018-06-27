@@ -505,7 +505,7 @@ void ast_parser::track_term(term &t) {
         }
 
         t.token.p = allocator.CopyOf(t.token.data(), t.token.size());
-        distinctTokens.push_back(t.token);
+        distinctTokens.emplace_back(t.token);
 }
 
 std::pair<ast_node *, uint16_t> normalize_root(ast_node *root);

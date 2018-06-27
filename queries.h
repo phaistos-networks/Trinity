@@ -244,7 +244,7 @@ namespace Trinity {
                 // It is important that your queries token parser semantics are also implemented in your documents content parser
                 std::pair<uint32_t, uint8_t> (*token_parser)(const str32_t, char_t *, const bool);
                 const uint32_t      parserFlags;
-                std::vector<str8_t> distinctTokens;
+                std::vector<str8_t> distinctTokens; // for interning
                 // facilitates parsing
                 std::vector<const char *> groupTerm;
                 char_t                    lastParsedToken[255];
@@ -260,24 +260,28 @@ namespace Trinity {
                 // You may NOT invoke parse() more than once
                 // because content, allocator, distinctTokens will already be initialized and updated
                 //
-                // Make sure that the allocate you provide is not deleted or reused before you are done accessing
+                // Make sure that the allocator you provide is not deleted or reused before you are done accessing
                 // any query tokens
                 //
                 // UPDATE: you can now use reset_and_parse()
                 // which will reset content and state. This is useful if you really don't want to allocate/init a new ast_parser
                 // in say, a loop, and want to reuse it.
+		// UPDATE: you can use parse(const str32_t) to parse another AST; this is akin to using reset_and_parse(), except that it doesn't reset
+		// the allocator and distinctTokens.
                 ast_node *parse();
 
+		auto parse(const str32_t c) {
+			content = c;
+			contentBase = content.data();
+			groupTerm.clear();
+			return parse();
+		}
+
+
                 auto reset_and_parse(const str32_t c) {
-                        content     = c;
-                        contentBase = content.data();
-
-                        allocator.reuse();
-
+			allocator.reuse();
                         distinctTokens.clear();
-                        groupTerm.clear();
-
-                        return parse();
+			return parse(c);
                 }
 
                 inline void skip_ws() {
