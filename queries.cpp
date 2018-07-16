@@ -511,8 +511,6 @@ void ast_parser::track_term(term &t) {
 std::pair<ast_node *, uint16_t> normalize_root(ast_node *root);
 
 ast_node *ast_parser::parse() {
-        require(distinctTokens.empty()); // in case we invoked parse() earlier
-
         auto n = parse_expr(*this);
 
         if (n) {

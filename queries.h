@@ -257,6 +257,12 @@ namespace Trinity {
                     : content{input}, contentBase{content.data()}, allocator{a}, token_parser{p}, parserFlags{parserFlags_} {
                 }
 
+		// Useful for initializing and later using parse(const str32_t) to parse content
+		ast_parser(simple_allocator &a, std::pair<uint32_t, uint8_t> (*p)(const str32_t, char_t *, const bool) = default_token_parser_impl, const uint32_t parserFlags_ = 0)
+			: contentBase{nullptr}, allocator{a}, token_parser{p}, parserFlags{parserFlags_} {
+
+		}
+
                 // You may NOT invoke parse() more than once
                 // because content, allocator, distinctTokens will already be initialized and updated
                 //

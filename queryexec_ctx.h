@@ -92,7 +92,9 @@ namespace Trinity {
 #endif
                 }
 
+#ifdef TRINITY_LASTBANK_OPTIMIZATION
                 static docstracker_bank dummy_bank;
+#endif
         };
 
         struct iterators_collector final {
@@ -231,32 +233,9 @@ namespace Trinity {
                 void forget_document(candidate_document *);
 #endif
 
-                candidate_document *document_by_id(const isrc_docid_t id) {
-                        if (id <= maxTrackedDocumentID) {
-                                if (auto ptr = lookup_document_inbank(id)) {
-                                        return ptr->retained();
-                                }
-                        }
+                candidate_document *document_by_id(const isrc_docid_t id);
 
-                        auto *const res = reusableCDS.pop_one() ?: new candidate_document(this);
-
-                        res->id       = id;
-                        res->dwsInUse = false;
-
-                        if (!documentsOnly) {
-                                if (unlikely(res->curDocSeq == UINT16_MAX)) {
-                                        const auto maxQueryTermIDPlus1 = termsDict.size() + 1;
-
-                                        memset(res->curDocQueryTokensCaptured, 0, sizeof(isrc_docid_t) * maxQueryTermIDPlus1);
-                                        res->curDocSeq = 1;
-                                } else
-                                        ++(res->curDocSeq);
-                        }
-
-                        return res;
-                }
-
-#define TRINITY_LASTBANK_OPTIMIZATION 1
+//#define TRINITY_LASTBANK_OPTIMIZATION 1
                 // to do away with (lastBank != nullptr) tests
                 // we can instead assign lastBank to (&docstracker_bank::dummy_bank)
                 // and because its base is set to an 'impossible' value, it will work great
@@ -330,6 +309,7 @@ namespace Trinity {
 
                 inline void track_document(candidate_document *doc) {
                         track_document_inbank(doc);
+                        maxTrackedDocumentID = std::max(maxTrackedDocumentID, doc->id);
                 }
 #else
                 inline void track_document(candidate_document *const doc) {

@@ -13,15 +13,54 @@ using namespace Trinity;
 // tracking materialized documents required Phrase::consider_phrase_match() and that solved the problem at the potential expense
 // of some overhead for track_docref() and gc_retained_docs()
 // TODO: quantify that overhead
-static constexpr const bool trace_docrefs{false};
-
+namespace {
+        static constexpr bool trace_docrefs{false};
+        static constexpr bool trace_bankaccess{false};
+}; // namespace
 
 #ifdef TRINITY_LASTBANK_OPTIMIZATION
 docstracker_bank docstracker_bank::dummy_bank{true};
 #endif
 
+Trinity::candidate_document *Trinity::queryexec_ctx::document_by_id(const isrc_docid_t id) {
+        if constexpr (trace_bankaccess)
+                SLog("BANK: document_by_id(", id, ") ", maxTrackedDocumentID, "\n");
+
+        if (id <= maxTrackedDocumentID) {
+                if (auto ptr = lookup_document_inbank(id)) {
+                        if constexpr (trace_bankaccess)
+                                SLog("BANK: lookup_document_inbank() successeful for ", id, "\n");
+
+                        return ptr->retained();
+                } else if constexpr (trace_bankaccess)
+                        SLog("BANK: lookup_document_inbank() failed for ", id, "\n");
+
+        } else if constexpr (trace_bankaccess)
+                SLog("BANK: id(", id, ") > maxTrackedDocumentID(", maxTrackedDocumentID, ")\n");
+
+        auto *const res = reusableCDS.pop_one() ?: new candidate_document(this);
+
+        res->id       = id;
+        res->dwsInUse = false;
+
+        if (!documentsOnly) {
+                if (unlikely(res->curDocSeq == UINT16_MAX)) {
+                        const auto maxQueryTermIDPlus1 = termsDict.size() + 1;
+
+                        memset(res->curDocQueryTokensCaptured, 0, sizeof(isrc_docid_t) * maxQueryTermIDPlus1);
+                        res->curDocSeq = 1;
+                } else
+                        ++(res->curDocSeq);
+        }
+
+        return res;
+}
+
 void Trinity::queryexec_ctx::track_docref(candidate_document *doc) {
         track_document(doc);
+
+        if constexpr (trace_bankaccess)
+                SLog("BANK: now tracking docref ", doc->id, "\n");
 
         if (tracked_docrefs.size == tracked_docrefs.capacity) {
                 tracked_docrefs.capacity = (tracked_docrefs.capacity * 2) + 128;
@@ -50,10 +89,9 @@ void Trinity::queryexec_ctx::gc_retained_docs(const isrc_docid_t base) {
         // TODO: we can eliminate memmove() by using a ring instead (front_index, back_index), and making
         // ring size a power of a 2. That way, we will only need to manipulate two indices, and not bother
         // with memmove(), at the expense of higher iteration costs. Need to consider that alternative impl., and the
-	// cost of memmove() -- it may not be worth it.
+        // cost of memmove() -- it may not be worth it.
 
-
-	// back
+        // back
         while (cnt) {
                 if (auto r = tracked_docrefs.data[cnt - 1]; base > r->id) {
                         forget_document(r);
@@ -63,7 +101,7 @@ void Trinity::queryexec_ctx::gc_retained_docs(const isrc_docid_t base) {
                         break;
         }
 
-	// front
+        // front
         while (n < cnt) {
                 if (auto r = tracked_docrefs.data[n]; base > r->id) {
                         forget_document(r);
@@ -110,8 +148,8 @@ queryexec_ctx::~queryexec_ctx() {
         if constexpr (trace_docrefs)
                 SLog("Flushing ", tracked_docrefs.size, "\n");
 
-	for (auto p: large_allocs)
-		std::free(p);
+        for (auto p : large_allocs)
+                std::free(p);
 
         while (tracked_docrefs.size) {
                 auto d = tracked_docrefs.data[--tracked_docrefs.size];
@@ -257,11 +295,13 @@ queryexec_ctx::decode_ctx_struct::~decode_ctx_struct() {
                 std::free(decoders);
 }
 
-
 // In practice, this is only used by DocsSetIterators::Phrase::consider_phrase_match()
 Trinity::term_hits *candidate_document::materialize_term_hits(queryexec_ctx *rctx, Codecs::PostingsListIterator *const it, const exec_term_id_t termID) {
         auto *const __restrict__ th = termHits + termID;
         const auto did              = it->curDocument.id;
+
+        if constexpr (trace_bankaccess)
+                SLog("BANK: materializing ", did, " for term ", termID, "\n");
 
         if (th->doc_id != did) {
                 const auto docHits = it->freq;
@@ -271,6 +311,9 @@ Trinity::term_hits *candidate_document::materialize_term_hits(queryexec_ctx *rct
 
                 if (!matchedDocument.dws) {
                         matchedDocument.dws = new DocWordsSpace(rctx->idxsrc->max_indexed_position());
+
+                        if constexpr (trace_bankaccess)
+                                SLog("BANK:", ptr_repr(matchedDocument.dws), " dws for ", did, "\n");
                 }
 
                 if (!dwsInUse) {
@@ -288,15 +331,15 @@ Trinity::term_hits *candidate_document::materialize_term_hits(queryexec_ctx *rct
 Trinity::candidate_document::candidate_document(queryexec_ctx *const rctx) {
         const auto maxQueryTermIDPlus1 = rctx->termsDict.size() + 1;
 
-        curDocQueryTokensCaptured    = (isrc_docid_t *)calloc(sizeof(isrc_docid_t), maxQueryTermIDPlus1);
-        termHits                     = new term_hits[maxQueryTermIDPlus1];
+        curDocQueryTokensCaptured = (isrc_docid_t *)calloc(sizeof(isrc_docid_t), maxQueryTermIDPlus1);
+        termHits                  = new term_hits[maxQueryTermIDPlus1];
 
-	if (const auto required = sizeof(matched_query_term) * maxQueryTermIDPlus1;  rctx->allocator.can_allocate(required))
-        	matchedDocument.matchedTerms = (matched_query_term *)rctx->allocator.Alloc(required);
-	else {
-        	matchedDocument.matchedTerms = (matched_query_term *)malloc(required);
-		rctx->large_allocs.emplace_back(matchedDocument.matchedTerms);
-	}
+        if (const auto required = sizeof(matched_query_term) * maxQueryTermIDPlus1; rctx->allocator.can_allocate(required))
+                matchedDocument.matchedTerms = (matched_query_term *)rctx->allocator.Alloc(required);
+        else {
+                matchedDocument.matchedTerms = (matched_query_term *)malloc(required);
+                rctx->large_allocs.emplace_back(matchedDocument.matchedTerms);
+        }
 }
 
 void queryexec_ctx::_reusable_cds::push_back(candidate_document *const d) {
@@ -345,9 +388,9 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
                         collect_doc_matching_terms(opt->main, docID, out);
 
                         if (optCur < docID) {
-				// we need to advance here
+                                // we need to advance here
                                 optCur = opt->opt->advance(docID);
-			}
+                        }
 
                         if (optCur == docID)
                                 collect_doc_matching_terms(opt->opt, docID, out);
@@ -472,12 +515,12 @@ void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const do
         md.matchedTermsCnt = 0;
 
         if (!dws) {
-                if (trace)
-                        SLog("dws == nullptr\n");
+                if (trace || trace_bankaccess)
+                        SLog("BANK:dws dws == nullptr for ", did, "\n");
 
                 dws = md.dws = new DocWordsSpace(idxsrc->max_indexed_position());
         } else if (trace) {
-                SLog("Already have dws inuse = ", doc->dwsInUse, "\n");
+                SLog("BANK: Already have dws inuse = ", doc->dwsInUse, " for ", did, "\n");
         }
 
         if (!doc->dwsInUse) {
@@ -521,19 +564,18 @@ void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const do
                                         // could have been materialized earlier for a phrase check
                                         const auto docHits = it->freq;
 
-                                        if (trace)
-                                                SLog(ansifmt::bold, ansifmt::color_green, "YES, need to materialize freq = ", docHits, ansifmt::reset, " ", ptr_repr(it), "\n");
+                                        if (trace || trace_bankaccess)
+                                                SLog(ansifmt::bold, ansifmt::color_green, "BANK: YES, need to materialize freq = ", docHits, ansifmt::reset, " ", ptr_repr(it), " for id ", did, "\n");
 
                                         th->set_docid(did);
                                         th->set_freq(docHits);
                                         it->materialize_hits(dws, th->all);
                                 }
-                        } else if (trace)
-                                SLog("Already have materialized hits for (", doc->id, ", ", tid, ")\n");
+                        } else if (trace || trace_bankaccess)
+                                SLog("BANK: Already have materialized hits for (", doc->id, ", ", tid, ")\n");
                 }
         }
 }
-
 
 #ifndef USE_BANKS
 void Trinity::queryexec_ctx::forget_document(candidate_document *const doc) {
@@ -570,8 +612,6 @@ Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document(const isrc_
 }
 #endif
 
-
-
 #ifdef USE_BANKS
 Trinity::docstracker_bank *Trinity::queryexec_ctx::new_bank(const Trinity::isrc_docid_t base) {
         if (!reusableBanks.empty()) {
@@ -592,8 +632,6 @@ Trinity::docstracker_bank *Trinity::queryexec_ctx::new_bank(const Trinity::isrc_
                 banks.emplace_back(b);
                 return b;
         }
-
-
 
         auto b = new docstracker_bank();
 
@@ -616,19 +654,22 @@ void Trinity::queryexec_ctx::forget_document_inbank(Trinity::candidate_document 
         const auto id = doc->id;
         auto       b  = bank_for(id);
 
+        if constexpr (trace_bankaccess)
+                SLog("BANK: forgetting ", id, "\n");
+
         if (1 == b->setCnt--) {
-		// No remaining documents in tracked in this bank
+                // No remaining documents in tracked in this bank
                 if (lastBank == b) {
 #ifndef TRINITY_LASTBANK_OPTIMIZATION
                         lastBank = nullptr;
 #else
-			lastBank = &docstracker_bank::dummy_bank;
+                        lastBank = &docstracker_bank::dummy_bank;
 #endif
-		}
+                }
 
-		// TODO: use an STL algorithm for this instead?
-		const auto banks_size{banks.size()};
-		auto banks_data{banks.data()};
+                // TODO: use an STL algorithm for this instead?
+                const auto banks_size{banks.size()};
+                auto       banks_data{banks.data()};
 
                 for (size_t i{0}; i != banks_size; ++i) {
                         if (banks_data[i] == b) {
@@ -654,11 +695,25 @@ Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document_inbank(cons
         if (const auto b = bank_for(id)) {
                 const auto idx = id - b->base;
 
+                if constexpr (trace_bankaccess)
+                        SLog("BANK: have bank for ", id, "\n");
+
 #ifdef BANKS_USE_BM
                 if (b->bm[idx >> 6] & (uint64_t(1) << (idx & (docstracker_bank::SIZE - 1))))
 #endif
+                {
+                        if constexpr (trace_bankaccess)
+                                SLog("BANK: have document ", id, "\n");
+
                         return b->entries[idx].document;
+                }
+
+                if constexpr (trace_bankaccess)
+                        SLog("BANK: lookup failed for ", id, "\n");
         }
+
+        if constexpr (trace_bankaccess)
+                SLog("BANK: failed to lookup document ", id, "\n");
 
         return nullptr;
 }
@@ -667,6 +722,9 @@ void Trinity::queryexec_ctx::track_document_inbank(Trinity::candidate_document *
         const auto id  = d->id;
         auto       b   = bank_for(id);
         const auto idx = id - b->base;
+
+        if constexpr (trace_bankaccess)
+                SLog("BANK:Tracking ", id, "\n");
 
 #ifdef BANKS_USE_BM
         b->bm[idx >> 6] |= uint64_t(1) << (idx & (docstracker_bank::SIZE - 1));

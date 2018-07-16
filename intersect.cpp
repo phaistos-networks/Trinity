@@ -232,7 +232,7 @@ std::vector<std::pair<range_base<str8_t *, uint8_t>, std::pair<uint8_t, std::siz
 
         for (const auto n : q.nodes()) {
                 if (n->type == Trinity::ast_node::Type::Token)
-                        v.push_back(n->p);
+                        v.emplace_back(n->p);
         }
 
         std::sort(v.begin(), v.end(), [](const auto a, const auto b) noexcept {
@@ -257,7 +257,7 @@ std::vector<std::pair<range_base<str8_t *, uint8_t>, std::pair<uint8_t, std::siz
                                 continue;
                 }
 
-                V.push_back(std::move(S));
+                V.emplace_back(std::move(S));
         }
 
         if (trace) {
