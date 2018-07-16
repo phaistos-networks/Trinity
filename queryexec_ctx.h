@@ -5,6 +5,7 @@
 #include "similarity.h"
 #include "compilation_ctx.h"
 
+#define TRINITY_LASTBANK_OPTIMIZATION 1
 namespace Trinity {
         // 64bytes alignment seems to yield good results, but crashes if optimizer is enabled (i.e struct alignas(64) exec_node {})
         // (this is because we use simple_allocator::New<> which doesn't respect the specified alignment. Not sure
@@ -235,7 +236,6 @@ namespace Trinity {
 
                 candidate_document *document_by_id(const isrc_docid_t id);
 
-//#define TRINITY_LASTBANK_OPTIMIZATION 1
                 // to do away with (lastBank != nullptr) tests
                 // we can instead assign lastBank to (&docstracker_bank::dummy_bank)
                 // and because its base is set to an 'impossible' value, it will work great
