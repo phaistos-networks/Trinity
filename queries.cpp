@@ -240,6 +240,8 @@ void PrintImpl(Buffer &b, const Trinity::phrase &p) {
         if (p.size)
                 b.shrink_by(1);
         b.append('"');
+	if (p.app_phrase_id)
+		b.append("<APP:", p.app_phrase_id, '>');
 #if defined(_VERBOSE_DESCR)
         b.append('<');
         b.append("idx:", p.index, " span:", p.toNextSpan);
@@ -264,6 +266,8 @@ static void print_token(Buffer &b, const phrase *const p) {
         EXPECT(p);
 
         b.append(p->terms[0].token);
+	if (p->app_phrase_id)
+		b.append("<APP:", p->app_phrase_id, '>');
 #if defined(_VERBOSE_DESCR)
         b.append('<');
         b.append("idx:", p->index, " span:", p->toNextSpan);

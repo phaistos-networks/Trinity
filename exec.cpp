@@ -606,13 +606,14 @@ void Trinity::exec_query(const query &in,
                         const auto    rewriteRange{it->rewrite_ctx.range};
                         const auto    translationCoefficient{it->rewrite_ctx.translationCoefficient};
                         const auto    srcSeqSize{it->rewrite_ctx.srcSeqSize};
+                        const auto    app_phrase_id{it->app_phrase_id};
 
                         // for each phrase token
                         for (uint16_t pos{it->index}, i{0}; i != it->size; ++i, ++pos) {
                                 if constexpr (traceCompile)
                                         SLog("Collected instance: [", it->terms[i].token, "] index:", pos, " rep:", rep, " toNextSpan:", i == (it->size - 1) ? toNextSpan : 1, "\n");
 
-                                originalQueryTokenInstances.push_back({{pos, flags, rep, uint8_t(i == (it->size - 1) ? toNextSpan : 1), {rewriteRange, translationCoefficient, srcSeqSize}}, it->terms[i].token}); // need to be careful to get this right for phrases
+                                originalQueryTokenInstances.push_back({{pos, flags, rep, uint8_t(i == (it->size - 1) ? toNextSpan : 1), app_phrase_id, {rewriteRange, translationCoefficient, srcSeqSize}}, it->terms[i].token}); // need to be careful to get this right for phrases
                         }
                 }
         }
@@ -729,6 +730,7 @@ void Trinity::exec_query(const query &in,
                                         p->instances[i].rep                                = it->rep;
                                         p->instances[i].flags                              = it->flags;
                                         p->instances[i].toNextSpan                         = it->toNextSpan;
+                                        p->instances[i].app_phrase_id                      = it->app_phrase_id;
                                         p->instances[i].rewrite_ctx.range                  = it->rewrite_ctx.range;
                                         p->instances[i].rewrite_ctx.translationCoefficient = it->rewrite_ctx.translationCoefficient;
                                         p->instances[i].rewrite_ctx.srcSeqSize             = it->rewrite_ctx.srcSeqSize;

@@ -87,6 +87,7 @@ namespace Trinity {
                         query_term_flags_t flags;
                         uint8_t            rep;
                         uint8_t            toNextSpan;
+                        uint16_t           app_phrase_id;
 
                         // handy aux.method
                         inline range_base<uint16_t, uint8_t> subexpr_range_with_final_index(const uint16_t final_index) const noexcept {
