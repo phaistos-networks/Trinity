@@ -257,9 +257,15 @@ namespace Trinity {
                 std::vector<std::pair<Trinity::ast_node *, uint8_t>>                                        expressions;
                 auto                                                                                        tokensParser = q.tokensParser;
                 auto &                                                                                      allocator    = q.allocator;
+                uint16_t                                                                                    base_app_phrase_id = run[i]->p->app_phrase_id;
+                const char *                                                                                base_token_data    = base_app_phrase_id ? token.data() : nullptr;
+		// TODO: maybe this needs to be configurable?
+		static constexpr bool inherit_app_phrase_id{true};
+
+                EXPECT(tokensParser);
 
                 if constexpr (trace)
-                        SLog(ansifmt::bold, ansifmt::color_green, "AT ", i, " ", token, ansifmt::reset, " (maxSpan = ", maxSpan, "(", normalizedMaxSpan, "), budget = ", budget, ")\n");
+                        SLog(ansifmt::bold, ansifmt::color_green, "AT ", i, " ", token, ansifmt::reset, " (maxSpan = ", maxSpan, "(", normalizedMaxSpan, "), budget = ", budget, ", base_app_phrase_id = ", base_app_phrase_id, ")\n");
 
                 alts.clear();
                 v.clear();
@@ -285,6 +291,7 @@ namespace Trinity {
 
                 v.clear();
                 v.push_back({{{token.data(), uint32_t(token.size())}, 0}, 1});
+
 
                 altAllocator.reuse();
 
@@ -319,7 +326,7 @@ namespace Trinity {
                 // (united, states, of, america) => [usa]
                 // and (united, states) => [usa]
                 // we will ignore the second (united, states) rule because we already matched it earlier (we process by match span descending)
-                std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) {
+                std::sort(v.begin(), v.end(), [](const auto &a, const auto &b) noexcept {
                         return b.second < a.second; // sort by span
                 });
 
@@ -365,6 +372,16 @@ namespace Trinity {
                                 if (unlikely(nullptr == lhs))
                                         throw Switch::data_error("Failed to parse [", alts[saved].first, "]");
 
+                                if (inherit_app_phrase_id) {
+                                        if (base_app_phrase_id)
+                                                lhs->set_app_phrase_id(base_app_phrase_id);
+                                } else if (alts[saved].first.data() == base_token_data) {
+                                        if (trace)
+                                                SLog("BASE token [", alts[saved].first, "] => ", base_app_phrase_id, "\n");
+
+                                        lhs->set_app_phrase_id(base_app_phrase_id);
+                                }
+
                                 if (lhs->type == ast_node::Type::Token && span > 1) {
                                         // source range span > 1 and alt is a token
                                         lhs->p->rewrite_ctx.srcSeqSize = span;
@@ -403,6 +420,17 @@ namespace Trinity {
                                         if (unlikely(nullptr == n->binop.rhs))
                                                 throw Switch::data_error("Failed to parse [", alts[i + saved].first, "]");
 
+					if (inherit_app_phrase_id){
+						if (base_token_data)
+                                                	n->binop.rhs->set_app_phrase_id(base_app_phrase_id);
+					}
+                                        else if (alts[i + saved].first.data() == base_token_data) {
+                                                if (trace)
+                                                        SLog("BASE token [", alts[i + saved].first, "] => ", base_app_phrase_id, "\n");
+
+                                                n->binop.rhs->set_app_phrase_id(base_app_phrase_id);
+                                        }
+
                                         if (n->binop.rhs->type == ast_node::Type::Token && span > 1)
                                                 n->binop.rhs->p->rewrite_ctx.srcSeqSize = span;
 
@@ -432,6 +460,17 @@ namespace Trinity {
 
                                 if (unlikely(nullptr == node))
                                         throw Switch::data_error("Failed to parse [", alts[saved].first, "], parser flags ", parser_flags);
+
+                                if (inherit_app_phrase_id) {
+                                        if (base_app_phrase_id)
+                                                node->set_app_phrase_id(base_app_phrase_id);
+
+                                } else if (alts[saved].first.data() == base_token_data) {
+                                        if (trace)
+                                                SLog("BASE token [", alts[saved].first, "] => ", base_app_phrase_id, "\n");
+
+                                        node->set_app_phrase_id(base_app_phrase_id);
+                                }
 
                                 if (node->type == ast_node::Type::Token && span > 1) {
                                         // source range span > 1 and alt is a token
