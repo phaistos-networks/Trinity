@@ -241,6 +241,7 @@ namespace Trinity {
                 // and because its base is set to an 'impossible' value, it will work great
 
                 std::unordered_map<str8_t, exec_term_id_t> termsDict;
+
                 // TODO: determine suitable allocator bank size based on some meaningful metric
                 // e.g total distinct tokens in the query, otherwise we may just end up allocating more memory than
                 // we need and for environments where memory pressure is a concern, this may be important.

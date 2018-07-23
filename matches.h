@@ -81,7 +81,7 @@ namespace Trinity {
                 } term;
 
                 uint8_t instancesCnt; // i.e if your query is [world of warcraft mists of pandaria] then you will have 2 instances for token "of" in the query, with rep = 1
-                struct instance_struct {
+                struct instance_struct final {
                         // see Trinity::phrase decl. comments
                         uint16_t           index;
                         query_term_flags_t flags;
@@ -169,7 +169,7 @@ namespace Trinity {
                 //
                 // This is only invoked if the default execution mode is selected; it makes no sense otherwise.
                 virtual void prepare(const query_index_terms **queryIndicesTerms_, const uint16_t fi) {
-                        queryIndicesTerms = queryIndicesTerms_;
+                        queryIndicesTerms      = queryIndicesTerms_;
                         query_final_term_index = fi;
                 }
 

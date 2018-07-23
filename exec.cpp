@@ -631,6 +631,9 @@ void Trinity::exec_query(const query &in,
                     : rctx{r} {
                 }
 
+		// To get (index => query term), you can use
+		// get all distinct terms (index=>str8_t) from the query
+		// and use query_term_ctx::term_struct::id to index in that set
                 inline uint16_t resolve_query_term(const str8_t term) final {
                         const auto res = rctx->resolve_term(term);
 
@@ -664,7 +667,7 @@ void Trinity::exec_query(const query &in,
         // you want to attempt to matchd documents against queries, it would be very handy.
         //
         // TODO(markp): we need to move some state out of queryexec_ctx, to e.g a compilation_ctx
-        // which can exist independently of a queryexec_ctx, so that we can use it for a perconalation impl.
+        // which can exist independently of a queryexec_ctx, so that we can use it for a percolator impl.
         // group_execnodes(rootExecNode, rctx.allocator);
 
         // see query_index_terms and MatchedIndexDocumentsFilter::prepare() comments

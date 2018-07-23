@@ -445,7 +445,6 @@ namespace Trinity {
                 // - if [game] wasn't part of the query, then toNextSpan would have been 0 for the last token of every sub-expression
                 // 	in those examples, so we clearly need a way to deal with those situations. You can now use
                 //	query::final_index() to properly and correctly compute a range when toNextSpan == 0
-
                 term terms[0];
 
                 bool operator==(const phrase &o) const noexcept {
