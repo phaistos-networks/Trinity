@@ -81,7 +81,7 @@ namespace Trinity {
                 } term;
 
                 uint8_t instancesCnt; // i.e if your query is [world of warcraft mists of pandaria] then you will have 2 instances for token "of" in the query, with rep = 1
-                struct instance_struct final {
+                struct instance_struct {
                         // see Trinity::phrase decl. comments
                         uint16_t           index;
                         query_term_flags_t flags;

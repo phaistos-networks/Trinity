@@ -557,6 +557,31 @@ void Trinity::exec_query(const query &in,
                 EXPECT(scorer);
         }
 
+
+        queryexec_ctx rctx(idxsrc, documentsOnly, accumScoreMode);
+
+        struct comp_ctx final
+            : public compilation_ctx {
+                queryexec_ctx *const rctx;
+
+                comp_ctx(queryexec_ctx *const r)
+                    : rctx{r} {
+                }
+
+		// To get (index => query term), you can use
+		// get all distinct terms (index=>str8_t) from the query
+		// and use query_term_ctx::term_struct::id to index in that set
+                inline uint16_t resolve_query_term(const str8_t term) final {
+                        const auto res = rctx->resolve_term(term);
+
+                        if constexpr (traceCompile)
+                                SLog("Attempting to resolve [", term, "] ", res, "\n");
+
+                        return res;
+                }
+
+        } compilationCtx(&rctx);
+
         if (defaultMode) {
                 std::vector<ast_node *> stack{q.root}; // use a stack because we don't care about the evaluation order
                 std::vector<phrase *>   collected;
@@ -568,9 +593,22 @@ void Trinity::exec_query(const query &in,
                         stack.pop_back();
                         switch (n->type) {
                                 case ast_node::Type::Token:
-                                case ast_node::Type::Phrase:
-                                        collected.emplace_back(n->p);
-                                        break;
+				[[fallthrough]];
+                                case ast_node::Type::Phrase: {
+                                        auto p{n->p};
+
+                                        collected.emplace_back(p);
+
+                                        // We are going to use comp_ctx to resolve
+                                        // all query tokens here before we invoke compile_query(), because it will
+                                        // wind up invoking reorder_root()
+                                        // so the order at which terms is resolved may not match the order of terms in the original query
+                                        // and we want to respect that order so that applications may rely on it for whatever reason later.
+                                        for (size_t i{0}; i < p->size; ++i) {
+						compilationCtx.resolve_query_term(p->terms[i].token);
+					}
+
+                                } break;
 
                                 case ast_node::Type::MatchSome:
                                         stack.insert(stack.end(), n->match_some.nodes, n->match_some.nodes + n->match_some.size);
@@ -621,32 +659,8 @@ void Trinity::exec_query(const query &in,
         if constexpr (traceCompile)
                 SLog("Compiling:", q, "\n");
 
-        queryexec_ctx rctx(idxsrc, documentsOnly, accumScoreMode);
-
-        struct comp_ctx final
-            : public compilation_ctx {
-                queryexec_ctx *const rctx;
-
-                comp_ctx(queryexec_ctx *const r)
-                    : rctx{r} {
-                }
-
-		// To get (index => query term), you can use
-		// get all distinct terms (index=>str8_t) from the query
-		// and use query_term_ctx::term_struct::id to index in that set
-                inline uint16_t resolve_query_term(const str8_t term) final {
-                        const auto res = rctx->resolve_term(term);
-
-                        if constexpr (traceCompile)
-                                SLog("Attempting to resolve [", term, "] ", res, "\n");
-
-                        return res;
-                }
-
-        } compilationCtx(&rctx);
-
-        const auto before       = Timings::Microseconds::Tick();
-        auto       rootExecNode = compile_query(q.root, compilationCtx);
+        const auto    before       = Timings::Microseconds::Tick();
+        auto          rootExecNode = compile_query(q.root, compilationCtx);
 
         if constexpr (traceCompile)
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " to compile, ", duration_repr(Timings::Microseconds::Since(_start)), " since start:", rootExecNode, "\n");
