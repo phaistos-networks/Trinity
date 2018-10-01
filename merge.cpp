@@ -26,7 +26,11 @@ void Trinity::MergeCandidatesCollection::commit() {
 std::unique_ptr<Trinity::masked_documents_registry> Trinity::MergeCandidatesCollection::scanner_registry_for(const uint16_t idx) {
         const auto n = map[idx].second;
 
-        return masked_documents_registry::make(all.data(), n);
+	// It's important that we masked_documents_registry::make() use_bf is set to false here
+	// otherwise it's just too expensive to allocate/release the memory for the bloom filter
+	// and because the BF size is large the allocator will fallback to mmap with subsequent madvise/munmap
+	// which is expensive if it involves thousands of such calls
+        return masked_documents_registry::make(all.data(), n, false);
 }
 
 // Make sure you have commited first

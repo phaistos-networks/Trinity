@@ -13,6 +13,8 @@
 // almost as fast, takes up less memory and is great for random access
 namespace Trinity {
         struct updated_documents final {
+                static constexpr size_t K_bloom_filter_size{128 * 1024 * 1024};
+                static_assert(0 == (K_bloom_filter_size & 1));
                 // Each bitmaps bank can be accessed by a skiplist via binary search
                 const docid_t *skiplist;
                 const uint32_t skiplistSize;
@@ -23,6 +25,8 @@ namespace Trinity {
 
                 docid_t lowestID;
                 docid_t highestID;
+
+		const uint64_t *bf;
 
                 inline operator bool() const {
                         return banks;
@@ -41,6 +45,7 @@ namespace Trinity {
                 docid_t                      maxDocID;
                 const docid_t *const         udSkipList;
                 const uint8_t *const         udBanks;
+                const uint64_t *const        bf;
 
                 void reset() {
                         maxDocID = std::numeric_limits<docid_t>::max();
@@ -48,7 +53,7 @@ namespace Trinity {
                 }
 
                 updated_documents_scanner(const updated_documents &ud)
-                    : end{ud.skiplist + ud.skiplistSize}, bankSize{ud.bankSize}, skiplistBase{ud.skiplist}, udSkipList{ud.skiplist}, udBanks{ud.banks}, maxDocID{ud.highestID} {
+                    : end{ud.skiplist + ud.skiplistSize}, bankSize{ud.bankSize}, skiplistBase{ud.skiplist}, udSkipList{ud.skiplist}, udBanks{ud.banks}, maxDocID{ud.highestID}, bf{ud.bf} {
                         if (skiplistBase != end) {
                                 curBankRange.Set(*skiplistBase, ud.bankSize);
                                 curBank = udBanks;
@@ -56,7 +61,7 @@ namespace Trinity {
                 }
 
                 updated_documents_scanner(const updated_documents_scanner &o)
-                    : end{o.end}, bankSize{o.bankSize}, skiplistBase{o.skiplistBase}, udSkipList{o.udSkipList}, udBanks{o.udBanks} {
+                    : end{o.end}, bankSize{o.bankSize}, skiplistBase{o.skiplistBase}, udSkipList{o.udSkipList}, udBanks{o.udBanks}, bf{o.bf} {
                         curBankRange = o.curBankRange;
                         curBank      = o.curBank;
                 }
@@ -80,25 +85,48 @@ namespace Trinity {
         // manages multiple scanners and tests among all of them, and if any of them is exchausted, it is removed from the collection
         struct masked_documents_registry final {
                 bool test(const docid_t id) {
+			// O(1) checks first
+			// if we have 10s or 100s of scanner to iterate, we really
+			// want to be able to check here before we get to consider them all
+                        if (id < min_doc_id || id > max_doc_id) {
+                                return false;
+                        } else if (const auto m = bf) {
+                                const uint64_t h = id & (updated_documents::K_bloom_filter_size - 1);
+
+                                if (0 == (m[h / 64] & (static_cast<uint64_t>(1) << (h & 63)))) {
+                                        // fast-path: definitely not here
+                                        return false;
+                                }
+                        }
+
                         for (uint8_t i{0}; i < rem;) {
                                 auto it = scanners + i;
 
-                                if (it->test(id))
+                                if (it->test(id)) {
                                         return true;
-                                else if (it->drained())
+                                } else if (it->drained()) {
                                         new (it) updated_documents_scanner(scanners[--rem]);
-                                else
+				} else {
                                         ++i;
+				}
                         }
 
                         return false;
                 }
 
                 uint8_t                   rem;
+                docid_t                   min_doc_id, max_doc_id;
+                uint64_t *                bf{nullptr};
                 updated_documents_scanner scanners[0];
 
                 masked_documents_registry()
                     : rem{0} {
+                }
+
+                ~masked_documents_registry() {
+                        if (bf) {
+                                free(bf);
+                        }
                 }
 
                 inline auto size() const noexcept {
@@ -109,19 +137,47 @@ namespace Trinity {
                         return 0 == rem;
                 }
 
-                static std::unique_ptr<Trinity::masked_documents_registry> make(const updated_documents *ud, const std::size_t n) {
+                static std::unique_ptr<Trinity::masked_documents_registry> make(const updated_documents *ud, const std::size_t n, const bool use_bf = true) {
                         // ASAN will complain that about alloc-dealloc-mismatch
                         // because we are using placement new operator and apparently there is no way to tell ASAN that this is fine
                         // I need to figure this out
                         // TODO: do whatever makes sense here later
-                        require(n <= std::numeric_limits<uint8_t>::max());
-                        auto ptr = new (malloc(sizeof(masked_documents_registry) + sizeof(updated_documents_scanner) * n)) masked_documents_registry();
+                        EXPECT(n <= std::numeric_limits<uint8_t>::max());
+
+                        auto     ptr = new (malloc(sizeof(masked_documents_registry) + sizeof(updated_documents_scanner) * n)) masked_documents_registry();
+                        docid_t  min_doc_id{std::numeric_limits<docid_t>::max()}, max_doc_id{std::numeric_limits<docid_t>::min()};
+                        uint64_t *bf;
+
+                        if (use_bf) {
+                                bf = reinterpret_cast<uint64_t *>(calloc(sizeof(uint64_t), updated_documents::K_bloom_filter_size / 64));
+                        } else {
+                                bf = nullptr;
+                        }
 
                         ptr->rem = n;
 
-                        for (uint32_t i{0}; i != n; ++i)
+                        for (uint32_t i{0}; i != n; ++i) {
+                                const auto ud_bf = ud->bf;
+
                                 new (&ptr->scanners[i]) updated_documents_scanner(ud[i]);
 
+                                max_doc_id = std::max(max_doc_id, ud->highestID);
+                                min_doc_id = std::min(min_doc_id, ud->lowestID);
+                                if (bf) {
+                                        if (!ud_bf) {
+                                                free(bf);
+                                                bf = nullptr;
+                                        } else {
+                                                for (size_t i{0}; i < updated_documents::K_bloom_filter_size / 64; ++i) {
+                                                        bf[i] |= ud_bf[i];
+                                                }
+                                        }
+                                }
+                        }
+
+                        ptr->min_doc_id = min_doc_id;
+                        ptr->max_doc_id = max_doc_id;
+                        ptr->bf         = bf;
                         return std::unique_ptr<Trinity::masked_documents_registry>(ptr);
                 }
         };
