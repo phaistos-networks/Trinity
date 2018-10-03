@@ -64,4 +64,4 @@ lib: $(OBJS)
 clean:
 	rm -f *.o T *.a Switch/ext_snappy/*o Switch/ext_snappy/*.a
 
-.PHONY: clean
+.PHONY: clean switch

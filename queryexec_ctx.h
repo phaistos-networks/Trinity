@@ -86,7 +86,7 @@ namespace Trinity {
                 {
                 }
 
-                ~docstracker_bank() {
+                ~docstracker_bank() noexcept  {
                         std::free(entries);
 #ifdef BANKS_USE_BM
                         std::free(bm);
@@ -106,9 +106,10 @@ namespace Trinity {
                         data = (Codecs::PostingsListIterator **)malloc(sizeof(Codecs::PostingsListIterator *) * n);
                 }
 
-                ~iterators_collector() {
-                        if (data)
+                ~iterators_collector() noexcept {
+                        if (data) {
                                 std::free(data);
+			}
                 }
         };
 

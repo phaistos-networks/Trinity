@@ -165,7 +165,7 @@ namespace Trinity {
                         require(pq.size());
                 }
 
-                ~DocsSetSpanForDisjunctions() {
+                ~DocsSetSpanForDisjunctions() noexcept {
                         std::free(matching);
                         std::free(collected);
                 }
@@ -214,7 +214,7 @@ namespace Trinity {
                         }
                 }
 
-                ~DocsSetSpanForDisjunctionsWithThreshold() {
+                ~DocsSetSpanForDisjunctionsWithThreshold() noexcept {
                         std::free(matching);
                         std::free(collected);
                         std::free(tracker);
@@ -262,7 +262,7 @@ namespace Trinity {
                         EXPECT(pq.size());
                 }
 
-                ~DocsSetSpanForPartialMatch() {
+                ~DocsSetSpanForPartialMatch() noexcept {
                         std::free(matching);
                         std::free(collected);
                         std::free(tracker);
@@ -335,7 +335,7 @@ namespace Trinity {
               public:
                 DocsSetSpanForDisjunctionsWithSpans(std::vector<DocsSetSpan *> &its);
 
-                ~DocsSetSpanForDisjunctionsWithSpans() {
+                ~DocsSetSpanForDisjunctionsWithSpans() noexcept {
                         std::free(matching);
                         std::free(collected);
                 }
@@ -426,7 +426,7 @@ namespace Trinity {
               public:
                 DocsSetSpanForDisjunctionsWithSpansAndCost(const uint16_t min, std::vector<DocsSetSpan *> &its);
 
-                ~DocsSetSpanForDisjunctionsWithSpansAndCost() {
+                ~DocsSetSpanForDisjunctionsWithSpansAndCost() noexcept {
                         std::free(matching);
                         std::free(leads);
                         std::free(storage);
@@ -488,7 +488,7 @@ namespace Trinity {
               public:
                 DocsSetSpanForDisjunctionsWithThresholdAndCost(const uint16_t min, std::vector<DocsSetIterators::Iterator *> &its, const bool needScores);
 
-                ~DocsSetSpanForDisjunctionsWithThresholdAndCost() {
+                ~DocsSetSpanForDisjunctionsWithThresholdAndCost() noexcept {
                         std::free(matching);
                         std::free(leads);
                         std::free(storage);

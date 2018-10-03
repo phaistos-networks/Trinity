@@ -63,8 +63,9 @@ namespace Trinity {
                                 }
 
                                 ~IndexSession() {
-                                        if (positionsOutFd != -1)
+                                        if (positionsOutFd != -1) {
                                                 close(positionsOutFd);
+					}
                                 }
 
                                 constexpr void set_flush_freq(const uint32_t f) {
@@ -225,7 +226,7 @@ namespace Trinity {
                                         skiplist_entry *data;
                                         uint16_t        size{0};
 
-                                        ~skiplist_struct() {
+                                        ~skiplist_struct() noexcept { 
                                                 if (size)
                                                         std::free(data);
                                         }

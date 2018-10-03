@@ -118,7 +118,7 @@ namespace Trinity {
                       public:
                         DisjunctionSome(Iterator **const iterators, const uint16_t cnt, const uint16_t minMatch);
 
-                        ~DisjunctionSome() {
+                        ~DisjunctionSome() noexcept {
                                 if (trackersStorage)
                                         std::free(trackersStorage);
                         }
@@ -213,7 +213,7 @@ namespace Trinity {
                             : data((uint16_t *)malloc(sizeof(uint16_t) * capacity)) {
                         }
 
-                        ~idx_stack() {
+                        ~idx_stack() noexcept {
                                 std::free(data);
                         }
                 };
@@ -319,7 +319,7 @@ namespace Trinity {
                                 memcpy(its, iterators, cnt * sizeof(Codecs::PostingsListIterator *));
                         }
 
-                        ~ConjuctionAllPLI() {
+                        ~ConjuctionAllPLI() noexcept {
                                 std::free(its);
                         }
 
@@ -354,7 +354,7 @@ namespace Trinity {
                                 memcpy(its, iterators, cnt * sizeof(Iterator *));
                         }
 
-                        ~Conjuction() {
+                        ~Conjuction() noexcept  {
                                 std::free(its);
                         }
 
@@ -397,7 +397,7 @@ namespace Trinity {
                                 memcpy(its, iterators, sizeof(iterators[0]) * cnt);
                         }
 
-                        ~Phrase() {
+                        ~Phrase() noexcept {
                                 std::free(its);
                         }
 

@@ -63,7 +63,7 @@ namespace Trinity {
                         freq = newFreq;
                 }
 
-                ~term_hits() {
+                ~term_hits() noexcept {
                         if (all)
                                 std::free(all);
                 }

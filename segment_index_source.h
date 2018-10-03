@@ -18,7 +18,7 @@ namespace Trinity {
                         updated_documents                     set;
                         range_base<const uint8_t *, uint32_t> fileData;
 
-                        ~masked_documents_struct() {
+                        ~masked_documents_struct() noexcept 	{
                                 if (auto ptr = (void *)(fileData.offset))
                                         munmap(ptr, fileData.size());
                         }
@@ -63,7 +63,7 @@ namespace Trinity {
                         return maskedDocuments.set;
                 }
 
-                ~SegmentIndexSource() {
+                ~SegmentIndexSource() noexcept {
                         if (auto ptr = (void *)index.offset) {
 #ifdef TRINITY_MEMRESIDENT_INDEX
                                 std::free(ptr);

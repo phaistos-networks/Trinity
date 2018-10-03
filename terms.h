@@ -157,9 +157,10 @@ namespace Trinity {
               public:
                 SegmentTerms(const char *segmentBasePath);
 
-                ~SegmentTerms() {
-                        if (auto ptr = (void *)(termsData.offset))
+                ~SegmentTerms() noexcept {
+                        if (auto ptr = (void *)(termsData.offset)) {
                                 munmap(ptr, termsData.size());
+			}
                 }
 
                 term_index_ctx lookup(const str8_t term) {

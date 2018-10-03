@@ -123,7 +123,7 @@ namespace Trinity {
                     : rem{0} {
                 }
 
-                ~masked_documents_registry() {
+                ~masked_documents_registry() noexcept {
                         if (bf) {
                                 free(bf);
                         }
@@ -137,7 +137,10 @@ namespace Trinity {
                         return 0 == rem;
                 }
 
-                static std::unique_ptr<Trinity::masked_documents_registry> make(const updated_documents *ud, const std::size_t n, const bool use_bf = true) {
+		// we no longer build a BF here
+		// because this registry is materialized in every query and it's expensive-ish
+		// we will instead rely on the per scanner bf
+                static std::unique_ptr<Trinity::masked_documents_registry> make(const updated_documents *ud, const std::size_t n, const bool use_bf = false) {
                         // ASAN will complain that about alloc-dealloc-mismatch
                         // because we are using placement new operator and apparently there is no way to tell ASAN that this is fine
                         // I need to figure this out

@@ -208,8 +208,9 @@ namespace Trinity {
                 }
 
                 ~SegmentIndexSession() {
-                        if (backingFileFD != -1)
+                        if (backingFileFD != -1) {
                                 close(backingFileFD);
+			}
                         while (banks.size()) {
                                 delete banks.back();
                                 banks.pop_back();
