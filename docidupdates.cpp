@@ -106,7 +106,15 @@ bool Trinity::updated_documents_scanner::test(const docid_t id) noexcept {
                 SLog(ansifmt::bold, "Check for ", id, ", curBankRange = ", curBankRange, ", contains ", curBankRange.Contains(id), ansifmt::reset, "\n");
         }
 
-        if (const auto m = bf) {
+
+	if (unlikely(id > maxDocID)) {
+		// fast-path; flag it as drained
+		curBankRange.offset = UINT32_MAX;
+		return false;
+	} else if (id < low_doc_id) {
+		// fast-path: definitely not here
+		return false;
+	} else if (const auto m = bf) {
                 const uint64_t h = id & (updated_documents::K_bloom_filter_size - 1);
 
                 if (0 == (m[h / 64] & (static_cast<uint64_t>(1) << (h & 63)))) {

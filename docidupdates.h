@@ -26,7 +26,7 @@ namespace Trinity {
                 docid_t lowestID;
                 docid_t highestID;
 
-		const uint64_t *bf;
+                const uint64_t *bf;
 
                 inline operator bool() const {
                         return banks;
@@ -42,18 +42,20 @@ namespace Trinity {
                 range_base<docid_t, docid_t> curBankRange;
                 const docid_t *              skiplistBase;
                 const uint8_t *              curBank;
+                docid_t                      low_doc_id;
                 docid_t                      maxDocID;
                 const docid_t *const         udSkipList;
                 const uint8_t *const         udBanks;
                 const uint64_t *const        bf;
 
                 void reset() {
-                        maxDocID = std::numeric_limits<docid_t>::max();
+                        maxDocID   = std::numeric_limits<docid_t>::max();
+                        low_doc_id = 0;
                         curBankRange.Set(maxDocID, 0);
                 }
 
                 updated_documents_scanner(const updated_documents &ud)
-                    : end{ud.skiplist + ud.skiplistSize}, bankSize{ud.bankSize}, skiplistBase{ud.skiplist}, udSkipList{ud.skiplist}, udBanks{ud.banks}, maxDocID{ud.highestID}, bf{ud.bf} {
+                    : end{ud.skiplist + ud.skiplistSize}, bankSize{ud.bankSize}, skiplistBase{ud.skiplist}, udSkipList{ud.skiplist}, udBanks{ud.banks}, low_doc_id{ud.lowestID}, maxDocID{ud.highestID}, bf{ud.bf} {
                         if (skiplistBase != end) {
                                 curBankRange.Set(*skiplistBase, ud.bankSize);
                                 curBank = udBanks;
@@ -85,9 +87,9 @@ namespace Trinity {
         // manages multiple scanners and tests among all of them, and if any of them is exchausted, it is removed from the collection
         struct masked_documents_registry final {
                 bool test(const docid_t id) {
-			// O(1) checks first
-			// if we have 10s or 100s of scanner to iterate, we really
-			// want to be able to check here before we get to consider them all
+                        // O(1) checks first
+                        // if we have 10s or 100s of scanner to iterate, we really
+                        // want to be able to check here before we get to consider them all
                         if (id < min_doc_id || id > max_doc_id) {
                                 return false;
                         } else if (const auto m = bf) {
@@ -106,9 +108,9 @@ namespace Trinity {
                                         return true;
                                 } else if (it->drained()) {
                                         new (it) updated_documents_scanner(scanners[--rem]);
-				} else {
+                                } else {
                                         ++i;
-				}
+                                }
                         }
 
                         return false;
@@ -137,9 +139,9 @@ namespace Trinity {
                         return 0 == rem;
                 }
 
-		// we no longer build a BF here
-		// because this registry is materialized in every query and it's expensive-ish
-		// we will instead rely on the per scanner bf
+                // we no longer build a BF here
+                // because this registry is materialized in every query and it's expensive-ish
+                // we will instead rely on the per scanner bf
                 static std::unique_ptr<Trinity::masked_documents_registry> make(const updated_documents *ud, const std::size_t n, const bool use_bf = false) {
                         // ASAN will complain that about alloc-dealloc-mismatch
                         // because we are using placement new operator and apparently there is no way to tell ASAN that this is fine
@@ -147,8 +149,8 @@ namespace Trinity {
                         // TODO: do whatever makes sense here later
                         EXPECT(n <= std::numeric_limits<uint8_t>::max());
 
-                        auto     ptr = new (malloc(sizeof(masked_documents_registry) + sizeof(updated_documents_scanner) * n)) masked_documents_registry();
-                        docid_t  min_doc_id{std::numeric_limits<docid_t>::max()}, max_doc_id{std::numeric_limits<docid_t>::min()};
+                        auto      ptr = new (malloc(sizeof(masked_documents_registry) + sizeof(updated_documents_scanner) * n)) masked_documents_registry();
+                        docid_t   min_doc_id{std::numeric_limits<docid_t>::max()}, max_doc_id{std::numeric_limits<docid_t>::min()};
                         uint64_t *bf;
 
                         if (use_bf) {

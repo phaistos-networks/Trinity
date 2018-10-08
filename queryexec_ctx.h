@@ -5,6 +5,8 @@
 #include "similarity.h"
 #include "compilation_ctx.h"
 
+#define _HAVE_CANDIDATE_DOCUMENTS_ALLOCATOR
+
 #define TRINITY_LASTBANK_OPTIMIZATION 1
 namespace Trinity {
         // 64bytes alignment seems to yield good results, but crashes if optimizer is enabled (i.e struct alignas(64) exec_node {})
@@ -181,7 +183,7 @@ namespace Trinity {
 
                 struct _reusable_cds final {
                         candidate_document **data{nullptr};
-                        uint16_t             size_{0}, capacity{0};
+                        uint32_t             size_{0}, capacity{0};
 
                         void push_back(candidate_document *d);
 
@@ -194,14 +196,18 @@ namespace Trinity {
                         }
 
                 } reusableCDS;
+#ifdef _HAVE_CANDIDATE_DOCUMENTS_ALLOCATOR
+		simple_allocator candidate_documents_allocator{32 * 1024};
+#endif
                 DocsSetIterators::Iterator *rootIterator{nullptr};
 
                 candidate_document *cds_track(const isrc_docid_t did);
 
                 inline void cds_release(candidate_document *const d) {
                         if (1 == d->rc--) {
-                                if (auto th = d->termHits)
+                                if (auto th = d->termHits) {
                                         th->set_docid(0);
+				}
 
                                 d->rc = 1;
                                 d->id = 0;

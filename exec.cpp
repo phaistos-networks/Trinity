@@ -1057,7 +1057,7 @@ void Trinity::exec_query(const query &in,
                         auto              span     = build_span(sit, &rctx);
 
                         rctx.collectedIts.init(capacity);
-                        rctx.reusableCDS.capacity = std::max<uint16_t>(512, capacity);
+                        rctx.reusableCDS.capacity = std::max<uint32_t>(4096, capacity);
                         rctx.reusableCDS.data     = static_cast<candidate_document **>(malloc(sizeof(candidate_document *) * rctx.reusableCDS.capacity));
                         rctx.rootIterator         = sit;
 

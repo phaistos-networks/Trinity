@@ -42,8 +42,8 @@ namespace Trinity {
                 // This is internal and specific to the execution engine impl.
                 uint16_t allCapacity{0};
                 union {
-                        uint16_t     docSeq{0};
-                        isrc_docid_t doc_id;
+                        uint16_t     docSeq;
+                        isrc_docid_t doc_id{0};
                 };
 
                 void set_docid(const isrc_docid_t id) {
@@ -64,8 +64,9 @@ namespace Trinity {
                 }
 
                 ~term_hits() noexcept {
-                        if (all)
+                        if (all) {
                                 std::free(all);
+			}
                 }
         };
 

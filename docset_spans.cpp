@@ -103,7 +103,7 @@ Trinity::isrc_docid_t Trinity::DocsSetSpanForDisjunctions::process(MatchesProxy 
                 auto it = pq.top();
 
                 id = it->current();
-                if (unlikely(id >= max))
+                if (unlikely(id >= max)) 
                         break;
 
                 // fast round down to SIZE(works because SIZE is a power of two int.). Identifies the window the next match belongs to.

@@ -23,22 +23,28 @@ docstracker_bank docstracker_bank::dummy_bank{true};
 #endif
 
 Trinity::candidate_document *Trinity::queryexec_ctx::document_by_id(const isrc_docid_t id) {
-        if constexpr (trace_bankaccess)
+        if constexpr (trace_bankaccess) {
                 SLog("BANK: document_by_id(", id, ") ", maxTrackedDocumentID, "\n");
+        }
 
         if (id <= maxTrackedDocumentID) {
                 if (auto ptr = lookup_document_inbank(id)) {
-                        if constexpr (trace_bankaccess)
+                        if constexpr (trace_bankaccess) {
                                 SLog("BANK: lookup_document_inbank() successeful for ", id, "\n");
+                        }
 
                         return ptr->retained();
-                } else if constexpr (trace_bankaccess)
+                } else if constexpr (trace_bankaccess) {
                         SLog("BANK: lookup_document_inbank() failed for ", id, "\n");
+                }
 
-        } else if constexpr (trace_bankaccess)
+        } else if constexpr (trace_bankaccess) {
                 SLog("BANK: id(", id, ") > maxTrackedDocumentID(", maxTrackedDocumentID, ")\n");
+        }
 
-        auto *const res = reusableCDS.pop_one() ?: new candidate_document(this);
+	// TODO: candidate_documents_allocator.construct<candidate_document>(this)
+        //auto *const res = reusableCDS.pop_one() ?: new candidate_document(this);
+        auto *const res = reusableCDS.pop_one() ?: candidate_documents_allocator.construct<candidate_document>(this);
 
         res->id       = id;
         res->dwsInUse = false;
@@ -49,8 +55,9 @@ Trinity::candidate_document *Trinity::queryexec_ctx::document_by_id(const isrc_d
 
                         memset(res->curDocQueryTokensCaptured, 0, sizeof(isrc_docid_t) * maxQueryTermIDPlus1);
                         res->curDocSeq = 1;
-                } else
+                } else {
                         ++(res->curDocSeq);
+                }
         }
 
         return res;
@@ -238,11 +245,19 @@ queryexec_ctx::~queryexec_ctx() {
                 }
         }
 
-        while (auto p = reusableCDS.pop_one())
+#ifndef _HAVE_CANDIDATE_DOCUMENTS_ALLOCATOR
+        while (auto p = reusableCDS.pop_one()) {
                 delete p;
+	}
+#else
+        while (auto p = reusableCDS.pop_one()) {
+		p->~candidate_document();
+	}
+#endif
 
-        if (reusableCDS.data)
+        if (reusableCDS.data) {
                 std::free(reusableCDS.data);
+	}
 }
 
 void queryexec_ctx::prepare_decoder(exec_term_id_t termID) {
@@ -303,6 +318,8 @@ Trinity::term_hits *candidate_document::materialize_term_hits(queryexec_ctx *rct
         if constexpr (trace_bankaccess)
                 SLog("BANK: materializing ", did, " for term ", termID, "\n");
 
+	// TODO: Valgrind:  Conditional jump or move depends on uninitialised value(s)
+	// via https://staging.bestprice.gr/cat/583/health-beauty.html?q=apivita+wine+elixir+%CE%BB%CE%B1%CE%B4%CE%B9+30ml
         if (th->doc_id != did) {
                 const auto docHits = it->freq;
 
@@ -344,8 +361,14 @@ Trinity::candidate_document::candidate_document(queryexec_ctx *const rctx) {
 
 void queryexec_ctx::_reusable_cds::push_back(candidate_document *const d) {
         if (unlikely(size_ == capacity)) {
+#ifndef _HAVE_CANDIDATE_DOCUMENTS_ALLOCATOR
                 // can't hold no more
                 delete d;
+#else
+                capacity += capacity / 2;
+                data          = static_cast<candidate_document **>(realloc(data, sizeof(candidate_document *) * capacity));
+                data[size_++] = d;
+#endif
         } else {
                 data[size_++] = d;
         }
@@ -557,9 +580,12 @@ void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const do
                                 p->queryCtx                         = qti;
                                 p->hits                             = th;
 
-                                if (trace)
+                                if (trace) {
                                         SLog("th->docID = ", th->doc_id, "  ", did, "\n");
+				}
 
+				// TODO: valgrind Conditional jump or move depends on uninitialised value(s)
+				// via https://staging.bestprice.gr/cat/583/health-beauty.html?q=apivita+wine+elixir+%CE%BB%CE%B1%CE%B4%CE%B9+30ml
                                 if (th->doc_id != did) {
                                         // could have been materialized earlier for a phrase check
                                         const auto docHits = it->freq;
@@ -695,25 +721,29 @@ Trinity::candidate_document *Trinity::queryexec_ctx::lookup_document_inbank(cons
         if (const auto b = bank_for(id)) {
                 const auto idx = id - b->base;
 
-                if constexpr (trace_bankaccess)
+                if constexpr (trace_bankaccess) {
                         SLog("BANK: have bank for ", id, "\n");
+		}
 
 #ifdef BANKS_USE_BM
                 if (b->bm[idx >> 6] & (uint64_t(1) << (idx & (docstracker_bank::SIZE - 1))))
 #endif
                 {
-                        if constexpr (trace_bankaccess)
+                        if constexpr (trace_bankaccess) {
                                 SLog("BANK: have document ", id, "\n");
+			}
 
                         return b->entries[idx].document;
                 }
 
-                if constexpr (trace_bankaccess)
+                if constexpr (trace_bankaccess) {
                         SLog("BANK: lookup failed for ", id, "\n");
+		}
         }
 
-        if constexpr (trace_bankaccess)
+        if constexpr (trace_bankaccess) {
                 SLog("BANK: failed to lookup document ", id, "\n");
+	}
 
         return nullptr;
 }

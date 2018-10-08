@@ -590,8 +590,9 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::next() {
 #endif
 
 Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::next() {
-        if (pq.empty())
+        if (pq.empty()) {
                 return DocIDsEND;
+	}
 
         auto       top = pq.top();
         const auto doc = top->current();
@@ -602,10 +603,12 @@ Trinity::isrc_docid_t Trinity::DocsSetIterators::Disjunction::next() {
                         top = pq.top();
                 } else {
                         pq.erase(top);
-                        if (unlikely(pq.empty()))
+
+                        if (unlikely(pq.empty())) {
                                 return curDocument.id = DocIDsEND;
-                        else
+			} else {
                                 top = pq.top();
+			}
                 }
 
         } while ((curDocument.id = top->current()) == doc);
