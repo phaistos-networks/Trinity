@@ -1,6 +1,8 @@
 #pragma once
 #include "common.h"
 #include "runtime.h"
+#include "common.h"
+
 
 namespace Trinity {
         class DocWordsSpace final {
@@ -11,7 +13,7 @@ namespace Trinity {
                 // but that 'd make access somewhat slower for set() and test() because we 'd get more cache misses so we optimise for it
                 using seq_t = uint16_t;
 
-                struct position {
+                struct position final {
                         exec_term_id_t termID; // See IMPL.md
                         seq_t          docSeq;
                 };
@@ -28,7 +30,7 @@ namespace Trinity {
                 DocWordsSpace(const uint32_t max = Trinity::Limits::MaxPosition)
                     : positions((position *)calloc(sizeof(position), max + 1 + Trinity::Limits::MaxPhraseSize)), maxPos{max} {
                         curSeq = 1; // IMPORTANT, start from (1)
-                        require(max && max <= Trinity::Limits::MaxPosition);
+                        EXPECT(max && max <= Trinity::Limits::MaxPosition);
                 }
 
                 ~DocWordsSpace() noexcept {
@@ -48,14 +50,22 @@ namespace Trinity {
                                 // no need to memset() for (maxPos + 1 + Trinity::Limits::MaxPhraseSize), just upto (maxPos + 1)
                                 memset(positions, 0, sizeof(position) * (maxPos + 1));
                                 curSeq = 1; // important; set to 1 not 0
-                        } else
+                        } else {
                                 ++curSeq;
+                        }
                 }
 
                 // XXX: pos must be > 0
+#if !defined(TRINITY_VERIFY_HITS)
                 [[gnu::always_inline]] void set(const exec_term_id_t termID, const tokenpos_t pos) noexcept {
                         positions[pos] = {termID, curSeq};
                 }
+#else
+                [[gnu::always_inline]] void set(const exec_term_id_t termID, const tokenpos_t pos) {
+                        EXPECT(pos < maxPos);
+                        positions[pos] = {termID, curSeq};
+                }
+#endif
 
 #if 1
                 /*
@@ -122,5 +132,9 @@ namespace Trinity {
                 // we would need to track the offset(relative index in the phrase)
                 // This is an example/reference implementation
                 bool test_phrase(const std::vector<exec_term_id_t> &phraseTerms, const tokenpos_t *phraseFirstTokenPositions, const tokenpos_t phraseFirstTokenPositionsCnt) const;
+
+                auto max_pos() const noexcept {
+                        return maxPos;
+                }
         };
 } // namespace Trinity

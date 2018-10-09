@@ -8,16 +8,17 @@ static_assert(sizeof(Trinity::isrc_docid_t) <= sizeof(uint32_t));
 // It's not the default here because you may have Lucene indices created alread using Lucene codec and PFOR encoding scheme.
 
 #if 0
-// Faster than both PFOR and masked vbyte
+// Faster than both PFOR and MaskedVByte
 // https://github.com/lemire/streamvbyte and https://lemire.me/blog/2017/09/27/stream-vbyte-breaking-new-speed-records-for-integer-compression/
-// Results in larger indices compared to pfor though
+//
+// Results in larger indices compared to PFOR though
 #define LUCENE_USE_STREAMVBYTE 1
 #elif 0
-// Slower than both PFOR and streaming vbyte
+// Slower than both PFOR and StreamingVByte
 // http://maskedvbyte.org
 #define LUCENE_USE_MASKEDVBYTE 1
 #else
-// Smaller indices in terms of size, but slower than stream vbyte
+// Smaller indices in terms of size, but slower than StreamVByte
 // https://github.com/lemire/FastPFor
 #include <ext/FastPFor/headers/fastpfor.h>
 #define LUCENE_USE_FASTPFOR 1
@@ -30,16 +31,20 @@ namespace Trinity {
 #define LUCENE_SKIPLIST_SEEK_EARLY 1
 #define LUCENE_LAZY_SKIPLIST_INIT 1
 
-                // We can't use this encoding idea because we can't handle deltas >=
-                // (DocIDsEND>>1), so that if e.g the first document ID for a term
-                // is (1<<31) + 15, this will fail. However, see IndexSource::translate_docid() for how that would work with docIDs translations
-                //#define LUCENE_ENCODE_FREQ1_DOCDELTA 1
+                        // We can't use this encoding idea because we can't handle deltas >=
+                        // (DocIDsEND>>1), so that if e.g the first document ID for a term
+                        // is (1<<31) + 15, this will fail. However, see IndexSource::translate_docid() for how that would work with docIDs translations
+                        // #define LUCENE_ENCODE_FREQ1_DOCDELTA 1
 
 #ifdef LUCENE_USE_MASKEDVBYTE
                         static constexpr size_t BLOCK_SIZE{64};
+#elif defined(LUCENE_USE_STREAMVBYTE)
+			// XXX: 256 may make more sense here
+                        static constexpr size_t BLOCK_SIZE{128};
 #else
                         static constexpr size_t BLOCK_SIZE{128};
 #endif
+
                         static constexpr size_t SKIPLIST_STEP{1}; // every (SKIPLIST_STEP * BLOCK_SIZE) documents
 
                         struct IndexSession final
@@ -65,7 +70,7 @@ namespace Trinity {
                                 ~IndexSession() {
                                         if (positionsOutFd != -1) {
                                                 close(positionsOutFd);
-					}
+                                        }
                                 }
 
                                 constexpr void set_flush_freq(const uint32_t f) {
@@ -226,7 +231,7 @@ namespace Trinity {
                                         skiplist_entry *data;
                                         uint16_t        size{0};
 
-                                        ~skiplist_struct() noexcept { 
+                                        ~skiplist_struct() noexcept {
                                                 if (size)
                                                         std::free(data);
                                         }
@@ -279,6 +284,6 @@ namespace Trinity {
                         void PostingsListIterator::materialize_hits(DocWordsSpace *dwspace, term_hit *out) {
                                 static_cast<Codecs::Lucene::Decoder *>(dec)->materialize_hits(this, dwspace, out);
                         }
-                }
-        } // namespace Codecs
+                } // namespace Lucene
+        }         // namespace Codecs
 } // namespace Trinity

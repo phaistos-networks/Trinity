@@ -766,8 +766,9 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(PostingsListIterator *it
         auto       freq   = it->docFreqs[it->docsIndex];
         auto       outPtr = out;
 
-        if (const auto skippedHits = it->skippedHits)
+        if (const auto skippedHits = it->skippedHits) {
                 skip_hits(it, skippedHits);
+	}
 
         // fast-path; can satisfy directly from the current hits block
         auto       hitsIndex = it->hitsIndex;
@@ -782,11 +783,19 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(PostingsListIterator *it
                         const auto pl = hitsPayloadLengths[hitsIndex];
 
                         pos += hitsPositionDeltas[hitsIndex];
+
+
+#ifdef TRINITY_VERIFY_HITS 
+			EXPECT(pos < 8192);
+#endif
+
+
                         outPtr->pos        = pos;
                         outPtr->payloadLen = pl;
 
-                        if (pos)
+                        if (pos) {
                                 dws->set(termID, pos);
+			}
 
                         outPtr->payload = 0;
                         if (pl) {
@@ -808,11 +817,17 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(PostingsListIterator *it
                                 const auto pl = hitsPayloadLengths[hitsIndex];
 
                                 pos += hitsPositionDeltas[hitsIndex];
+
+#ifdef TRINITY_VERIFY_HITS 
+				EXPECT(pos < 8192);
+#endif
+
                                 outPtr->pos        = pos;
                                 outPtr->payloadLen = pl;
 
-                                if (pos)
+                                if (pos) {
                                         dws->set(termID, pos);
+				}
 
                                 outPtr->payload = 0;
                                 if (pl) {
@@ -829,8 +844,9 @@ void Trinity::Codecs::Lucene::Decoder::materialize_hits(PostingsListIterator *it
                                 it->hitsIndex = hitsIndex;
                                 refill_hits(it);
                                 hitsIndex = it->hitsIndex;
-                        } else
+                        } else {
                                 break;
+			}
                 }
         }
 

@@ -7,6 +7,10 @@
 #endif
 #include <unordered_map>
 
+// For verifying integerity of meterialized hits
+// we no longer need to verify them, but it stays for future uses
+//#define TRINITY_VERIFY_HITS 1
+
 #define TRINITY_VERSION (2 * 10 + 5)
 
 // Define if you want to read in the contents of the index instead of memory mapping it to the process space

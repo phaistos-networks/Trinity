@@ -984,14 +984,15 @@ void Trinity::exec_query(const query &in,
                                 auto *const       th         = &cd->termHits[termID];
                                 auto *const __restrict__ dws = matchedDocument.dws = new DocWordsSpace(idxsrc->max_indexed_position());
 
-                                require(th);
+                                EXPECT(th);
                                 th->set_freq(1);
                                 matchedDocument.matchedTermsCnt = 1;
                                 p->queryCtx                     = rctx.originalQueryTermCtx[termID];
                                 p->hits                         = th;
 
-                                if (traceExec || traceCompile)
+                                if (traceExec || traceCompile) {
                                         SLog("SPECIALIZATION: collect terms\n");
+				}
 
                                 if (documentsFilter) {
                                         if (maskedDocumentsRegistry && false == maskedDocumentsRegistry->empty()) {
@@ -1022,34 +1023,59 @@ void Trinity::exec_query(const query &in,
                                                 }
                                         }
                                 } else if (maskedDocumentsRegistry && false == maskedDocumentsRegistry->empty()) {
-                                        if constexpr (traceExec)
+                                        if constexpr (traceExec) {
                                                 SLog("maskedDocumentsRegistry\n");
+					}
 
                                         while (likely((docID = it->next()) != DocIDsEND)) {
                                                 const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(docID) : docID;
 
                                                 if (!maskedDocumentsRegistry->test(globalDocID)) {
+							const auto freq = it->freq;
+
+							th->set_freq(freq);
                                                         it->materialize_hits(dws, th->all);
+#ifdef TRINITY_VERIFY_HITS
+                                                        for (size_t i{0}; i < freq; ++i) {
+                                                                const auto pos = th->all[i].pos;
+
+                                                                EXPECT(pos <= 8192);
+                                                        }
+#endif
+
                                                         matchedDocument.id = globalDocID;
                                                         matchesFilter->consider(matchedDocument);
                                                 }
                                         }
                                 } else {
-                                        if constexpr (traceExec)
+                                        if constexpr (traceExec) {
                                                 SLog("No filtering\n");
+					}
 
                                         while (likely((docID = it->next()) != DocIDsEND)) {
                                                 const auto globalDocID = requireDocIDTranslation ? idxsrc->translate_docid(docID) : docID;
+						const auto freq = it->freq;
 
+						th->set_freq(freq);
                                                 it->materialize_hits(dws, th->all);
+
+#ifdef TRINITY_VERIFY_HITS
+                                                for (size_t i{0}; i < freq; ++i) {
+                                                        const auto pos = th->all[i].pos;
+
+                                                        EXPECT(pos <= 8192);
+                                                }
+#endif
+
                                                 matchedDocument.id = globalDocID;
                                                 matchesFilter->consider(matchedDocument);
                                         }
                                 }
                         }
                 } else {
-                        if constexpr (traceCompile)
+                        if constexpr (traceCompile) {
                                 SLog("BUILDING ITERATORS from ", rootExecNode, "\n");
+			}
 
                         auto *const sit = rctx.build_iterator(rootExecNode, execFlags);
                         // Over-estimate capacity, make sure we won't overrun any buffers

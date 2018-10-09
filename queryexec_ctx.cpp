@@ -2,6 +2,7 @@
 #include "docset_iterators.h"
 #include <unordered_set>
 
+
 using namespace Trinity;
 
 // This is required to support phrases, and its important for working around a bug that manifests very rarely
@@ -315,8 +316,9 @@ Trinity::term_hits *candidate_document::materialize_term_hits(queryexec_ctx *rct
         auto *const __restrict__ th = termHits + termID;
         const auto did              = it->curDocument.id;
 
-        if constexpr (trace_bankaccess)
+        if constexpr (trace_bankaccess) {
                 SLog("BANK: materializing ", did, " for term ", termID, "\n");
+	}
 
 	// TODO: Valgrind:  Conditional jump or move depends on uninitialised value(s)
 	// via https://staging.bestprice.gr/cat/583/health-beauty.html?q=apivita+wine+elixir+%CE%BB%CE%B1%CE%B4%CE%B9+30ml
@@ -329,8 +331,9 @@ Trinity::term_hits *candidate_document::materialize_term_hits(queryexec_ctx *rct
                 if (!matchedDocument.dws) {
                         matchedDocument.dws = new DocWordsSpace(rctx->idxsrc->max_indexed_position());
 
-                        if constexpr (trace_bankaccess)
+                        if constexpr (trace_bankaccess) {
                                 SLog("BANK:", ptr_repr(matchedDocument.dws), " dws for ", did, "\n");
+			}
                 }
 
                 if (!dwsInUse) {
@@ -351,9 +354,9 @@ Trinity::candidate_document::candidate_document(queryexec_ctx *const rctx) {
         curDocQueryTokensCaptured = (isrc_docid_t *)calloc(sizeof(isrc_docid_t), maxQueryTermIDPlus1);
         termHits                  = new term_hits[maxQueryTermIDPlus1];
 
-        if (const auto required = sizeof(matched_query_term) * maxQueryTermIDPlus1; rctx->allocator.can_allocate(required))
+        if (const auto required = sizeof(matched_query_term) * maxQueryTermIDPlus1; rctx->allocator.can_allocate(required)) {
                 matchedDocument.matchedTerms = (matched_query_term *)rctx->allocator.Alloc(required);
-        else {
+        } else {
                 matchedDocument.matchedTerms = (matched_query_term *)malloc(required);
                 rctx->large_allocs.emplace_back(matchedDocument.matchedTerms);
         }
@@ -392,11 +395,13 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
 
                         d->update_matched_cnt();
                         if (d->allPLI) {
-                                for (auto i{d->lead}; i; i = i->next)
+                                for (auto i{d->lead}; i; i = i->next) {
                                         out->data[out->cnt++] = reinterpret_cast<Codecs::PostingsListIterator *>(i->it);
+				}
                         } else {
-                                for (auto i{d->lead}; i; i = i->next)
+                                for (auto i{d->lead}; i; i = i->next) {
                                         collect_doc_matching_terms(i->it, docID, out);
+				}
                         }
                 } break;
 
@@ -415,8 +420,9 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
                                 optCur = opt->opt->advance(docID);
                         }
 
-                        if (optCur == docID)
+                        if (optCur == docID) {
                                 collect_doc_matching_terms(opt->opt, docID, out);
+			}
                 } break;
 
                 case DocsSetIterators::Type::Filter:
@@ -428,8 +434,9 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
                         const auto n   = I->size;
                         auto       its = I->its;
 
-                        for (size_t i{0}; i != n; ++i)
+                        for (size_t i{0}; i != n; ++i) {
                                 collect_doc_matching_terms(its[i], docID, out);
+			}
                 } break;
 
                 case DocsSetIterators::Type::ConjuctionAllPLI: {
@@ -530,16 +537,18 @@ void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const do
         auto                        dws = md.dws;
         //const bool trace = doc->id == 2155079078 || doc->id == 2154380143;
 
-        if (trace)
+        if (trace) {
                 SLog(ansifmt::bold, ansifmt::color_blue, "Preparing match for ", doc->id, ansifmt::reset, " ", ptr_repr(doc), "\n");
+	}
 
         collectedIts.cnt = 0;
         collect_doc_matching_terms(rootIterator, doc->id, &collectedIts);
         md.matchedTermsCnt = 0;
 
         if (!dws) {
-                if (trace || trace_bankaccess)
+                if (trace || trace_bankaccess) {
                         SLog("BANK:dws dws == nullptr for ", did, "\n");
+		}
 
                 dws = md.dws = new DocWordsSpace(idxsrc->max_indexed_position());
         } else if (trace) {
@@ -557,20 +566,23 @@ void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const do
         const auto  cnt  = collectedIts.cnt;
         auto *const data = collectedIts.data;
 
-        if (trace)
+        if (trace) {
                 SLog("collected iterators ", cnt, "\n");
+	}
 
         for (size_t i{0}; i != cnt; ++i) {
                 auto *const it  = data[i];
                 const auto  tid = it->decoder()->exec_ctx_termid();
 
-                if (trace)
+                if (trace) {
                         SLog(ansifmt::color_green, "term id ", tid, ansifmt::reset, "\n");
+		}
 
                 if (const auto *const qti = originalQueryTermCtx[tid]) {
                         // not in a NOT branch
-                        if (trace)
+                        if (trace) {
                                 SLog("YES, qti ", doc->curDocQueryTokensCaptured[tid], " ", doc->curDocSeq, "\n");
+			}
 
                         if (doc->curDocQueryTokensCaptured[tid] != doc->curDocSeq) {
                                 auto *const p  = md.matchedTerms + md.matchedTermsCnt++;
@@ -584,21 +596,38 @@ void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const do
                                         SLog("th->docID = ", th->doc_id, "  ", did, "\n");
 				}
 
-				// TODO: valgrind Conditional jump or move depends on uninitialised value(s)
-				// via https://staging.bestprice.gr/cat/583/health-beauty.html?q=apivita+wine+elixir+%CE%BB%CE%B1%CE%B4%CE%B9+30ml
                                 if (th->doc_id != did) {
                                         // could have been materialized earlier for a phrase check
                                         const auto docHits = it->freq;
 
-                                        if (trace || trace_bankaccess)
+                                        if (trace || trace_bankaccess) {
                                                 SLog(ansifmt::bold, ansifmt::color_green, "BANK: YES, need to materialize freq = ", docHits, ansifmt::reset, " ", ptr_repr(it), " for id ", did, "\n");
+					}
 
                                         th->set_docid(did);
                                         th->set_freq(docHits);
                                         it->materialize_hits(dws, th->all);
+
+#ifdef TRINITY_VERIFY_HITS
+                                        for (size_t i{0}; i < th->freq; ++i) {
+                                                const auto pos = th->all[i].pos;
+
+                                                EXPECT(pos <= 8192);
+                                        }
+#endif
                                 }
-                        } else if (trace || trace_bankaccess)
+
+#ifdef TRINITY_VERIFY_HITS
+                                for (size_t i{0}; i < th->freq; ++i) {
+					const auto pos = th->all[i].pos;
+
+					EXPECT(pos <= 8192);
+                                }
+#endif
+
+                        } else if (trace || trace_bankaccess) {
                                 SLog("BANK: Already have materialized hits for (", doc->id, ", ", tid, ")\n");
+			}
                 }
         }
 }
