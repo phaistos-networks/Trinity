@@ -102,11 +102,6 @@ Trinity::updated_documents Trinity::unpack_updates(const range_base<const uint8_
 bool Trinity::updated_documents_scanner::test(const docid_t id) noexcept {
         static constexpr bool trace{false}, traceAdvances{false};
 
-        if constexpr (trace) {
-                SLog(ansifmt::bold, "Check for ", id, ", curBankRange = ", curBankRange, ", contains ", curBankRange.Contains(id), ansifmt::reset, "\n");
-        }
-
-
 	if (unlikely(id > maxDocID)) {
 		// fast-path; flag it as drained
 		curBankRange.offset = UINT32_MAX;

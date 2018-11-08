@@ -64,6 +64,8 @@ namespace Trinity {
 
                 updated_documents_scanner(const updated_documents_scanner &o)
                     : end{o.end}, bankSize{o.bankSize}, skiplistBase{o.skiplistBase}, udSkipList{o.udSkipList}, udBanks{o.udBanks}, bf{o.bf} {
+                        low_doc_id   = o.low_doc_id;
+                        maxDocID     = o.maxDocID;
                         curBankRange = o.curBankRange;
                         curBank      = o.curBank;
                 }
@@ -142,7 +144,7 @@ namespace Trinity {
                 // we no longer build a BF here
                 // because this registry is materialized in every query and it's expensive-ish
                 // we will instead rely on the per scanner bf
-                static std::unique_ptr<Trinity::masked_documents_registry> make(const updated_documents *ud, const std::size_t n, const bool use_bf = false) {
+                static std::unique_ptr<Trinity::masked_documents_registry> make(const updated_documents *ud_list, const std::size_t n, const bool use_bf = false) {
                         // ASAN will complain that about alloc-dealloc-mismatch
                         // because we are using placement new operator and apparently there is no way to tell ASAN that this is fine
                         // I need to figure this out
@@ -162,9 +164,10 @@ namespace Trinity {
                         ptr->rem = n;
 
                         for (uint32_t i{0}; i != n; ++i) {
+                                const auto ud    = ud_list + i;
                                 const auto ud_bf = ud->bf;
 
-                                new (&ptr->scanners[i]) updated_documents_scanner(ud[i]);
+                                new (&ptr->scanners[i]) updated_documents_scanner(*ud);
 
                                 max_doc_id = std::max(max_doc_id, ud->highestID);
                                 min_doc_id = std::min(min_doc_id, ud->lowestID);
