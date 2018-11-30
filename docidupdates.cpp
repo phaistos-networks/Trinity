@@ -10,7 +10,11 @@ void Trinity::pack_updates(std::vector<docid_t> &updatedDocumentIDs, IOBuffer *c
                 static constexpr size_t BANK_SIZE{32 * 1024};
                 IOBuffer                skiplist;
                 static_assert((BANK_SIZE & 63) == 0, "Not divisable by 64");
-                auto bf = reinterpret_cast<uint64_t *>(calloc(updated_documents::K_bloom_filter_size / 64 + 1, sizeof(uint64_t)));
+                // we are now creating the BF only if it REALLY makes sense, because for a 256k bits long BF
+                // we need 32K, which is likely important only if we got lots of documents
+                auto bf = (updatedDocumentIDs.size() > (BANK_SIZE * 8))
+                              ? reinterpret_cast<uint64_t *>(calloc(updated_documents::K_bloom_filter_size / 64 + 1, sizeof(uint64_t)))
+                              : nullptr;
 
                 boost::sort::spreadsort::spreadsort(updatedDocumentIDs.begin(), updatedDocumentIDs.end());
 
@@ -41,7 +45,9 @@ void Trinity::pack_updates(std::vector<docid_t> &updatedDocumentIDs, IOBuffer *c
                                 const auto rel = id - base;
                                 const auto h   = id & (updated_documents::K_bloom_filter_size - 1);
 
-                                bf[h / 64] |= static_cast<uint64_t>(1) << (h & 63);
+                                if (bf) {
+                                        bf[h / 64] |= static_cast<uint64_t>(1) << (h & 63);
+                                }
 
                                 SwitchBitOps::Bitmap<uint64_t>::Set(bm, rel);
                         } while (++p != e && *p < upto);
@@ -49,11 +55,17 @@ void Trinity::pack_updates(std::vector<docid_t> &updatedDocumentIDs, IOBuffer *c
                         buf->advance_size(BANK_SIZE / 8);
                 }
 
-                buf->serialize(bf, updated_documents::K_bloom_filter_size / 8);
-                free(bf);
+                if (bf) {
+                        buf->serialize(bf, updated_documents::K_bloom_filter_size / 8);
+                        std::free(bf);
+                }
 
-                buf->pack(uint8_t(log2(BANK_SIZE)));                              // 1 byte will suffice
-                buf->pack(static_cast<uint8_t>(0));                               // 0 if bloom filter is included
+                buf->pack(uint8_t(log2(BANK_SIZE))); // 1 byte will suffice
+                if (bf) {
+                        buf->pack(static_cast<uint8_t>(0)); // 0 if bloom filter is included
+                } else {
+                        buf->pack(static_cast<uint8_t>(1));
+                }
                 buf->serialize(skiplist.data(), skiplist.size());                 // skiplist
                 buf->pack(uint32_t(skiplist.size() / sizeof(docid_t)));           // TODO: use varint encoding here
                 buf->pack(updatedDocumentIDs.front(), updatedDocumentIDs.back()); //lowest, highest
@@ -91,7 +103,7 @@ Trinity::updated_documents Trinity::unpack_updates(const range_base<const uint8_
                 p -= updated_documents::K_bloom_filter_size / 8;
                 bloom_filter = reinterpret_cast<const uint64_t *>(p);
         } else {
-                bank_size    = 1u << *p;
+                bank_size    = 1u << *(--p);
                 bloom_filter = nullptr;
         }
 
@@ -102,14 +114,14 @@ Trinity::updated_documents Trinity::unpack_updates(const range_base<const uint8_
 bool Trinity::updated_documents_scanner::test(const docid_t id) noexcept {
         static constexpr bool trace{false}, traceAdvances{false};
 
-	if (unlikely(id > maxDocID)) {
-		// fast-path; flag it as drained
-		curBankRange.offset = UINT32_MAX;
-		return false;
-	} else if (id < low_doc_id) {
-		// fast-path: definitely not here
-		return false;
-	} else if (const auto m = bf) {
+        if (unlikely(id > maxDocID)) {
+                // fast-path; flag it as drained
+                curBankRange.offset = UINT32_MAX;
+                return false;
+        } else if (id < low_doc_id) {
+                // fast-path: definitely not here
+                return false;
+        } else if (const auto m = bf) {
                 const uint64_t h = id & (updated_documents::K_bloom_filter_size - 1);
 
                 if (0 == (m[h / 64] & (static_cast<uint64_t>(1) << (h & 63)))) {

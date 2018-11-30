@@ -13,7 +13,7 @@
 // almost as fast, takes up less memory and is great for random access
 namespace Trinity {
         struct updated_documents final {
-                static constexpr size_t K_bloom_filter_size{128 * 1024 * 1024};
+                static constexpr size_t K_bloom_filter_size{256 * 1024};
                 static_assert(0 == (K_bloom_filter_size & 1));
                 // Each bitmaps bank can be accessed by a skiplist via binary search
                 const docid_t *skiplist;
