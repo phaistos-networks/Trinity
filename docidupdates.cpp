@@ -102,6 +102,13 @@ Trinity::updated_documents Trinity::unpack_updates(const range_base<const uint8_
 
                 p -= updated_documents::K_bloom_filter_size / 8;
                 bloom_filter = reinterpret_cast<const uint64_t *>(p);
+
+		if (p - content.start() != bank_size / 8 * skiplistSize) {
+			// Likely changed K_bloom_filter_size
+			// play it safe
+        		return {skiplist, skiplistSize, bank_size, b, lowest, highest, nullptr};
+		}
+
         } else {
                 bank_size    = 1u << *(--p);
                 bloom_filter = nullptr;
