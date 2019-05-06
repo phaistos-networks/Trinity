@@ -368,7 +368,7 @@ void queryexec_ctx::_reusable_cds::push_back(candidate_document *const d) {
                 // can't hold no more
                 delete d;
 #else
-                capacity += capacity / 2;
+                capacity += (capacity / 2) + 8;
                 data          = static_cast<candidate_document **>(realloc(data, sizeof(candidate_document *) * capacity));
                 data[size_++] = d;
 #endif

@@ -373,8 +373,9 @@ namespace Trinity {
                                         throw Switch::data_error("Failed to parse [", alts[saved].first, "]");
 
                                 if (inherit_app_phrase_id) {
-                                        if (base_app_phrase_id)
+                                        if (base_app_phrase_id) {
                                                 lhs->set_app_phrase_id(base_app_phrase_id);
+					}
                                 } else if (alts[saved].first.data() == base_token_data) {
                                         if (trace)
                                                 SLog("BASE token [", alts[saved].first, "] => ", base_app_phrase_id, "\n");
@@ -421,18 +422,21 @@ namespace Trinity {
                                                 throw Switch::data_error("Failed to parse [", alts[i + saved].first, "]");
 
 					if (inherit_app_phrase_id){
-						if (base_token_data)
+						if (base_token_data) {
                                                 	n->binop.rhs->set_app_phrase_id(base_app_phrase_id);
+						}
 					}
                                         else if (alts[i + saved].first.data() == base_token_data) {
-                                                if (trace)
+                                                if (trace) {
                                                         SLog("BASE token [", alts[i + saved].first, "] => ", base_app_phrase_id, "\n");
+						}
 
                                                 n->binop.rhs->set_app_phrase_id(base_app_phrase_id);
                                         }
 
-                                        if (n->binop.rhs->type == ast_node::Type::Token && span > 1)
+                                        if (n->binop.rhs->type == ast_node::Type::Token && span > 1) {
                                                 n->binop.rhs->p->rewrite_ctx.srcSeqSize = span;
+					}
 
                                         n->binop.rhs->set_rewrite_translation_coeff(span);
 
@@ -462,8 +466,9 @@ namespace Trinity {
                                         throw Switch::data_error("Failed to parse [", alts[saved].first, "], parser flags ", parser_flags);
 
                                 if (inherit_app_phrase_id) {
-                                        if (base_app_phrase_id)
+                                        if (base_app_phrase_id) {
                                                 node->set_app_phrase_id(base_app_phrase_id);
+					}
 
                                 } else if (alts[saved].first.data() == base_token_data) {
                                         if (trace)
@@ -889,9 +894,9 @@ namespace Trinity {
                                                 auto g  = genCtx.new_flow();
 
                                                 if (trace) {
-                                                        if (ca)
+                                                        if (ca) {
                                                                 SLog("CA = ", *ca->materialize(genCtx.allocator), " ", *ca, ", overlaps:", ca->overlaps(p.first), "\n");
-                                                        else {
+                                                        } else {
                                                                 SLog("ca = nullptr\n");
                                                                 exit(1);
                                                         }

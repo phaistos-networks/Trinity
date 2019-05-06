@@ -1736,13 +1736,20 @@ static ast_node *reorder_root(ast_node *r) {
 
 exec_node Trinity::compile_query(ast_node *root, compilation_ctx &cctx) {
         if (!root) {
-                if constexpr (traceCompile)
+                if constexpr (traceCompile) {
                         SLog("No root node\n");
+		}
 
                 return {ENT::constfalse, {}};
         }
 
+#if 0
         simple_allocator a(4096); // for temporaries
+#else
+	// turns out, there may be some edge cases where
+	// we incorrectly allocate from the this allocator for tempoaries for whatever may outlive this scope
+	auto &a = cctx.allocator;
+#endif
 
         // Reorder the tree to enable the compiler to create larger collections
         // root is from a clone of the original query, so we are free to modify it anyway we see fit with reorder_root()

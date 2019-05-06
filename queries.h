@@ -283,9 +283,8 @@ namespace Trinity {
 			return parse();
 		}
 
-
                 auto reset_and_parse(const str32_t c) {
-			allocator.reuse();
+                        allocator.reuse();
                         distinctTokens.clear();
 			return parse(c);
                 }
@@ -368,6 +367,9 @@ namespace Trinity {
                 //
                 // You can use it for encoding flags, and state or anything else
                 // This is not in rewrite_ctx because it's not specifically here for rewrites only.
+		//
+		// You can also rely on app_phrase_id for encoding flags. app_phrase_id is a far more versatile choice for
+		// associating context/weight with query tokens runs.
                 //
                 // See ast_node::set_alltokens_flags()
                 query_term_flags_t flags;
@@ -475,8 +477,9 @@ namespace Trinity {
                         p->rewrite_ctx.translationCoefficient = 1.0;
                         p->size                               = n;
 
-                        for (size_t i{0}; i != n; ++i)
+                        for (size_t i{0}; i != n; ++i) {
                                 p->terms[i].token.Set(a->CopyOf(tokens[i].data(), tokens[i].size()), tokens[i].size());
+			}
                         return p;
                 }
         };
@@ -666,8 +669,9 @@ namespace Trinity {
                         stack.clear();
                         unaryNodes.clear();
 
-                        if (root)
+                        if (root) {
                                 stack.push_back({0, root});
+			}
 
                         while (stack.size()) {
                                 const auto pair = stack.back();
@@ -681,8 +685,9 @@ namespace Trinity {
                                                 break;
 
                                         case ast_node::Type::Phrase:
-                                                if (includePhrases)
+                                                if (includePhrases) {
                                                         unaryNodes.push_back({seg, n});
+						}
                                                 break;
 
                                         case ast_node::Type::MatchSome:
@@ -715,8 +720,9 @@ namespace Trinity {
                                                 break;
 
                                         case ast_node::Type::UnaryOp:
-                                                if (n->unaryop.op != Operator::STRICT_AND || processStrictAND)
+                                                if (n->unaryop.op != Operator::STRICT_AND || processStrictAND) {
                                                         stack.push_back({seg, n->unaryop.expr});
+						}
                                                 break;
 
                                         case ast_node::Type::Dummy:

@@ -30,7 +30,7 @@ namespace Trinity {
                                         res.first->second = localMap.size();
                                         const_cast<str8_t *>(&res.first->first)->Set(allocator.CopyOf(term.data(), term.size()), term.size());
 
-                                        require(allTerms.size() == localMap.size() - 1);
+                                        EXPECT(allTerms.size() == localMap.size() - 1);
                                         allTerms.emplace_back(res.first->first);
                                 }
 

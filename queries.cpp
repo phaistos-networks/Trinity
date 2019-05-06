@@ -34,6 +34,10 @@ static std::pair<str32_t, range_base<uint16_t, uint16_t>> parse_term(ast_parser 
                 if (const auto pair = ctx.token_parser(ctx.content, ctx.lastParsedToken, in_phrase); pair.second) {
                         const auto o = ctx.content.data() - ctx.contentBase;
 
+			if (traceParser) {
+				SLog("Consumed token of lengh ", pair.first, " => [", str_view32(ctx.lastParsedToken, pair.second), "]\n");
+			}
+
                         ctx.content.strip_prefix(pair.first);
 
                         // for e.g san francisco-based
@@ -145,17 +149,39 @@ static ast_node *parse_phrase_or_token(ast_parser &ctx) {
                 return nullptr;
 }
 
+// this is important; we don't want to check wether s.BeginsWith(token)
+// because e.g for token "NOT", it would match and strip e.g "NOTE"
+// which is wrong; we need to make sure this is an actual token
+static bool try_strip_token(str_view32 &s, const str_view32 token) {
+	if (s.BeginsWith(token.data(), token.size())) {
+		const auto *p = s.data() + token.size(), *const e = s.end();
+
+		if (p == e) {
+			// yes
+		} else if (*p == ' ' || *p == '\t' || *p == '-' || *p == '+' || *p == '(' || *p == '.' || *p == ')') {
+			// yes
+		} else {
+			return false;
+		}
+
+		s.strip_prefix(token.size());
+		return true;
+	}
+
+	return false;
+}
+
 static std::pair<Operator, uint8_t> parse_operator_impl(ast_parser &ctx) {
         auto     s = ctx.content;
         Operator res;
 
-        if (0 == (ctx.parserFlags & uint32_t(ast_parser::Flags::ANDAsToken)) && s.StripPrefix(_S("AND")))
+        if (0 == (ctx.parserFlags & uint32_t(ast_parser::Flags::ANDAsToken)) && try_strip_token(s, "AND"_s32)) {
                 res = Operator::STRICT_AND;
-        else if (0 == (ctx.parserFlags & uint32_t(ast_parser::Flags::ORAsToken)) && s.StripPrefix(_S("OR")))
+        } else if (0 == (ctx.parserFlags & uint32_t(ast_parser::Flags::ORAsToken)) && try_strip_token(s, "OR"_s32)) {
                 res = Operator::OR;
-        else if (0 == (ctx.parserFlags & uint32_t(ast_parser::Flags::NOTAsToken)) && s.StripPrefix(_S("NOT")))
+        } else if (0 == (ctx.parserFlags & uint32_t(ast_parser::Flags::NOTAsToken)) && try_strip_token(s, "NOT"_s32)) {
                 res = Operator::NOT;
-        else if (s) {
+        } else if (s) {
                 const auto f = s.front();
 
                 switch (f) {
@@ -369,6 +395,10 @@ static ast_node *parse_expr(ast_parser &);
 static ast_node *parse_unary(ast_parser &ctx, const uint32_t parser_flags) {
         ctx.skip_ws();
 
+	if (traceParser) {
+		SLog("At:", ctx.content, "\n");
+	}
+
         if (parser_flags & unsigned(ast_parser::Flags::ParseConstTrueExpr)) {
                 // this is useful for debugging, and for query rewrites
                 if (ctx.content.StripPrefix(_S("<"))) {
@@ -427,10 +457,12 @@ static ast_node *parse_unary(ast_parser &ctx, const uint32_t parser_flags) {
 
                 ctx.skip_ws();
                 if (!ctx.content.StripPrefix(_S(")"))) {
-                        if (e->type != ast_node::Type::Dummy)
+                        if (e->type != ast_node::Type::Dummy) {
                                 e = ctx.parse_failnode();
-                } else
+			}
+                } else {
                         ctx.groupTerm.pop_back();
+		}
 
                 return e;
         } else {
@@ -446,10 +478,11 @@ static ast_node *parse_unary(ast_parser &ctx, const uint32_t parser_flags) {
                         n->unaryop.op   = r.first;
                         n->unaryop.expr = exprNode;
                         return n;
-                } else if (const auto n = parse_phrase_or_token(ctx))
+                } else if (const auto n = parse_phrase_or_token(ctx)) {
                         return n;
-                else
+		} else {
                         return ctx.parse_failnode();
+		}
         }
 }
 
@@ -458,7 +491,7 @@ static ast_node *parse_subexpr(ast_parser &ctx, const uint16_t limit) {
         uint8_t    prio;
         auto       cur = parse_unary(ctx, parser_flags);
 
-        Drequire(cur); // can't fail
+        EXPECT(cur); // can't fail
 
         for (auto op = parse_operator(ctx); op.first != Operator::NONE && (prio = OpPrio(op.first)) < limit; op = parse_operator(ctx)) {
                 ctx.content.strip_prefix(op.second);
@@ -489,6 +522,10 @@ static ast_node *parse_subexpr(ast_parser &ctx, const uint16_t limit) {
                         cur = n;
                 }
         }
+
+	if (traceParser) {
+		SLog("Parsed subexpr:", *cur, "\n");
+	}
 
         return cur;
 }
@@ -1450,8 +1487,9 @@ ast_node *query::trim(const std::size_t maxQueryTokens) {
                         n += node->p->size;
 
                         if (n > maxQueryTokens) {
-                                if (!first)
+                                if (!first) {
                                         first = node->shallow_copy(&allocator, &large_allocs);
+                                }
                                 node->set_dummy();
                         }
                 }
@@ -1636,8 +1674,9 @@ void ast_node::set_app_phrase_id(const uint16_t id) {
                         break;
 
                 case Type::MatchSome:
-			for (size_t i{0}; i != match_some.size; ++i) 
+			for (size_t i{0}; i != match_some.size; ++i)  {
 				expr->match_some.nodes[i]->set_app_phrase_id(id);
+			}
                         break;
 
                 default:
@@ -1666,8 +1705,9 @@ void ast_node::set_alltokens_flags(const uint16_t flags) {
                         break;
 
                 case Type::MatchSome:
-			for (size_t i{0}; i != match_some.size; ++i) 
+			for (size_t i{0}; i != match_some.size; ++i)  {
 				expr->match_some.nodes[i]->set_alltokens_flags(flags);
+			}
                         break;
 
                 default:
@@ -1708,8 +1748,9 @@ bool ast_node::any_leader_tokens() const {
                                 break;
 
                         case ast_node::Type::UnaryOp:
-                                if (n->unaryop.op == Operator::AND || n->unaryop.op == Operator::STRICT_AND)
+                                if (n->unaryop.op == Operator::AND || n->unaryop.op == Operator::STRICT_AND) {
                                         stack.push_back(n->unaryop.expr);
+				}
                                 break;
 
                         default:
@@ -1721,8 +1762,9 @@ bool ast_node::any_leader_tokens() const {
 }
 
 void query::leader_nodes(std::vector<ast_node *> *const out) {
-        if (!root)
+        if (!root) {
                 return;
+	}
 
         capture_leader(root, out, 1);
 }
@@ -1765,13 +1807,18 @@ std::vector<ast_node *> &query::nodes(ast_node *root, std::vector<ast_node *> *c
 bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *, const bool), const uint32_t parseFlags) {
         allocator.reuse();
 
+	if (traceParser) {
+		SLog("Will parse [", in, "]\n");
+	}
+
         ast_parser ctx{in, allocator, tp, parseFlags};
 
         tokensParser = tp; // May come in handy later
         root         = parse_expr(ctx);
 
-        if (!root)
+        if (!root) {
                 return false;
+	}
 
         // perform trivial optimizations here
         // This is important, because this is where we remove DUMMY nodes etc
