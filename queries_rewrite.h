@@ -287,7 +287,8 @@ namespace Trinity {
                 }
 
                 // This may be handy. e.g for possibly generating composite terms
-                const std::pair<uint32_t, uint32_t> runCtx(i, run.size());
+                //WAS: const std::pair<uint32_t, uint32_t> runCtx(i, run.size());
+                const std::pair<uint32_t, const std::vector<ast_node *> *> runCtx(i, &run);
 
                 v.clear();
                 v.push_back({{{token.data(), uint32_t(token.size())}, 0}, 1});
