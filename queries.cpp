@@ -377,10 +377,11 @@ void PrintImpl(Buffer &b, const Trinity::ast_node &n) {
                         break;
 
                 case ast_node::Type::UnaryOp:
-                        if (n.unaryop.op == Operator::AND || n.unaryop.op == Operator::STRICT_AND)
+                        if (n.unaryop.op == Operator::AND || n.unaryop.op == Operator::STRICT_AND) {
                                 b.append('+');
-                        else if (n.unaryop.op == Operator::NOT)
+                        } else if (n.unaryop.op == Operator::NOT) {
                                 b.append('-');
+			}
                         b.append(*n.unaryop.expr);
                         break;
 
@@ -1336,14 +1337,16 @@ std::pair<ast_node *, uint16_t> normalize_root(ast_node *root) {
 }
 
 #pragma mark query utility functions
-ast_node *   ast_node::copy(simple_allocator *const a, std::vector<void *> *const large_allocs) {
+
+ast_node *ast_node::copy(simple_allocator *const a, std::vector<void *> *const large_allocs) {
         const ast_node *const n{this};
         auto                  res = ast_node::make(*a, n->type);
 
         switch (res->type) {
                 case ast_node::Type::Token:
                 case ast_node::Type::Phrase: {
-                        auto np = static_cast<phrase *>(a->Alloc(sizeof(phrase) + sizeof(term) * n->p->size));
+                        const auto required = sizeof(phrase) + sizeof(term) * n->p->size;
+                        auto       np       = static_cast<phrase *>(a->Alloc(required));
 
                         np->size                               = n->p->size;
                         np->rep                                = n->p->rep;
@@ -1364,15 +1367,16 @@ ast_node *   ast_node::copy(simple_allocator *const a, std::vector<void *> *cons
                         res->match_some.size = n->match_some.size;
                         res->match_some.min  = n->match_some.min;
 
-                        if (const auto required = sizeof(ast_node *) * res->match_some.size; a->can_allocate(required))
+                        if (const auto required = sizeof(ast_node *) * res->match_some.size; a->can_allocate(required)) {
                                 res->match_some.nodes = static_cast<ast_node **>(a->Alloc(required));
-                        else {
+                        } else {
                                 res->match_some.nodes = static_cast<ast_node **>(malloc(required));
                                 large_allocs->emplace_back(res->match_some.nodes);
                         }
 
-                        for (size_t i{0}; i != res->match_some.size; ++i)
+                        for (size_t i{0}; i < res->match_some.size; ++i) {
                                 res->match_some.nodes[i] = n->match_some.nodes[i]->copy(a, large_allocs);
+			}
                         break;
 
                 case ast_node::Type::ConstTrueExpr:
@@ -1390,9 +1394,13 @@ ast_node *   ast_node::copy(simple_allocator *const a, std::vector<void *> *cons
                         res->binop.rhs = n->binop.rhs->copy(a, large_allocs);
                         break;
 
-                default:
-                        break;
+		case ast_node::Type::Dummy:
+			break;
+
+		default:
+			IMPLEMENT_ME();
         }
+
         return res;
 }
 
@@ -1456,17 +1464,20 @@ static void capture_leader(ast_node *const n, std::vector<ast_node *> *const out
                         } else if ((n->binop.op == Operator::AND || n->binop.op == Operator::STRICT_AND) && out->size() < threshold) {
                                 // we assume we have reordered and normalized bimops
                                 // and lhs is cheaper to evaluate than rhs
-                                if (n->binop.lhs->type != ast_node::Type::ConstTrueExpr)
+                                if (n->binop.lhs->type != ast_node::Type::ConstTrueExpr) {
                                         capture_leader(n->binop.lhs, out, threshold);
-                                else
+				} else {
                                         capture_leader(n->binop.rhs, out, threshold);
-                        } else if (n->binop.op == Operator::NOT && out->size() < threshold)
+				}
+                        } else if (n->binop.op == Operator::NOT && out->size() < threshold) {
                                 capture_leader(n->binop.lhs, out, threshold);
+			}
                         break;
 
                 case ast_node::Type::UnaryOp:
-                        if (n->unaryop.op == Operator::AND || n->unaryop.op == Operator::STRICT_AND)
+                        if (n->unaryop.op == Operator::AND || n->unaryop.op == Operator::STRICT_AND) {
                                 out->push_back(n->unaryop.expr);
+			}
                         break;
 
                 default:
@@ -1541,10 +1552,11 @@ bool query::can_intersect() const {
                                 break;
 
                         case ast_node::Type::UnaryOp:
-                                if (n->unaryop.op != Operator::AND)
+                                if (n->unaryop.op != Operator::AND) {
                                         return false;
-                                else
+				} else {
                                         stack.push_back(n->unaryop.expr);
+				}
                                 break;
 
                         case ast_node::Type::ConstTrueExpr:
@@ -1804,8 +1816,11 @@ std::vector<ast_node *> &query::nodes(ast_node *root, std::vector<ast_node *> *c
         return *res;
 }
 
-bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *, const bool), const uint32_t parseFlags) {
-        allocator.reuse();
+bool query::parse(const str32_t in,
+                  std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *, const bool),
+                  const uint32_t parseFlags) {
+        this->allocator.reuse();
+	free_large_allocs();
 
 	if (traceParser) {
 		SLog("Will parse [", in, "]\n");
@@ -1833,16 +1848,18 @@ bool query::parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str
 
         final_index_ = i;
 
-        if (!root)
+        if (!root) {
                 return false;
+	}
 
-        if (traceParser)
+        if (traceParser) {
                 Print(ansifmt::color_red, "normalized:", ansifmt::reset, *root, "\n");
+	}
 
         return true;
 }
 
-void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a) {
+void query::bind_tokens_to_allocator(ast_node *const n, simple_allocator *const a) {
         std::vector<ast_node *>              stack;
         std::unordered_map<str8_t, char_t *> map;
 
@@ -1856,12 +1873,13 @@ void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a) {
                         case ast_node::Type::Phrase: {
                                 const auto phrase = n->p;
 
-                                for (size_t i{0}; i != phrase->size; ++i) {
+                                for (size_t i{0}; i < phrase->size; ++i) {
                                         auto &t   = phrase->terms[i].token;
                                         auto  res = map.insert({t, nullptr});
 
-                                        if (res.second)
+                                        if (res.second) {
                                                 res.first->second = a->CopyOf(t.data(), t.size());
+					}
 
                                         t.p = res.first->second;
                                 }
@@ -1873,6 +1891,9 @@ void query::bind_tokens_to_allocator(ast_node *n, simple_allocator *a) {
                                 break;
 
                         case ast_node::Type::UnaryOp:
+                                stack.push_back(n->unaryop.expr);
+				break;
+
                         case ast_node::Type::ConstTrueExpr:
                                 stack.push_back(n->expr);
                                 break;

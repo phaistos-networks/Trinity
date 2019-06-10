@@ -188,7 +188,8 @@ namespace Trinity {
                 uint32_t logicalIndex;
                 uint32_t K;
 
-                simple_allocator allocator, flowsAllocator{4096};
+		simple_allocator *qa;
+                simple_allocator  flowsAllocator{4096};
                 // Could have used just one container insted of two, and a map or multimap for tracking flows by range
                 // TODO(markp): we can just reuse allocatedFlows (reusable = std::move(allocatedFlows))
                 // (we shoudn't use a single std::vector<flow *> for all allocated flows and for tracking because
@@ -203,8 +204,8 @@ namespace Trinity {
                                 allocatedFlows.pop_back();
                         }
 
-			for (auto p : large_allocations)
-				std::free(p);
+                        for (auto p : large_allocations)
+                                std::free(p);
                 }
 
                 void prepare_run_capture() {
@@ -230,7 +231,6 @@ namespace Trinity {
                                 allocatedFlows.pop_back();
                         }
 
-                        allocator.reuse();
                         flowsAllocator.reuse();
 
                         flows.clear();
@@ -255,12 +255,12 @@ namespace Trinity {
                 const auto                                                                                  normalizedMaxSpan = std::min<uint8_t>(maxSpan, genCtx.K);
                 strwlen8_t                                                                                  tokens[normalizedMaxSpan];
                 std::vector<std::pair<Trinity::ast_node *, uint8_t>>                                        expressions;
-                auto                                                                                        tokensParser = q.tokensParser;
-                auto &                                                                                      allocator    = q.allocator;
+                auto                                                                                        tokensParser       = q.tokensParser;
+                auto &                                                                                      allocator          = q.allocator;
                 uint16_t                                                                                    base_app_phrase_id = run[i]->p->app_phrase_id;
                 const char *                                                                                base_token_data    = base_app_phrase_id ? token.data() : nullptr;
-		// TODO: maybe this needs to be configurable?
-		static constexpr bool inherit_app_phrase_id{true};
+                // TODO: maybe this needs to be configurable?
+                static constexpr bool inherit_app_phrase_id{true};
 
                 EXPECT(tokensParser);
 
@@ -292,7 +292,6 @@ namespace Trinity {
 
                 v.clear();
                 v.push_back({{{token.data(), uint32_t(token.size())}, 0}, 1});
-
 
                 altAllocator.reuse();
 
@@ -365,7 +364,7 @@ namespace Trinity {
                         if (0 == n)
                                 continue;
 
-			static constexpr uint32_t parser_flags = unsigned(Trinity::ast_parser::Flags::ParseConstTrueExpr);
+                        static constexpr uint32_t parser_flags = unsigned(Trinity::ast_parser::Flags::ParseConstTrueExpr);
 
                         if (n > 1) {
                                 auto lhs = ast_parser(alts[saved].first, allocator, tokensParser, parser_flags).parse();
@@ -376,7 +375,7 @@ namespace Trinity {
                                 if (inherit_app_phrase_id) {
                                         if (base_app_phrase_id) {
                                                 lhs->set_app_phrase_id(base_app_phrase_id);
-					}
+                                        }
                                 } else if (alts[saved].first.data() == base_token_data) {
                                         if (trace)
                                                 SLog("BASE token [", alts[saved].first, "] => ", base_app_phrase_id, "\n");
@@ -422,22 +421,21 @@ namespace Trinity {
                                         if (unlikely(nullptr == n->binop.rhs))
                                                 throw Switch::data_error("Failed to parse [", alts[i + saved].first, "]");
 
-					if (inherit_app_phrase_id){
-						if (base_token_data) {
-                                                	n->binop.rhs->set_app_phrase_id(base_app_phrase_id);
-						}
-					}
-                                        else if (alts[i + saved].first.data() == base_token_data) {
+                                        if (inherit_app_phrase_id) {
+                                                if (base_token_data) {
+                                                        n->binop.rhs->set_app_phrase_id(base_app_phrase_id);
+                                                }
+                                        } else if (alts[i + saved].first.data() == base_token_data) {
                                                 if (trace) {
                                                         SLog("BASE token [", alts[i + saved].first, "] => ", base_app_phrase_id, "\n");
-						}
+                                                }
 
                                                 n->binop.rhs->set_app_phrase_id(base_app_phrase_id);
                                         }
 
                                         if (n->binop.rhs->type == ast_node::Type::Token && span > 1) {
                                                 n->binop.rhs->p->rewrite_ctx.srcSeqSize = span;
-					}
+                                        }
 
                                         n->binop.rhs->set_rewrite_translation_coeff(span);
 
@@ -469,7 +467,7 @@ namespace Trinity {
                                 if (inherit_app_phrase_id) {
                                         if (base_app_phrase_id) {
                                                 node->set_app_phrase_id(base_app_phrase_id);
-					}
+                                        }
 
                                 } else if (alts[saved].first.data() == base_token_data) {
                                         if (trace)
@@ -521,7 +519,14 @@ namespace Trinity {
         // TODO(markp): all kinds of IMPLEMENT_ME(), also
         // not sure the use of replace_self() makes sense. Need to reproduce the problem though
         template <typename L>
-        static std::pair<ast_node *, uint8_t> run_capture(const uint32_t rewriteFlags, std::size_t &budget, query &q, const std::vector<ast_node *> &run, const uint32_t i, L &&l, const uint8_t maxSpan, gen_ctx &genCtx) {
+        static std::pair<ast_node *, uint8_t> run_capture(const uint32_t                 rewriteFlags,
+                                                          std::size_t &                  budget,
+                                                          query &                        q,
+                                                          const std::vector<ast_node *> &run,
+                                                          const uint32_t                 i,
+                                                          L &&                           l,
+                                                          const uint8_t                  maxSpan,
+                                                          gen_ctx &                      genCtx) {
                 static constexpr bool                                             trace{false};
                 [[maybe_unused]] auto &                                           allocator = q.allocator;
                 static thread_local std::vector<std::pair<range32_t, ast_node *>> list_tl;
@@ -536,7 +541,7 @@ namespace Trinity {
                 list.clear();
                 for (uint32_t it{i}, cnt = run.size(); it != cnt; ++it) {
                         static constexpr bool assignRanges{true};
-                        auto                  e = run_next(budget, q, run, it, maxSpan, l, genCtx);
+                        auto                  e          = run_next(budget, q, run, it, maxSpan, l, genCtx);
                         const auto            normalized = it - baseIndex;
 
                         for (const auto &eit : e) {
@@ -653,11 +658,11 @@ namespace Trinity {
 
                         if (trace) {
                                 SLog("\n\n", ansifmt::bold, ansifmt::color_green, "Processing ", p.first, ansifmt::reset, " ", *p.second, " =>  maxStop = ", maxStop, " (atOffset.size = ", atOffset.size(), ", atStop.size = ", atStop.size(), ") (", flows.size(), " flows)\n");
-                                SLog("root:", *root->materialize(genCtx.allocator), ": ", *root, "\n");
+                                SLog("root:", *root->materialize(*genCtx.qa), ": ", *root, "\n");
 
 #if 0
 				for (const auto f : flows)
-					SLog("Registered ", f->range, ":(", f->op, ", parent:", ptr_repr(f->parent), ", self:", ptr_repr(f), ") ", *f->materialize(genCtx.allocator), "\n");
+					SLog("Registered ", f->range, ":(", f->op, ", parent:", ptr_repr(f->parent), ", self:", ptr_repr(f), ") ", *f->materialize(*genCtx.qa), "\n");
 #endif
                         }
 
@@ -693,7 +698,7 @@ namespace Trinity {
 
                                                 if (trace) {
                                                         SLog("NOW:", *atStop.front(), "\n");
-                                                        SLog("root:", *root->materialize(genCtx.allocator), "\n");
+                                                        SLog("root:", *root->materialize(*genCtx.qa), "\n");
 
                                                         SLog("hierarchy after appended\n");
                                                         for (auto p = nf->parent; p; p = p->parent)
@@ -705,7 +710,7 @@ namespace Trinity {
                                                         SLog("Candidates\n");
 
                                                         for (auto f : atStop) {
-                                                                SLog(*f->materialize(genCtx.allocator), " ", *f, "\n");
+                                                                SLog(*f->materialize(*genCtx.qa), " ", *f, "\n");
 
                                                                 for (auto p = f->parent; p; p = p->parent)
                                                                         SLog("up:", *p, "\n");
@@ -721,7 +726,7 @@ namespace Trinity {
                                                 // need to consider overlap for each candidate
                                                 if (auto ac = common_anchestor(atStop.data(), atStop.size(), true); ac && false == ac->overlaps(p.first)) {
                                                         if (trace) {
-                                                                SLog("common:", *ac->materialize(genCtx.allocator), "\n");
+                                                                SLog("common:", *ac->materialize(*genCtx.qa), "\n");
                                                         }
 
                                                         [[maybe_unused]] auto nf = flow_for_node(p, genCtx, flows, maxStop);
@@ -730,12 +735,12 @@ namespace Trinity {
                                                         ac->push_back_flow(nf);
 
                                                         if (trace) {
-                                                                SLog("AC now:", *ac->materialize(genCtx.allocator), "\n");
+                                                                SLog("AC now:", *ac->materialize(*genCtx.qa), "\n");
                                                         }
                                                 } else {
                                                         if (trace) {
                                                                 if (ac) {
-                                                                        SLog("Have common ancestor[", *ac->materialize(genCtx.allocator), "] but overlaps\n");
+                                                                        SLog("Have common ancestor[", *ac->materialize(*genCtx.qa), "] but overlaps\n");
                                                                         Print("\n\n");
                                                                 } else
                                                                         SLog("No common ancestor\n");
@@ -750,15 +755,15 @@ namespace Trinity {
                                                                 // TODO(markp): expose a flag that controls the semantics(shallow or full copies)
                                                                 // UPDATE: now controlled via flags
                                                                 auto *const clone = (rewriteFlags & unsigned(RewriteFlags::NoShallowCopy))
-                                                                                        ? p.second->copy(&genCtx.allocator, &genCtx.large_allocations)
-                                                                                        : p.second->shallow_copy(&genCtx.allocator, &genCtx.large_allocations);
+                                                                                        ? p.second->copy(genCtx.qa, &genCtx.large_allocations)
+                                                                                        : p.second->shallow_copy(genCtx.qa, &genCtx.large_allocations);
 
                                                                 f->push_back_node({p.first, clone}, genCtx, flows, maxStop, Operator::AND);
                                                         }
                                                 }
 
                                                 if (trace) {
-                                                        SLog("root:", *root->materialize(genCtx.allocator), "\n");
+                                                        SLog("root:", *root->materialize(*genCtx.qa), "\n");
                                                 }
                                         }
                                 }
@@ -771,15 +776,15 @@ namespace Trinity {
                                         if (ca) {
                                                 if (trace) {
                                                         for (const auto f : atOffset)
-                                                                SLog("Candidate:", *f->materialize(genCtx.allocator), "\n");
+                                                                SLog("Candidate:", *f->materialize(*genCtx.qa), "\n");
 
-                                                        SLog("Will merge, common ancestor:", ptr_repr(ca), " ", *ca->materialize(genCtx.allocator), " ", ca->ents.size(), ": ", *ca, "\n");
+                                                        SLog("Will merge, common ancestor:", ptr_repr(ca), " ", *ca->materialize(*genCtx.qa), " ", ca->ents.size(), ": ", *ca, "\n");
                                                 }
                                         } else {
                                                 if (trace) {
                                                         SLog("no common ancestor\n");
                                                         for (const auto f : atOffset)
-                                                                SLog(*f->materialize(genCtx.allocator), "\n");
+                                                                SLog(*f->materialize(*genCtx.qa), "\n");
                                                 }
 
                                                 IMPLEMENT_ME();
@@ -800,7 +805,7 @@ namespace Trinity {
                                                 g->push_back_flow(nf);
 
                                                 if (trace) {
-                                                        SLog("Created container:", *pg->materialize(genCtx.allocator), "\n");
+                                                        SLog("Created container:", *pg->materialize(*genCtx.qa), "\n");
                                                         SLog("g = ", ptr_repr(g), ", pg = ", ptr_repr(pg), "\n");
 
                                                         for (auto f : atOffset) {
@@ -860,12 +865,12 @@ namespace Trinity {
 
                                         if (trace) {
                                                 for (auto f : atOffset) {
-                                                        SLog("atOffset:", *f->materialize(genCtx.allocator), "\n");
+                                                        SLog("atOffset:", *f->materialize(*genCtx.qa), "\n");
                                                         for (auto p = f->parent; p; p = p->parent)
                                                                 SLog("up:", *p, "\n");
                                                 }
                                                 for (auto f : atStop) {
-                                                        SLog("atStop:", *f->materialize(genCtx.allocator), "\n");
+                                                        SLog("atStop:", *f->materialize(*genCtx.qa), "\n");
                                                         for (auto p = f->parent; p; p = p->parent)
                                                                 SLog("up:", *p, "\n");
                                                 }
@@ -888,7 +893,7 @@ namespace Trinity {
                                                 }
 
                                                 if (trace) {
-                                                        SLog("root now:", *root->materialize(genCtx.allocator), "\n");
+                                                        SLog("root now:", *root->materialize(*genCtx.qa), "\n");
                                                 }
                                         } else {
                                                 auto ca = common_anchestor(atOffset.data(), atOffset.size(), false);
@@ -896,7 +901,7 @@ namespace Trinity {
 
                                                 if (trace) {
                                                         if (ca) {
-                                                                SLog("CA = ", *ca->materialize(genCtx.allocator), " ", *ca, ", overlaps:", ca->overlaps(p.first), "\n");
+                                                                SLog("CA = ", *ca->materialize(*genCtx.qa), " ", *ca, ", overlaps:", ca->overlaps(p.first), "\n");
                                                         } else {
                                                                 SLog("ca = nullptr\n");
                                                                 exit(1);
@@ -915,24 +920,24 @@ namespace Trinity {
 
                                                 if (trace) {
                                                         for (auto f : atOffset) {
-                                                                SLog("atOffset:", *f->materialize(genCtx.allocator), "\n");
+                                                                SLog("atOffset:", *f->materialize(*genCtx.qa), "\n");
                                                                 for (auto p = f->parent; p; p = p->parent)
                                                                         SLog("up:", *p, "\n");
                                                         }
                                                         for (auto f : atStop) {
-                                                                SLog("atStop:", *f->materialize(genCtx.allocator), "\n");
+                                                                SLog("atStop:", *f->materialize(*genCtx.qa), "\n");
                                                                 for (auto p = f->parent; p; p = p->parent)
                                                                         SLog("up:", *p, "\n");
                                                         }
 
-                                                        SLog("root ", *root->materialize(genCtx.allocator), "\n");
+                                                        SLog("root ", *root->materialize(*genCtx.qa), "\n");
                                                 }
                                         }
                                 }
                         }
                 }
 
-                auto res = root->materialize(genCtx.allocator);
+                auto res = root->materialize(*genCtx.qa);
 
 #if 0
 		SLog("ROOT:", *root, "\n");
@@ -985,11 +990,16 @@ namespace Trinity {
         }
 
         template <typename L, typename RCB = void (*)(const std::vector<ast_node *> &)>
-        void rewrite_query(const uint32_t rewriteFlags, Trinity::query &q, std::size_t budget, const uint8_t K, L &&l, RCB &&rcb = dummy_rcb) {
+        void rewrite_query(const uint32_t rewriteFlags, Trinity::query &q,
+                           std::size_t   budget,
+                           const uint8_t K,
+                           L &&          l,
+                           RCB &&        rcb = dummy_rcb) {
                 static constexpr bool trace{false};
 
-                if (!q)
+                if (!q) {
                         return;
+		}
 
                 const auto                  before    = Timings::Microseconds::Tick();
                 auto &                      allocator = q.allocator;
@@ -997,6 +1007,7 @@ namespace Trinity {
                 auto &                      genCtx = genCtxTL;
 
                 genCtx.clear(K);
+		genCtx.qa = &q.allocator;
 
                 if constexpr (trace)
                         SLog("Initial budget: ", budget, "\n");
@@ -1063,25 +1074,26 @@ namespace Trinity {
                         genCtx.logicalIndex += run.size();
 
                         *run[0] = *lhs;
-                        for (size_t i{1}; i != run.size(); ++i)
+                        for (size_t i{1}; i < run.size(); ++i) {
                                 run[i]->set_dummy();
+			}
 
-                        if constexpr (trace)
+                        if constexpr (trace) {
                                 SLog("Final:", *lhs, "\n");
+			}
                 });
 
-                if constexpr (trace)
+                if constexpr (trace) {
                         SLog(duration_repr(Timings::Microseconds::Since(before)), " to rewrite the query:", q, "\n");
+		}
 
                 q.normalize();
 
-		if constexpr (trace)
-			SLog("Normalized rewritten query to ", q, "\n");
+                if constexpr (trace) {
+                        SLog("Normalized rewritten query to ", q, "\n");
+		}
         }
 } // namespace Trinity
-
-
-
 
 Trinity::flow *Trinity::flow_for_node(std::pair<range32_t, ast_node *> p, Trinity::gen_ctx &ctx, std::vector<Trinity::flow *> &flows, uint32_t &maxStop) {
         auto f = ctx.new_flow();

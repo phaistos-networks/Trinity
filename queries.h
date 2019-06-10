@@ -189,8 +189,10 @@ namespace Trinity {
                                 case Type::BinOp:
                                         return binop.lhs->nodes_count() + binop.rhs->nodes_count() + 1;
 
-                                case Type::ConstTrueExpr:
                                 case Type::UnaryOp:
+                                        return 1 + unaryop.expr->nodes_count();
+
+                                case Type::ConstTrueExpr:
                                         return 1 + expr->nodes_count();
 
                                 default:
@@ -253,15 +255,19 @@ namespace Trinity {
                         return ast_node::make(allocator, t);
                 }
 
-                ast_parser(const str32_t input, simple_allocator &a, std::pair<uint32_t, uint8_t> (*p)(const str32_t, char_t *, const bool) = default_token_parser_impl, const uint32_t parserFlags_ = 0)
+                ast_parser(const str32_t     input,
+                           simple_allocator &a,
+                           std::pair<uint32_t, uint8_t> (*p)(const str32_t, char_t *, const bool) = default_token_parser_impl,
+                           const uint32_t parserFlags_                                            = 0)
                     : content{input}, contentBase{content.data()}, allocator{a}, token_parser{p}, parserFlags{parserFlags_} {
                 }
 
-		// Useful for initializing and later using parse(const str32_t) to parse content
-		ast_parser(simple_allocator &a, std::pair<uint32_t, uint8_t> (*p)(const str32_t, char_t *, const bool) = default_token_parser_impl, const uint32_t parserFlags_ = 0)
-			: contentBase{nullptr}, allocator{a}, token_parser{p}, parserFlags{parserFlags_} {
-
-		}
+                // Useful for initializing and later using parse(const str32_t) to parse content
+                ast_parser(simple_allocator &a,
+                           std::pair<uint32_t, uint8_t> (*p)(const str32_t, char_t *, const bool) = default_token_parser_impl,
+                           const uint32_t parserFlags_                                            = 0)
+                    : contentBase{nullptr}, allocator{a}, token_parser{p}, parserFlags{parserFlags_} {
+                }
 
                 // You may NOT invoke parse() more than once
                 // because content, allocator, distinctTokens will already be initialized and updated
@@ -284,7 +290,8 @@ namespace Trinity {
 		}
 
                 auto reset_and_parse(const str32_t c) {
-                        allocator.reuse();
+                        this->allocator.reuse();
+
                         distinctTokens.clear();
 			return parse(c);
                 }
@@ -530,7 +537,9 @@ namespace Trinity {
 		 */
                 void leader_nodes(std::vector<ast_node *> *const out);
 
-                bool parse(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *, const bool) = default_token_parser_impl, uint32_t parserFlags = 0);
+                bool parse(const str32_t in,
+                           std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *, const bool) = default_token_parser_impl,
+                           uint32_t parserFlags                                                    = 0);
 
                 // This is handy. When we copy a query to another query, we want to make sure
                 // that tokens point to the destination query allocator, not the source, because it is possible for
@@ -542,9 +551,15 @@ namespace Trinity {
                 }
 
                 ~query() {
-                        for (auto p : large_allocs)
-                                std::free(p);
+			free_large_allocs();
                 }
+
+		void free_large_allocs() {
+                        for (auto p : large_allocs) {
+                                std::free(p);
+			}
+			large_allocs.clear();
+		}
 
                 inline operator bool() const noexcept {
                         return root;
@@ -559,10 +574,14 @@ namespace Trinity {
                         return final_index_;
                 }
 
-                query(const str32_t in, std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *, const bool) = default_token_parser_impl, const uint32_t parserFlags = 0)
+                query(const str32_t in,
+                      std::pair<uint32_t, uint8_t> (*tp)(const str32_t, char_t *, const bool) = default_token_parser_impl,
+                      const uint32_t parserFlags                                              = 0)
                     : tokensParser{tp} {
-                        if (!parse(in, tp, parserFlags))
+
+                        if (!parse(in, tp, parserFlags)) {
                                 throw Switch::data_error("Failed to parse query");
+			}
                 }
 
                 query(ast_node *r)
@@ -571,10 +590,14 @@ namespace Trinity {
 
                 explicit query(const query &o, const bool shallow = false) {
                         tokensParser = o.tokensParser;
-                        root         = o.root ? (shallow ? o.root->shallow_copy(&allocator, &large_allocs) : o.root->copy(&allocator, &large_allocs)) : nullptr;
+                        root         = o.root
+                                   ? (shallow ? o.root->shallow_copy(&allocator, &large_allocs)
+                                              : o.root->copy(&allocator, &large_allocs))
+                                   : nullptr;
                         final_index_ = o.final_index_;
-                        if (root && false == shallow)
-                                bind_tokens_to_allocator(root, &allocator);
+                        if (root && false == shallow) {
+                                bind_tokens_to_allocator(this->root, &this->allocator);
+                        }
                 }
 
                 query(query &&o) {
@@ -585,13 +608,19 @@ namespace Trinity {
                 }
 
                 query &operator=(const query &o) {
-                        allocator.reuse();
+                        this->allocator.reuse();
+			this->large_allocs.clear();
 
-                        root         = o.root ? o.root->copy(&allocator, &large_allocs) : nullptr;
+                        root = o.root
+                                   ? o.root->copy(&this->allocator, &large_allocs)
+                                   : nullptr;
                         final_index_ = o.final_index_;
                         tokensParser = o.tokensParser;
-                        if (root)
-                                bind_tokens_to_allocator(root, &allocator);
+
+                        if (root) {
+                                bind_tokens_to_allocator(this->root, &this->allocator);
+			}
+
                         return *this;
                 }
 
