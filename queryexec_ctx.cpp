@@ -187,8 +187,9 @@ queryexec_ctx::~queryexec_ctx() {
         while (!allIterators.empty()) {
                 auto ptr = allIterators.back();
 
-                if (auto rdp = ptr->rdp; rdp != ptr)
+                if (auto rdp = ptr->rdp; rdp != ptr) {
                         delete static_cast<IteratorScorer *>(rdp);
+		}
 
                 delete ptr;
                 allIterators.pop_back();
@@ -196,8 +197,9 @@ queryexec_ctx::~queryexec_ctx() {
 
         for (auto ptr : docsetsIterators) {
                 // this is not elegant, but its pragmatic enough to be OK
-                if (auto rdp = ptr->rdp; rdp != ptr)
+                if (auto rdp = ptr->rdp; rdp != ptr) {
                         delete static_cast<IteratorScorer *>(rdp);
+		}
 
                 switch (ptr->type) {
                         case DocsSetIterators::Type::AppIterator:
@@ -532,10 +534,10 @@ static void collect_doc_matching_terms(Trinity::DocsSetIterators::Iterator *cons
 
 void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const doc) {
         static constexpr const bool trace{false};
+        //const bool trace = doc->id == 2155494590;
         auto &                      md  = doc->matchedDocument;
         const auto                  did = doc->id;
         auto                        dws = md.dws;
-        //const bool trace = doc->id == 2155079078 || doc->id == 2154380143;
 
         if (trace) {
                 SLog(ansifmt::bold, ansifmt::color_blue, "Preparing match for ", doc->id, ansifmt::reset, " ", ptr_repr(doc), "\n");
@@ -567,10 +569,10 @@ void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const do
         auto *const data = collectedIts.data;
 
         if (trace) {
-                SLog("collected iterators ", cnt, "\n");
+                SLog("collected iterators ", cnt, ", dws = ", ptr_repr(dws), "\n");
 	}
 
-        for (size_t i{0}; i != cnt; ++i) {
+        for (std::remove_const<decltype(cnt)>::type  i{0}; i < cnt; ++i) {
                 auto *const it  = data[i];
                 const auto  tid = it->decoder()->exec_ctx_termid();
 
@@ -604,15 +606,28 @@ void Trinity::queryexec_ctx::prepare_match(Trinity::candidate_document *const do
                                                 SLog(ansifmt::bold, ansifmt::color_green, "BANK: YES, need to materialize freq = ", docHits, ansifmt::reset, " ", ptr_repr(it), " for id ", did, "\n");
 					}
 
+					// XXX:
+					// You may be tempted to use index the same position and a different payload for more than one token
+					// e.g maybe for "Nokia 8.1" you index "8.1"  at position 2 with payload 0, but you also index "8" at position 2 with payload 1 (because it may be derived from 8.1)
+					// this is going to cause all kinds of problems because DocWordsSpace will not map multiple termIDs to a position, it's a array where for each
+					// position may be associated with a term.
+
                                         th->set_docid(did);
                                         th->set_freq(docHits);
                                         it->materialize_hits(dws, th->all);
+
+					if (trace) {
+						for (unsigned i = 0; i < th->freq; ++i) {
+							SLog("(position = ", th->all[i].pos, ", payload = ", th->all[i].payload, ")\n");
+						}
+					}
 
 #ifdef TRINITY_VERIFY_HITS
                                         for (size_t i{0}; i < th->freq; ++i) {
                                                 const auto pos = th->all[i].pos;
 
                                                 EXPECT(pos <= 8192);
+						EXPECT(dws->test(tid, pos));
                                         }
 #endif
                                 }

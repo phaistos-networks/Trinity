@@ -1574,10 +1574,11 @@ static exec_node compile(const ast_node *const n, compilation_ctx &cctx, simple_
                 }
         } while (updates);
 
-        if (traceMetrics)
+        if (traceMetrics) {
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " to expand. Before third pass:", root, "\n");
-        else if constexpr (traceCompile)
+	} else if constexpr (traceCompile) {
                 SLog("Before third pass:", root, "\n");
+	}
 
         return root;
 }

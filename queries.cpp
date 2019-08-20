@@ -952,26 +952,31 @@ static void normalize_bin(ast_node *const n, normalizer_ctx &ctx) {
 
 // We implement most of the rules here in expand_node(). See IMPLEMENTATION.md
 static void normalize(ast_node *const n, normalizer_ctx &ctx) {
-        if (n->type == ast_node::Type::BinOp)
+	EXPECT(n);
+
+        if (n->type == ast_node::Type::BinOp) {
                 normalize_bin(n, ctx);
-        else if (n->is_unary() && n->p->size == 0) {
-                if (traceParser)
+        } else if (n->is_unary() && n->p->size == 0) {
+                if (traceParser) {
                         SLog("here\n");
+                }
 
                 n->set_dummy();
                 ++ctx.updates;
         } else if (n->type == ast_node::Type::ConstTrueExpr) {
                 normalize(n->expr, ctx);
                 if (n->expr->is_dummy() || n->expr->is_const_false()) {
-                        if (traceParser)
+                        if (traceParser) {
                                 SLog("here\n");
+                        }
 
                         n->set_dummy();
                         ++ctx.updates;
                 }
         } else if (n->type == ast_node::Type::MatchSome) {
-                if constexpr (traceParser)
+                if constexpr (traceParser) {
                         SLog("Normalizing MatchSome\n");
+                }
 
                 for (size_t i{0}; i < n->match_some.size;) {
                         auto it = n->match_some.nodes[i];
@@ -980,8 +985,9 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx) {
                         if (it->is_dummy() || it->is_const_false()) {
                                 ++ctx.updates;
                                 n->match_some.nodes[i] = n->match_some.nodes[--(n->match_some.size)];
-                        } else
+                        } else {
                                 ++i;
+                        }
                 }
 
                 if (n->match_some.min > n->match_some.size) {
@@ -993,32 +999,37 @@ static void normalize(ast_node *const n, normalizer_ctx &ctx) {
                         ++ctx.updates;
                 }
 
-                if constexpr (traceParser)
+                if constexpr (traceParser) {
                         SLog("Normalized matchsome\n");
+                }
 
         } else if (n->type == ast_node::Type::UnaryOp) {
                 normalize(n->unaryop.expr, ctx);
                 if (n->unaryop.expr->is_dummy()) {
-                        if (traceParser)
+                        if (traceParser) {
                                 SLog("here\n");
+                        }
 
                         n->set_dummy();
                         ++ctx.updates;
                 } else if (n->unaryop.op == Operator::AND) {
-                        if (traceParser)
+                        if (traceParser) {
                                 SLog("here\n");
+                        }
 
                         *n = *n->unaryop.expr;
                         ++ctx.updates;
                 } else if (n->unaryop.op == Operator::OR) {
-                        if (traceParser)
+                        if (traceParser) {
                                 SLog("here:", *n, "\n");
+                        }
 
                         *n = *n->unaryop.expr;
                         ++ctx.updates;
                 }
-        } else if (n->type == ast_node::Type::Token || n->type == ast_node::Type::Phrase)
+        } else if (n->type == ast_node::Type::Token || n->type == ast_node::Type::Phrase) {
                 ctx.tokensCnt += n->p->size;
+        }
 }
 
 // This is somewhat complicated because it takes into account phrases and OR groups
@@ -2093,10 +2104,17 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
 
         std::call_once(onceFlag, init_charclass_map);
 
+#if 0
         if (*p == '+' && (p + 1 == e || (p[1] != '+' && p[1] != '-' && !_isalnum(p[1])))) {
+		// this may not be a good idea
+		// foo + bar
+		// will be parsed as foo PLUS bar
+		//
+		// we will no longer do that for now
                 str32_t(_S("PLUS")).CopyTo(out);
                 return {1, "PLUS"_len};
         }
+#endif
 
         if (p + 4 < e && _isalpha(*p) && p[1] == '.' && _isalnum(p[2]) && p[3] == '.' && _isalpha(p[4])) {
                 // Acronyms with punctuations
@@ -2111,26 +2129,28 @@ std::pair<uint32_t, uint8_t> Trinity::default_token_parser_impl(const Trinity::s
 
                 for (const auto *it{p + 4};;) {
                         while (it < e && _isalpha(*it)) {
-                                if (likely(o != threshold))
+                                if (likely(o != threshold)) {
                                         *(o++) = *it;
+				}
                                 ++it;
                         }
 
-                        if (it == e)
+                        if (it == e) {
                                 return {it - content.data(), o - out};
-                        else if (*it == '.')
+			} else if (*it == '.') {
                                 ++it;
-                        else if (_isdigit(*it))
+                        } else if (_isdigit(*it)) {
                                 goto l20;
-                        else if (!_isalpha(*it))
+                        } else if (!_isalpha(*it)) {
                                 return {it - content.data(), o - out};
-                        else
+                        } else {
                                 goto l20;
+			}
                 }
         }
 
 l20:
-        if (p != e && _isalpha(*p)) {
+        if (p < e && _isalpha(*p)) {
                 // e.g site:google.com, or video|games, or site:.gr, or site:x-box.com
                 while (p != e && _isalpha(*p))
                         ++p;
@@ -2147,10 +2167,12 @@ l20:
                         // L'Oreal Revitalift
                         // Go figure
                         *out++ = content.front();
+
                         const auto ckpt{++p};
 
-                        while (p != e && _isalnum(*p))
+                        while (p < e && _isalnum(*p)) {
                                 ++p;
+			}
 
                         const auto span = std::min<uint32_t>(Limits::MaxTermLength /* will not +1 because out[0] contains content.front() */, p - ckpt);
 
@@ -2243,7 +2265,7 @@ l20:
                         ++p;
                 }
 
-                if (p != e && *p == '\'' && allAlphas) {
+                if (p != e && (*p == '¢' || *p == '\'') && allAlphas) {
                         // Apostrophes
                         // Can be used for clitic contractions (we're => we are), as genitive markers (John's boat), or as quotative markers
                         // This is a best-effort heuristic; you should just implement and use your own parser if you need a different behavior

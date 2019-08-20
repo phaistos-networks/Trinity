@@ -9,7 +9,7 @@ void Trinity::intersect_impl(const uint64_t                                 stop
                              std::vector<std::pair<uint64_t, uint32_t>> *const out) {
 
         static constexpr bool trace{false};
-        struct tracked final {
+        struct tracked        final {
                 Codecs::PostingsListIterator *it;
                 uint8_t                       tokenIdx;
                 Codecs::Decoder *             dec;
@@ -81,8 +81,7 @@ void Trinity::intersect_impl(const uint64_t                                 stop
                                                 matches[i] = matches.back();
                                                 matches.pop_back();
                                                 --matchesCnt;
-                                        }
-                                        else
+                                        } else
                                                 ++i;
                                 }
 
@@ -217,12 +216,17 @@ uint8_t Trinity::intersection_indices(uint64_t mask, uint8_t *const out) {
         return collected;
 }
 
-std::vector<std::pair<range_base<str8_t *, uint8_t>, std::pair<uint8_t, std::size_t>>> Trinity::intersection_alternatives(const query &originalQuery, query &rewrittenQuery, IndexSourcesCollection &collection, simple_allocator *const a) {
+std::vector<std::pair<range_base<str8_t *, uint8_t>, std::pair<uint8_t, std::size_t>>>
+Trinity::intersection_alternatives(const query &           originalQuery,
+                                   const query &           rewrittenQuery,
+                                   IndexSourcesCollection &collection,
+                                   simple_allocator *const a) {
         static constexpr bool                                                                  trace{false};
         std::vector<std::pair<range_base<str8_t *, uint8_t>, std::pair<uint8_t, std::size_t>>> resp;
 
-        if (!originalQuery.can_intersect())
+        if (!originalQuery.can_intersect()) {
                 return resp;
+        }
 
         auto &q{rewrittenQuery};
 
@@ -285,8 +289,9 @@ std::vector<std::pair<range_base<str8_t *, uint8_t>, std::pair<uint8_t, std::siz
 
         // So that we can map original query index => original query token at index
         for (const auto n : originalQuery.nodes()) {
-                if (n->type == ast_node::Type::Token)
+                if (n->type == ast_node::Type::Token) {
                         map.insert({n->p->index, n->p->terms[0].token});
+                }
         }
 
         for (size_t i{0}; i != res.size() && i != 5; ++i) {

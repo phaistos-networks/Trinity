@@ -715,8 +715,9 @@ void Trinity::exec_query(const query &in,
                 for (const auto *p = originalQueryTokenInstances.data(), *const e = p + originalQueryTokenInstances.size(); p != e;) {
                         const auto token = p->token;
 
-                        if constexpr (traceCompile)
+                        if constexpr (traceCompile) {
                                 SLog("Collecting token [", token, "]\n");
+			}
 
 			// only if this token has actually been used in the compiled query
                         if (const auto termID = rctx.termsDict[token]) {
@@ -752,8 +753,9 @@ void Trinity::exec_query(const query &in,
                                         p->instances[i].rewrite_ctx.translationCoefficient = it->rewrite_ctx.translationCoefficient;
                                         p->instances[i].rewrite_ctx.srcSeqSize             = it->rewrite_ctx.srcSeqSize;
 
-                                        if constexpr (traceCompile)
+                                        if constexpr (traceCompile) {
                                                 SLog("<<<<<< token index ", it->index, "\n");
+					}
 
                                         maxIndex = std::max(maxIndex, it->index);
                                         originalQueryTokensTracker.push_back({it->index, {.termID = termID, .flags = it->flags, .toNextSpan = it->toNextSpan}});
@@ -776,25 +778,26 @@ void Trinity::exec_query(const query &in,
 
                 // See docwordspace.h comments
                 // we are allocated (maxIndex + 8) and memset() that to 0 in order to make some optimizations possible in consider()
-                if (const auto required = sizeof(query_index_terms *) * (maxIndex + 8); rctx.allocator.can_allocate(required))
+                if (const auto required = sizeof(query_index_terms *) * (maxIndex + 8); rctx.allocator.can_allocate(required)) {
                         queryIndicesTerms = static_cast<query_index_terms **>(rctx.allocator.Alloc(required));
-                else {
+                } else {
                         queryIndicesTerms = static_cast<query_index_terms **>(malloc(required));
                         rctx.large_allocs.emplace_back(queryIndicesTerms);
                 }
 
                 memset(queryIndicesTerms, 0, sizeof(queryIndicesTerms[0]) * (maxIndex + 8));
                 std::sort(originalQueryTokensTracker.begin(), originalQueryTokensTracker.end(), [](const auto &a, const auto &b) noexcept {
-                        if (a.first < b.first)
+                        if (a.first < b.first) {
                                 return true;
-                        else if (a.first == b.first) {
-                                if (a.second.termID < b.second.termID)
+                        } else if (a.first == b.first) {
+                                if (a.second.termID < b.second.termID) {
                                         return true;
-                                else if (a.second.termID == b.second.termID) {
-                                        if (a.second.toNextSpan < b.second.toNextSpan)
+                                } else if (a.second.termID == b.second.termID) {
+                                        if (a.second.toNextSpan < b.second.toNextSpan) {
                                                 return true;
-                                        else if (a.second.toNextSpan == b.second.toNextSpan)
+                                        } else if (a.second.toNextSpan == b.second.toNextSpan) {
                                                 return a.second.flags < b.second.flags;
+                                        }
                                 }
                         }
 

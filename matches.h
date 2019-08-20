@@ -70,6 +70,7 @@ namespace Trinity {
                 }
         };
 
+
         // We record an instance for each term instances in a original/input query
         // you can e.g use this information to determine if adjacent terms in the original query are both matched
         struct query_term_ctx final {
@@ -81,7 +82,8 @@ namespace Trinity {
                         str8_t         token;
                 } term;
 
-                uint8_t instancesCnt; // i.e if your query is [world of warcraft mists of pandaria] then you will have 2 instances for token "of" in the query, with rep = 1
+                uint16_t instancesCnt; // i.e if your query is [world of warcraft mists of pandaria] then you will have 2 instances for token "of" in the query, with rep = 1
+
                 struct instance_struct {
                         // see Trinity::phrase decl. comments
                         uint16_t           index;
@@ -145,23 +147,27 @@ namespace Trinity {
                 //
                 // When the default execution mode is seleted, this method will be invoked
                 [[gnu::always_inline]] virtual void consider(const matched_document &match) {
+			//
                 }
 
                 // If the Documents Only mode is selected, this will be invoked, passed
                 // the global document ID. Given that you only really want the
                 virtual void consider(const docid_t id) {
+			// 
                 }
 
                 // You may want to provide a specialized implementation here.
                 // The runtime may decide to consider() a list of documents for performance reasons
                 virtual void consider(const docid_t *const ids, const size_t cnt) {
-                        for (size_t i{0}; i != cnt; ++i)
+                        for (size_t i{0}; i != cnt; ++i) {
                                 consider(ids[i]);
+			}
                 }
 
                 // If the Accumulated Score Scheme mode is selected instead, this
                 // will be invoked; the global document ID and its scaore will passed to the call
                 virtual void consider(const docid_t id, const double score) {
+			// 
                 }
 
                 // Invoked before the query execution begins by the exec.engine
@@ -175,6 +181,7 @@ namespace Trinity {
                 }
 
                 virtual ~MatchedIndexDocumentsFilter() {
+			// 
                 }
         };
 

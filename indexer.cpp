@@ -275,12 +275,15 @@ void Trinity::persist_segment(const Trinity::IndexSource::field_statistics &fs, 
         sess->end();
 }
 
-void Trinity::persist_segment(const Trinity::IndexSource::field_statistics &fs, Trinity::Codecs::IndexSession *const sess, std::vector<isrc_docid_t> &updatedDocumentIDs) {
+void Trinity::persist_segment(const Trinity::IndexSource::field_statistics &fs, 
+	Trinity::Codecs::IndexSession *const sess, 
+	std::vector<isrc_docid_t> &updatedDocumentIDs) {
         auto path = Buffer{}.append(sess->basePath, "/index.t");
         int  fd   = open(path.c_str(), O_WRONLY | O_CREAT | O_LARGEFILE | O_TRUNC, 0775);
 
-        if (fd == -1)
+        if (fd == -1) {
                 throw Switch::system_error("Failed to persist index ", path.AsS32(), ":", strerror(errno));
+	}
 
         DEFER({
                 close(fd);
@@ -288,8 +291,9 @@ void Trinity::persist_segment(const Trinity::IndexSource::field_statistics &fs, 
 
         persist_segment(fs, sess, updatedDocumentIDs, fd);
 
-        if (rename(path.c_str(), Buffer{}.append(strwlen32_t(path.data(), path.size() - 2)).c_str()) == -1)
+        if (rename(path.c_str(), Buffer{}.append(strwlen32_t(path.data(), path.size() - 2)).c_str()) == -1) {
                 throw Switch::system_error("Failed to persist index");
+	}
 }
 
 /*
