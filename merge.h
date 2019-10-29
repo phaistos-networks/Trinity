@@ -39,6 +39,10 @@ namespace Trinity {
                 std::vector<merge_candidate> candidates;
 
               public:
+		auto size() const noexcept {
+			return candidates.size();
+		}
+
                 void insert(const merge_candidate c) {
                         candidates.push_back(c);
                 }
@@ -66,7 +70,12 @@ namespace Trinity {
                 // If you are going to use ExecFlags::AccumulatedScoreScheme, and your scorer depends on IndexSource::field_statistics, those are
                 // only computed, during merge, for terms that are not handled by append_index_chunk(), so you may want to disable it, so that
                 // statistics for those terms as well will be collected.
-                void merge(Codecs::IndexSession *outIndexSess, simple_allocator *, std::vector<std::pair<str8_t, term_index_ctx>> *const outTerms, IndexSource::field_statistics *fs, const uint32_t flushFreq = 0, const bool disableOptimizations = false);
+                void merge(Codecs::IndexSession *outIndexSess,
+                           simple_allocator *,
+                           std::vector<std::pair<str8_t, term_index_ctx>> *const outTerms,
+                           IndexSource::field_statistics *                       fs,
+                           const uint32_t                                        flushFreq            = 0,
+                           const bool                                            disableOptimizations = false);
 
                 enum class IndexSourceRetention : uint8_t {
                         RetainAll = 0,

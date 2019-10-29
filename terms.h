@@ -24,11 +24,17 @@ namespace Trinity {
 #endif
         };
 
-        term_index_ctx lookup_term(range_base<const uint8_t *, uint32_t> termsData, const str8_t term, const std::vector<terms_skiplist_entry> &skipList);
+        term_index_ctx lookup_term(range_base<const uint8_t *, uint32_t>    termsData,
+                                   const str8_t                             term,
+                                   const std::vector<terms_skiplist_entry> &skipList);
 
-        void unpack_terms_skiplist(const range_base<const uint8_t *, const uint32_t> termsIndex, std::vector<terms_skiplist_entry> *skipList, simple_allocator &allocator);
+        void unpack_terms_skiplist(const range_base<const uint8_t *, const uint32_t> termsIndex,
+                                   std::vector<terms_skiplist_entry> *               skipList,
+                                   simple_allocator &                                allocator);
 
-        void pack_terms(std::vector<std::pair<str8_t, term_index_ctx>> &terms, IOBuffer *const data, IOBuffer *const index);
+        void pack_terms(std::vector<std::pair<str8_t, term_index_ctx>> &terms,
+                        IOBuffer *const                                 data,
+                        IOBuffer *const                                 index);
 
         // An abstract index source terms access wrapper
         //
@@ -58,7 +64,13 @@ namespace Trinity {
 
                       private:
                         const uint8_t *    p;
-                        str8_t::value_type termStorage[Limits::MaxTermLength];
+                        // WAS: str8_t::value_type termStorage[Limits::MaxTermLength];
+			//
+			// people make mistakes; sometimes they do index terms longer than Limits::MaxTermLength
+			// and when decoding said terms they will override termStorage.
+			// we are now explicitly sizing it so that it can fit anything and thanks to
+			// RVO the cost shouldn't be felt by trinity applications
+                        str8_t::value_type termStorage[128]; 
 
                       public:
                         struct
@@ -73,6 +85,10 @@ namespace Trinity {
                                 cur.term.len = 0;
                         }
 
+			iterator(const iterator &o) = delete;
+
+			iterator &operator=(const iterator &) = delete;
+				
                         inline bool operator==(const iterator &o) const noexcept {
                                 return p == o.p;
                         }

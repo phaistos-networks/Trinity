@@ -36,7 +36,7 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
         field_doc_stats fs;
 
         // we can't update the same document more than once in the same session
-	consider_update(proxy.did);
+        consider_update(proxy.did);
 
         b.pack(proxy.did);
 
@@ -114,9 +114,9 @@ void SegmentIndexSession::commit_document_impl(const document_proxy &proxy, cons
         // and then invokes a Similarity::computeNorm() which is passed that FieldInvertState
         // and this is where subclasses of Similarity, e.g BP25 get to compute a normalization value for a (field, document)
         // given the acumulated state of the term processing for this (field, document)
-        // e.g lucene's BM25Similarity::computeNorm(FieldInvertState state) { 
-	//	final int numTerms = discountOverlaps ? state.getLength() - state.getNumOverlap() : state.getLength(); return encodeNormValue(state.getBoost(), numTerms); 
-	// }
+        // e.g lucene's BM25Similarity::computeNorm(FieldInvertState state) {
+        //	final int numTerms = discountOverlaps ? state.getLength() - state.getNumOverlap() : state.getLength(); return encodeNormValue(state.getBoost(), numTerms);
+        // }
         //
         // Notice how Lucene uses a NormValuesWriter and in finish() which is invoked when a (field, document) is parsed
         // it invokes norm.addValue(docState.docID, similarity.computeNorm(invertState));
@@ -164,11 +164,13 @@ uint32_t SegmentIndexSession::term_id(const str8_t term) {
         // but we use transient term IDs (integers) for simplicity and performance
         // SegmentIndexSession::commit() will store actual terms, not their transient IDs.
         // See CONCEPTS.md
-        auto it = dictionary.emplace(term, 0);
+        EXPECT(term.size());                                   // sanity check
+        EXPECT(term.size() <= Trinity::Limits::MaxTermLength); // sanity check
+        const auto it = dictionary.emplace(term, 0);
 
         if (it.second) {
                 // got to abuse it because..well, whatever
-                auto key = (str8_t *)&it.first->first;
+                auto key = const_cast<str8_t *>(&it.first->first);
 
                 key->Set(dictionaryAllocator.CopyOf(term.data(), term.size()), term.size());
 
@@ -177,8 +179,9 @@ uint32_t SegmentIndexSession::term_id(const str8_t term) {
                 it.first->second = k;
                 invDict.emplace(static_cast<uint32_t>(k), *key);
                 return k;
-        } else
+        } else {
                 return it.first->second;
+        }
 }
 
 bool SegmentIndexSession::track(const isrc_docid_t documentID) {
@@ -188,7 +191,7 @@ bool SegmentIndexSession::track(const isrc_docid_t documentID) {
 // The cost is neglible anwyay
 #if 1
         static_assert(0 == (bank::SPAN & 1));
-        const auto base       = documentID & (~(bank::SPAN - 1)); 	// align down
+        const auto base       = documentID & (~(bank::SPAN - 1)); // align down
         const auto normalized = documentID - base;
 
         if (likely(curBank) && curBank->base == base)
@@ -219,7 +222,7 @@ void SegmentIndexSession::consider_update(const isrc_docid_t document_id) {
 }
 
 void SegmentIndexSession::erase(const isrc_docid_t documentID) {
-	consider_update(documentID);
+        consider_update(documentID);
         updatedDocumentIDs.push_back(documentID);
 }
 
@@ -275,15 +278,15 @@ void Trinity::persist_segment(const Trinity::IndexSource::field_statistics &fs, 
         sess->end();
 }
 
-void Trinity::persist_segment(const Trinity::IndexSource::field_statistics &fs, 
-	Trinity::Codecs::IndexSession *const sess, 
-	std::vector<isrc_docid_t> &updatedDocumentIDs) {
+void Trinity::persist_segment(const Trinity::IndexSource::field_statistics &fs,
+                              Trinity::Codecs::IndexSession *const          sess,
+                              std::vector<isrc_docid_t> &                   updatedDocumentIDs) {
         auto path = Buffer{}.append(sess->basePath, "/index.t");
         int  fd   = open(path.c_str(), O_WRONLY | O_CREAT | O_LARGEFILE | O_TRUNC, 0775);
 
         if (fd == -1) {
                 throw Switch::system_error("Failed to persist index ", path.AsS32(), ":", strerror(errno));
-	}
+        }
 
         DEFER({
                 close(fd);
@@ -293,7 +296,7 @@ void Trinity::persist_segment(const Trinity::IndexSource::field_statistics &fs,
 
         if (rename(path.c_str(), Buffer{}.append(strwlen32_t(path.data(), path.size() - 2)).c_str()) == -1) {
                 throw Switch::system_error("Failed to persist index");
-	}
+        }
 }
 
 /*
@@ -329,9 +332,9 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess) {
                         close(indexFd);
         });
 
-	// TODO: We could track all terms (document, terms)
-	// in order to propertly reserve() enough storage for all[] so that we 'll avoid reallocations
-        const auto scan = [&defaultFieldStats = this->defaultFieldStats, flushFreq = this->flushFreq, indexFd, enc = enc_.get(), &map, sess ](const auto &ranges) {
+        // TODO: We could track all terms (document, terms)
+        // in order to propertly reserve() enough storage for all[] so that we 'll avoid reallocations
+        const auto scan = [&defaultFieldStats = this->defaultFieldStats, flushFreq = this->flushFreq, indexFd, enc = enc_.get(), &map, sess](const auto &ranges) {
                 uint8_t                   payloadSize;
                 std::vector<segment_data> all[32];
                 term_index_ctx            tctx;
@@ -398,13 +401,13 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess) {
                         before = Timings::Microseconds::Tick();
                         for (auto &v : all) {
                                 futures.emplace_back(
-                                    std::async(std::launch::async, [](auto v) {
-                                            std::sort(v->begin(), v->end(), [](const auto &a, const auto &b) noexcept {
-                                                    return a.termID < b.termID || (a.termID == b.termID && a.documentID < b.documentID);
-                                            });
-
-                                    },
-                                               &v));
+                                    std::async(
+                                        std::launch::async, [](auto v) {
+                                                std::sort(v->begin(), v->end(), [](const auto &a, const auto &b) noexcept {
+                                                        return a.termID < b.termID || (a.termID == b.termID && a.documentID < b.documentID);
+                                                });
+                                        },
+                                        &v));
                         }
 
                         while (futures.size()) {
@@ -492,12 +495,12 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess) {
                 if (file_size == off64_t(-1))
                         throw Switch::data_error("Failed to access backing file");
 
-		const auto vma_dtor = [file_size](void *ptr) {
-			if (ptr && ptr != MAP_FAILED)
-				munmap(ptr, file_size);
-		};
-		std::unique_ptr<void,  decltype(vma_dtor)> vma( mmap(nullptr, file_size, PROT_READ, MAP_SHARED, backingFileFD, 0), vma_dtor);
-		auto file_data{vma.get()};
+                const auto vma_dtor = [file_size](void *ptr) {
+                        if (ptr && ptr != MAP_FAILED)
+                                munmap(ptr, file_size);
+                };
+                std::unique_ptr<void, decltype(vma_dtor)> vma(mmap(nullptr, file_size, PROT_READ, MAP_SHARED, backingFileFD, 0), vma_dtor);
+                auto                                      file_data{vma.get()};
 
                 if (file_data == MAP_FAILED)
                         throw Switch::data_error("Failed to access backing file");
@@ -509,8 +512,9 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess) {
 
                 close(backingFileFD);
                 backingFileFD = -1;
-        } else if (ranges.size())
+        } else if (ranges.size()) {
                 scan(ranges);
+	}
 
         // Persist terms dictionary
         std::vector<std::pair<str8_t, term_index_ctx>> v;
@@ -536,21 +540,25 @@ void SegmentIndexSession::commit(Trinity::Codecs::IndexSession *const sess) {
         sess->persist_terms(v);
         persist_segment(defaultFieldStats, sess, updatedDocumentIDs, indexFd);
 
-        if (trace)
+        if (trace) {
                 SLog(duration_repr(Timings::Microseconds::Since(before)), " to persist segment\n");
+	}
 
-        if (fsync(indexFd) == -1)
+        if (fsync(indexFd) == -1) {
                 throw Switch::data_error("Failed to persist index");
+	}
 
         if (const auto res = lseek64(indexFd, 0, SEEK_END); res != sum) {
                 // Sanity check
                 throw Switch::data_error("Unexpected state");
         }
 
-        if (close(indexFd) == -1)
+        if (close(indexFd) == -1) {
                 throw Switch::data_error("Failed to persist index");
+	}
 
         indexFd = -1;
-        if (rename(path.c_str(), Buffer{}.append(strwlen32_t(path.data(), path.size() - 2)).c_str()) == -1)
+        if (rename(path.c_str(), Buffer{}.append(strwlen32_t(path.data(), path.size() - 2)).c_str()) == -1) {
                 throw Switch::system_error("Failed to persist index");
+	}
 }

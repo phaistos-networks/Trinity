@@ -11,10 +11,15 @@ namespace Trinity {
         // Persists an index sesion as a segment
         // The application is responsible for persisting the terms (see SegmentIndexSession::commit()
         // for example, and IndexSession::persist_terms())
-        void persist_segment(const IndexSource::field_statistics &, Trinity::Codecs::IndexSession *const sess, std::vector<uint32_t> &updatedDocumentIDs, int fd);
+        void persist_segment(const IndexSource::field_statistics &,
+                             Trinity::Codecs::IndexSession *const sess,
+                             std::vector<uint32_t> &              updatedDocumentIDs,
+                             int                                  fd);
 
         // Wrapper for persist_segment(); opens the index file and passes it to persist_segment()
-        void persist_segment(const IndexSource::field_statistics &, Trinity::Codecs::IndexSession *const sess, std::vector<uint32_t> &updatedDocumentIDs);
+        void persist_segment(const IndexSource::field_statistics &,
+                             Trinity::Codecs::IndexSession *const sess,
+                             std::vector<uint32_t> &              updatedDocumentIDs);
 
         // A utility class suitable for indexing document terms and persisting the index and other codec specifc data into a directory
         // It offers a simple API for adding, replacing and erasing documents.
@@ -80,8 +85,8 @@ namespace Trinity {
 
                 // flat_hash_map<> is about 11% faster than alternative dictionaries
                 // so we are using it now here
-		// UPDATE: issues discovered with flat_hash_map<>; will switch to it again when
-		// we can be certain that it is no longer broken
+                // UPDATE: issues discovered with flat_hash_map<>; will switch to it again when
+                // we can be certain that it is no longer broken
                 std::unordered_map<str8_t, uint32_t> dictionary;
                 std::unordered_map<uint32_t, str8_t> invDict;
 
@@ -148,7 +153,7 @@ namespace Trinity {
 
                 bool track(const isrc_docid_t);
 
-		void consider_update(const isrc_docid_t);
+                void consider_update(const isrc_docid_t);
 
               public:
                 uint32_t term_id(const str8_t term);
@@ -210,7 +215,7 @@ namespace Trinity {
                 ~SegmentIndexSession() {
                         if (backingFileFD != -1) {
                                 close(backingFileFD);
-			}
+                        }
                         while (banks.size()) {
                                 delete banks.back();
                                 banks.pop_back();

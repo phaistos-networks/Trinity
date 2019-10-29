@@ -26,8 +26,8 @@ ifeq ($(ORIGIN), 1)
 	else ifeq ($(LUCENE_ENCODING_SCHEME),maskedvbyte)
 		# make sure you link against maskedvybte; -lmaskedvbyte
 	else
-		SWITCH_OBJS:=$(SWITCH_BASE)/ext/FastPFor/libFastPFor.a
-		SWITCH_OBJS:=$(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/bitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/varintdecode.c.o $(SWITCH_BASE)/ext/FastPFor/CMakeFiles/FastPFor.dir/src/streamvbyte.c.o
+		SWITCH_OBJS:=$(SWITCH_BASE)/ext/FastPFor/build/libFastPFor.a
+		SWITCH_OBJS:=$(SWITCH_BASE)/ext/FastPFor/build/CMakeFiles/FastPFor.dir/src/bitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/build/CMakeFiles/FastPFor.dir/src/bitpackingaligned.cpp.o $(SWITCH_BASE)/ext/FastPFor/build/CMakeFiles/FastPFor.dir/src/bitpackingunaligned.cpp.o $(SWITCH_BASE)/ext/FastPFor/build/CMakeFiles/FastPFor.dir/src/horizontalbitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/build/CMakeFiles/FastPFor.dir/src/simdunalignedbitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/build/CMakeFiles/FastPFor.dir/src/simdbitpacking.cpp.o $(SWITCH_BASE)/ext/FastPFor/build/CMakeFiles/FastPFor.dir/src/varintdecode.c.o $(SWITCH_BASE)/ext/FastPFor/build/CMakeFiles/FastPFor.dir/src/streamvbyte.c.o
 	endif
 
 else

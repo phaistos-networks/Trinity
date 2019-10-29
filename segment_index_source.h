@@ -48,7 +48,17 @@ namespace Trinity {
                 }
 
                 term_index_ctx resolve_term_ctx(const str8_t term) override final {
+#if 1
                         return terms->lookup(term);
+#else
+                        const auto res =  terms->lookup(term);
+
+			if (res.documents) {
+				SLog("MATCHED [", term, "] in ", generation(), "\n");
+			}
+
+			return res;
+#endif
                 }
 
                 auto segment_terms() const {

@@ -22,6 +22,15 @@ static_assert(sizeof(Trinity::isrc_docid_t) <= sizeof(uint32_t));
 // https://github.com/lemire/FastPFor
 #include <ext/FastPFor/headers/fastpfor.h>
 #define LUCENE_USE_FASTPFOR 1
+// if enabled, we will use thread-local storage for those so that we can reuse them
+// as opposed to creating and destroying new FastPFor objects very frequently, which is
+// expensive especially during merge where we would otherwise need to do this potentially thousands of times
+#define LUCENE_USE_FASTPFOR_TL 1
+#endif
+
+#if defined(LUCENE_USE_FASTPFOR) && defined(LUCENE_USE_FASTPFOR_TL) 
+FastPForLib::FastPFor<4> *_acquire_tl_fastpfor();
+void _release_tl_fastpfor(FastPForLib::FastPFor<4> *);
 #endif
 
 namespace Trinity {
@@ -39,7 +48,7 @@ namespace Trinity {
 #ifdef LUCENE_USE_MASKEDVBYTE
                         static constexpr size_t BLOCK_SIZE{64};
 #elif defined(LUCENE_USE_STREAMVBYTE)
-			// XXX: 256 may make more sense here
+                        // XXX: 256 may make more sense here
                         static constexpr size_t BLOCK_SIZE{128};
 #else
                         static constexpr size_t BLOCK_SIZE{128};
@@ -50,7 +59,11 @@ namespace Trinity {
                         struct IndexSession final
                             : public Trinity::Codecs::IndexSession {
 #ifdef LUCENE_USE_FASTPFOR
-                                FastPForLib::FastPFor<4> forUtil; // handy for merge()
+				// handy for merge()
+                                FastPForLib::FastPFor<4> *forUtil; 
+#ifndef LUCENE_USE_FASTPFOR_TL
+                                std::unique_ptr<FastPForLib::FastPFor<4>> forUtil_local;
+#endif
 #endif
 
                                 // TODO: support for periodic flushing
@@ -64,13 +77,30 @@ namespace Trinity {
                                 void flush_positions_data();
 
                                 IndexSession(const char *bp)
-                                    : Trinity::Codecs::IndexSession{bp, unsigned(Capabilities::AppendIndexChunk) | unsigned(Capabilities::Merge)}, positionsOutFlushed{0}, positionsOutFd{-1}, flushFreq{0} {
+                                    : Trinity::Codecs::IndexSession{bp,
+                                                                    unsigned(Capabilities::AppendIndexChunk) |
+                                                                        unsigned(Capabilities::Merge)}
+                                    , positionsOutFlushed{0}
+                                    , positionsOutFd{-1}
+                                    , flushFreq{0} {
+#ifdef LUCENE_USE_FASTPFOR
+#ifdef LUCENE_USE_FASTPFOR_TL
+					forUtil = _acquire_tl_fastpfor();
+#else
+                                        forUtil_local.reset(new FastPForLib::FastPFor<4>());
+                                        forUtil = forUtil_local.get();
+#endif
+#endif
                                 }
 
                                 ~IndexSession() {
                                         if (positionsOutFd != -1) {
                                                 close(positionsOutFd);
                                         }
+
+#if defined(LUCENE_USE_FASTPFOR) && defined(LUCENE_USE_FASTPFOR_TL)
+					_release_tl_fastpfor(forUtil);
+#endif
                                 }
 
                                 constexpr void set_flush_freq(const uint32_t f) {
@@ -117,7 +147,10 @@ namespace Trinity {
                                 tokenpos_t                  lastPosition;
                                 uint32_t                    termIndexOffset, termPositionsOffset;
 #ifdef LUCENE_USE_FASTPFOR
-                                FastPForLib::FastPFor<4> forUtil;
+#ifndef LUCENE_USE_FASTPFOR_TL
+                                std::unique_ptr<FastPForLib::FastPFor<4>> forUtil_local;
+#endif
+                                FastPForLib::FastPFor<4> *forUtil;
 #endif
                                 IOBuffer       payloadsBuf;
                                 uint32_t       skiplistCountdown, lastHitsBlockOffset, lastHitsBlockTotalHits;
@@ -129,7 +162,29 @@ namespace Trinity {
                               public:
                                 Encoder(Trinity::Codecs::IndexSession *s)
                                     : Trinity::Codecs::Encoder{s} {
+#ifdef LUCENE_USE_FASTPFOR
+#ifdef LUCENE_USE_FASTPFOR_TL
+					forUtil = _acquire_tl_fastpfor();
+#else
+                                        forUtil_local.reset(new FastPForLib::FastPFor<4>());
+                                        forUtil = forUtil_local.get();
+#endif
+#endif
                                 }
+
+#ifdef LUCENE_USE_FASTPFOR
+                                Encoder(Trinity::Codecs::IndexSession *const s, FastPForLib::FastPFor<4> *const p)
+                                    : Trinity::Codecs::Encoder{s}, forUtil{p} {
+                                        //
+                                }
+#endif
+
+#if defined(LUCENE_USE_FASTPFOR) && defined(LUCENE_USE_FASTPFOR_TL)
+				~Encoder() {
+					_release_tl_fastpfor(forUtil);
+				}
+#endif
+
 
                                 void begin_term() override final;
 
@@ -224,7 +279,14 @@ namespace Trinity {
 #endif
 
 #ifdef LUCENE_USE_FASTPFOR
-                                FastPForLib::FastPFor<4> forUtil;
+                                // when we are decoding during merge, this is apparently expensive now because
+                                // we wind up creating and destroying vectors
+                                // so we are going to allow for reuse - a thread local seems like a good choice here
+#ifdef LUCENE_USE_FASTPFOR_TL
+                                std::unique_ptr<FastPForLib::FastPFor<4>> forUtil_local;
+#endif
+                                FastPForLib::FastPFor<4> *forUtil;
+
 #endif
 
                                 struct skiplist_struct final {
@@ -232,8 +294,9 @@ namespace Trinity {
                                         uint16_t        size{0};
 
                                         ~skiplist_struct() noexcept {
-                                                if (size)
+                                                if (size) {
                                                         std::free(data);
+                                                }
                                         }
 
                                 } skiplist;
@@ -269,6 +332,29 @@ namespace Trinity {
                                 void init(const term_index_ctx &tctx, Trinity::Codecs::AccessProxy *access) override final;
 
                                 Trinity::Codecs::PostingsListIterator *new_iterator() override final;
+
+#ifdef LUCENE_USE_FASTPFOR
+                                Decoder() {
+#ifdef LUCENE_USE_FASTPFOR_TL
+                                        forUtil = _acquire_tl_fastpfor();
+#else
+                                        forUtil_local.reset(new FastPForLib::FastPFor<4>());
+                                        forUtil = forUtil_local.get();
+#endif
+                                }
+
+                                Decoder(decltype(forUtil) p)
+                                    : forUtil{p} {
+                                        //
+                                }
+#endif
+
+#if defined(LUCENE_USE_FASTPFOR) && defined(LUCENE_USE_FASTPFOR_TL)
+                                ~Decoder() {
+                                        _release_tl_fastpfor(forUtil);
+                                }
+
+#endif
                         };
 
                         isrc_docid_t PostingsListIterator::next() {

@@ -5,7 +5,9 @@
 #include <sys/types.h>
 #include <text.h>
 
-Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_t> termsData, const str8_t q, const std::vector<Trinity::terms_skiplist_entry> &skipList) {
+Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_t>             termsData,
+                                             const str8_t                                      q,
+                                             const std::vector<Trinity::terms_skiplist_entry> &skipList) {
         int32_t               top{int32_t(skipList.size()) - 1}, btm{0};
         const auto            skipListData = skipList.data();
         static constexpr bool trace{false};
@@ -18,8 +20,9 @@ Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_
                 const auto mid = (btm + top) / 2;
                 const auto t   = skipListData + mid;
 
-                if (trace)
+                if (trace) {
                         SLog("mid = ", mid, "(", t->term, ") ", terms_cmp(q.data(), q.size(), t->term.data(), t->term.size()), "\n");
+                }
 
                 if (t->term == q) {
 #ifdef TRINITY_TERMS_FAT_INDEX
@@ -35,8 +38,9 @@ Trinity::term_index_ctx Trinity::lookup_term(range_base<const uint8_t *, uint32_
                         btm = mid + 1;
         }
 
-        if (trace)
+        if (trace) {
                 SLog("top = ", top, ", btm = ", btm, "\n");
+        }
 
         if (top == -1)
                 return {};
@@ -59,16 +63,18 @@ l100:
                 memcpy(termStorage + commonPrefixLen * sizeof(char_t), p, suffixLen * sizeof(char_t));
                 p += suffixLen * sizeof(char_t);
 
-                if (trace)
+                if (trace) {
                         SLog("At [", strwlen8_t(termStorage, uint8_t(suffixLen + commonPrefixLen)), "]\n");
+                }
 
                 const auto curTermLen = commonPrefixLen + suffixLen;
                 const auto r          = terms_cmp(q.data(), q.size(), termStorage, curTermLen);
 
                 if (r < 0) {
                         // definitely not here
-                        if (trace)
+                        if (trace) {
                                 SLog("Definitely not here\n");
+                        }
                         break;
                 } else if (r == 0) {
                         term_index_ctx tctx;
@@ -77,8 +83,9 @@ l100:
                         tctx.indexChunk.len    = Compression::decode_varuint32(p);
                         tctx.indexChunk.offset = *(uint32_t *)p;
 
-                        if (trace)
-                                SLog("matched\n");
+                        if (trace) {
+                                SLog(ansifmt::color_brown, "matched [", q, "]", ansifmt::reset, "\n");
+                        }
 
                         return tctx;
                 } else {
@@ -88,8 +95,9 @@ l100:
                 }
         }
 
-        if (trace)
+        if (trace) {
                 SLog("nope\n");
+        }
 
         return {};
 }
@@ -171,14 +179,16 @@ Trinity::SegmentTerms::SegmentTerms(const char *segmentBasePath) {
                 if (errno == ENOENT) {
                         // That's OK
                         return;
-                } else
+                } else {
                         throw Switch::system_error("Failed to access terms.idx: ", strerror(errno));
+		}
         } else if (const auto fileSize = lseek64(fd, 0, SEEK_END); fileSize > 0) {
                 auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
 
                 close(fd);
-                if (unlikely(fileData == MAP_FAILED))
+                if (unlikely(fileData == MAP_FAILED)) {
                         throw Switch::data_error("Failed to access terms.idx: ", strerror(errno));
+		}
 
                 DEFER({
                         munmap(fileData, fileSize);
@@ -186,8 +196,9 @@ Trinity::SegmentTerms::SegmentTerms(const char *segmentBasePath) {
 
                 madvise(fileData, fileSize, MADV_SEQUENTIAL | MADV_DONTDUMP);
                 unpack_terms_skiplist({static_cast<const uint8_t *>(fileData), uint32_t(fileSize)}, &skiplist, allocator);
-        } else
+        } else {
                 close(fd);
+	}
 
         fd = open(Buffer{}.append(segmentBasePath, "/terms.data").c_str(), O_RDONLY | O_LARGEFILE);
         if (fd == -1) {
@@ -199,13 +210,15 @@ Trinity::SegmentTerms::SegmentTerms(const char *segmentBasePath) {
                 auto fileData = mmap(nullptr, fileSize, PROT_READ, MAP_SHARED, fd, 0);
 
                 close(fd);
-                if (unlikely(fileData == MAP_FAILED))
+                if (unlikely(fileData == MAP_FAILED)) {
                         throw Switch::data_error("Failed to access ", Buffer{}.append(segmentBasePath, "/terms.data").AsS32(), ": ", strerror(errno));
+		}
 
                 madvise(fileData, fileSize, MADV_DONTDUMP);
                 termsData.Set(reinterpret_cast<const uint8_t *>(fileData), fileSize);
-        } else
+        } else {
                 close(fd);
+	}
 }
 
 void Trinity::terms_data_view::iterator::decode_cur() {
@@ -213,13 +226,30 @@ void Trinity::terms_data_view::iterator::decode_cur() {
                 const auto commonPrefixLen = *p++;
                 const auto suffixLen       = *p++;
 
+		// sanity check
+		// Rust would have caught this..
+		EXPECT(commonPrefixLen + suffixLen <= sizeof(termStorage));
+
                 memcpy(termStorage + commonPrefixLen * sizeof(char_t), p, suffixLen * sizeof(char_t));
                 p += suffixLen * sizeof(char_t);
 
                 cur.term.len               = commonPrefixLen + suffixLen;
                 cur.tctx.documents         = Compression::decode_varuint32(p);
                 cur.tctx.indexChunk.len    = Compression::decode_varuint32(p);
-                cur.tctx.indexChunk.offset = *(uint32_t *)p;
+                cur.tctx.indexChunk.offset =  *reinterpret_cast<const uint32_t *>(p);
                 p += sizeof(uint32_t);
+
+		// XXX: apparently, setting
+		// cur.term.p = termStorage
+		// in iterator::iterator(const uint8_t *) 
+		// is not enough or otherwise clang's optimizer passes
+		// are confused in latest clang releases and cur.term.p is not set in the ctor (well, need
+		// to inspect the assembly output to figure out exactly what's what)
+		// long story short, by explicitly setting cur.term.p = termStorage in every
+		// call to decode_cur() fixes the problem.
+		// TODO: figure out exactly what happened
+		// (maybe it was related to the size of terms_data_view::iterator::termStorage,
+		// but that's still TBD)
+		cur.term.p = termStorage;
         }
 }

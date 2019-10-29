@@ -4,22 +4,23 @@
 #include <text.h>
 
 void Trinity::MergeCandidatesCollection::commit() {
-        std::sort(candidates.begin(), candidates.end(), [](const auto &a, const auto &b) {
+        std::sort(candidates.begin(), candidates.end(), [](const auto &a, const auto &b) noexcept {
                 return b.gen < a.gen;
         });
 
         map.clear();
         all.clear();
 
-	// For each candidate, we 'll track the base in all[]
-	// so that we 'll need to consider all masked products from [base, all.size())
-	// This makes sense because we have ordered by generation, and Trinity's generation order semantics
+        // For each candidate, we 'll track the base in all[]
+        // so that we 'll need to consider all masked products from [base, all.size())
+        // This makes sense because we have ordered by generation, and Trinity's generation order semantics
         for (const auto &c : candidates) {
                 const auto &ud = c.maskedDocuments;
 
                 map.push_back({c, all.size()});
-                if (ud)
+                if (ud) {
                         all.push_back(ud);
+                }
         }
 }
 
@@ -36,27 +37,35 @@ std::unique_ptr<Trinity::masked_documents_registry> Trinity::MergeCandidatesColl
 // Make sure you have commited first
 // Unlike with e.g SegmentIndexSession where the order of postlists in the index is based on our translation(term=>integer id) and the ascending order of that id
 // here the order will match the order the terms are found in `tersm`, because we perform a merge-sort and so we process terms in lexicograpphic order
-void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is, simple_allocator *allocator, std::vector<std::pair<str8_t, Trinity::term_index_ctx>> *const terms, IndexSource::field_statistics *const defaultFieldStats, const uint32_t flushFreq, const bool disableOptimizations) {
+void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *                                is,
+                                               simple_allocator *                                             allocator,
+                                               std::vector<std::pair<str8_t, Trinity::term_index_ctx>> *const terms,
+                                               IndexSource::field_statistics *const                           defaultFieldStats,
+                                               const uint32_t                                                 flushFreq,
+                                               const bool                                                     disableOptimizations) {
         static constexpr bool trace{false};
 
-        struct tracked_candidate {
+        struct tracked_candidate final {
                 uint16_t        idx;
                 merge_candidate candidate;
         };
 
         std::vector<tracked_candidate> all_;
 
-        if (trace)
+        if (trace) {
                 SLog("Merging ", candidates.size(), " candidates\n");
+        }
 
-        require(candidates.size() < std::numeric_limits<uint16_t>::max());
+        EXPECT(candidates.size() < std::numeric_limits<uint16_t>::max());
 
-        for (uint16_t i{0}; i != candidates.size(); ++i) {
-                if (trace)
+        for (uint16_t i{0}; i < candidates.size(); ++i) {
+                if (trace) {
                         SLog("Candidate ", i, " gen=", candidates[i].gen, " ", candidates[i].ap->codec_identifier(), "\n");
+                }
 
-                if (i)
-                        require(candidates[i].gen < candidates[i - 1].gen);
+                if (i) {
+                        EXPECT(candidates[i].gen < candidates[i - 1].gen);
+                }
 
                 if (candidates[i].terms && false == candidates[i].terms->done() && candidates[i].ap) {
                         // ap may be nullptr if we only wanted to e.g mask documents
@@ -64,8 +73,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                 }
         }
 
-        if (all_.empty())
+        if (all_.empty()) {
                 return;
+        }
 
         auto                                                          all = all_.data();
         uint16_t                                                      rem = all_.size();
@@ -85,11 +95,34 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
         const bool haveAppendIndexChunk = (false == disableOptimizations) && (is->caps & unsigned(Codecs::IndexSession::Capabilities::AppendIndexChunk));
         const bool haveMerge            = (false == disableOptimizations) && (is->caps & unsigned(Codecs::IndexSession::Capabilities::Merge));
 
-        Defer(
+        DEFER(
             {
                     if (termHitsStorage)
                             std::free(termHitsStorage);
             });
+
+#if 0
+	for (unsigned i = 0; i < rem; ++i) {
+		SLog("NOW:", i, " for ", candidates[i].gen, "\n");
+		if (candidates[i].gen != 1566292481019157) { continue; }
+
+                for (;;) {
+                        if (candidates[i].terms->done()) {
+                                break;
+                        }
+                        const auto p = candidates[i].terms->cur();
+
+#if 0
+                        if (p.first.Eq(_S("pid:2155480354")) || p.first.Eq(_S("XBOX"))) {
+                                SLog("For [", p.first, "] ", p.second.documents, "\n");
+                        }
+#endif
+			SLog("Got [", p.first, "]\n");
+                        candidates[i].terms->next();
+                }
+        }
+	SLog("exiting\n"); exit(0);
+#endif
 
         for (;;) {
                 uint8_t    toAdvanceCnt{1};
@@ -99,7 +132,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                 bool       sameCODEC{true};
 
                 toAdvance[0] = 0;
-                for (uint16_t i{1}; i != rem; ++i) {
+                for (uint16_t i{1}; i < rem; ++i) {
                         const auto pair = all[i].candidate.terms->cur();
                         const auto r    = terms_cmp(pair.first.data(), pair.first.size(), selected.first.data(), selected.first.size());
 
@@ -113,8 +146,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                 if (sameCODEC) {
                                         auto c = all[i].candidate.ap->codec_identifier();
 
-                                        if (c != codec)
+                                        if (c != codec) {
                                                 sameCODEC = false;
+                                        }
                                 }
 
                                 toAdvance[toAdvanceCnt++] = i;
@@ -124,10 +158,10 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                 const str8_t                outTerm(allocator->CopyOf(selected.first.data(), selected.first.size()), selected.first.size());
                 [[maybe_unused]] const bool fastPath = sameCODEC && codec == isCODEC;
                 static constexpr bool       trace{false};
-                //const bool trace = selected.first.Eq(_S("ANNEX"));
 
-                if (trace)
+                if (trace) {
                         SLog("TERM [", selected.first, "], toAdvanceCnt = ", toAdvanceCnt, ", sameCODEC = ", sameCODEC, ", first = ", toAdvance[0], ", fastPath = ", fastPath, "\n");
+                }
 
                 if (toAdvanceCnt == 1) {
                         auto c             = all[toAdvance[0]].candidate;
@@ -141,8 +175,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                         terms->push_back({outTerm, {selected.second.documents, chunk}});
 
                                         ++(defaultFieldStats->totalTerms);
-                                } else if (trace)
+                                } else if (trace) {
                                         SLog("No documents\n");
+                                }
                         } else {
                                 if (unlikely(0 == selected.second.documents)) {
                                         // It's possible, however unlikely (check your implementation)
@@ -153,8 +188,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                         //
                                         // Note that SegmentIndexSession and this merge() method explicitly drop terms with no documents associated with them, so
                                         // the only real way to get a term with no document is to use the various Trinity segment constructs directly.
-                                        if (trace)
+                                        if (trace) {
                                                 Print("0 documents for TERM [", selected.first, "]\n");
+                                        }
                                 } else {
                                         std::unique_ptr<Trinity::Codecs::Decoder>              dec(c.ap->new_decoder(selected.second));
                                         std::unique_ptr<Trinity::Codecs::PostingsListIterator> it(dec->new_iterator());
@@ -166,18 +202,20 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                 const auto docID = it->curDocument.id;
                                                 const auto freq  = it->freq;
 
-                                                require(docID != DocIDsEND); // sanity check
+                                                EXPECT(docID != DocIDsEND); // sanity check
 
-                                                if (trace)
+                                                if (trace) {
                                                         SLog("docID = ", docID, ", masked = ", maskedDocsReg->test(docID), "\n");
+                                                }
 
                                                 if (!maskedDocsReg->test(docID)) {
                                                         if (freq > termHitsCapacity) {
-                                                                if (termHitsStorage)
+                                                                if (termHitsStorage) {
                                                                         std::free(termHitsStorage);
+                                                                }
 
                                                                 termHitsCapacity = freq + 128;
-                                                                termHitsStorage  = (term_hit *)malloc(sizeof(term_hit) * termHitsCapacity);
+                                                                termHitsStorage  = static_cast<term_hit *>(malloc(sizeof(term_hit) * termHitsCapacity));
                                                         }
 
                                                         enc->begin_document(docID);
@@ -186,9 +224,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                         ++(defaultFieldStats->sumTermsDocs);
                                                         defaultFieldStats->sumTermHits += freq;
 
-                                                        for (uint32_t i{0}; i != freq; ++i) {
+                                                        for (uint32_t i{0}; i < freq; ++i) {
                                                                 const auto &th    = termHitsStorage[i];
-                                                                const auto  bytes = (uint8_t *)&th.payload;
+                                                                const auto  bytes = reinterpret_cast<const uint8_t *>(&th.payload);
 
                                                                 enc->new_hit(th.pos, {bytes, th.payloadLen});
                                                         }
@@ -209,15 +247,16 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                 ++(defaultFieldStats->totalTerms);
                                         }
 
-                                        if (trace)
+                                        if (trace) {
                                                 SLog("Indexed Term\n");
+                                        }
                                 }
                         }
                 } else {
                         if (fastPath && haveMerge) {
                                 mergeParticipants.clear();
 
-                                for (uint16_t i{0}; i != toAdvanceCnt; ++i) {
+                                for (uint16_t i{0}; i < toAdvanceCnt; ++i) {
                                         const auto idx = toAdvance[i];
 
                                         if (likely(all[idx].candidate.terms->cur().second.documents)) {
@@ -227,8 +266,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                     {all[idx].candidate.ap,
                                                      all[idx].candidate.terms->cur().second,
                                                      scanner_registry_for(all[idx].idx).release()});
-                                        } else if (trace)
+                                        } else if (trace) {
                                                 SLog("No documents for candidate ", i, "\n");
+                                        }
                                 }
 
                                 if (mergeParticipants.size()) {
@@ -241,12 +281,13 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                 ++(defaultFieldStats->totalTerms);
                                         }
 
-                                        for (uint16_t i{0}; i != mergeParticipants.size(); ++i)
+                                        for (uint16_t i{0}; i < mergeParticipants.size(); ++i) {
                                                 delete mergeParticipants[i].maskedDocsReg;
+                                        }
                                 }
                         } else {
                                 // we got to merge-sort across different codecs and output to an encoder of a different, potentially, codec
-                                for (uint16_t i{0}; i != toAdvanceCnt; ++i) {
+                                for (uint16_t i{0}; i < toAdvanceCnt; ++i) {
                                         const auto idx = toAdvance[i];
 
                                         if (likely(all[idx].candidate.terms->cur().second.documents)) {
@@ -256,18 +297,19 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                 auto it  = dec->new_iterator();
                                                 auto reg = scanner_registry_for(all[idx].idx).release();
 
-                                                require(reg);
+                                                EXPECT(reg);
                                                 it->next();
                                                 decodersV.push_back({{dec, it}, reg});
-                                        } else if (trace)
+                                        } else if (trace) {
                                                 SLog("No documents for candidate ", i, "\n");
+                                        }
                                 }
 
                                 if (uint16_t rem = decodersV.size()) {
                                         auto     decoders = decodersV.data();
                                         uint16_t toAdvance[128];
 
-                                        require(sizeof_array(toAdvance) >= decodersV.size());
+                                        EXPECT(sizeof_array(toAdvance) >= decodersV.size());
 
                                         // TODO: just use a Switch::priority_queue<>
                                         enc->begin_term();
@@ -276,29 +318,32 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                 auto     lowestDID = decoders[0].first.second->curDocument.id;
 
                                                 toAdvance[0] = 0;
-                                                for (uint16_t i{1}; i != rem; ++i) {
+                                                for (uint16_t i{1}; i < rem; ++i) {
                                                         const auto id = decoders[i].first.second->curDocument.id;
 
                                                         if (id < lowestDID) {
                                                                 lowestDID    = id;
                                                                 toAdvanceCnt = 1;
                                                                 toAdvance[0] = i;
-                                                        } else if (id == lowestDID)
+                                                        } else if (id == lowestDID) {
                                                                 toAdvance[toAdvanceCnt++] = i;
+                                                        }
                                                 }
 
                                                 // always choose the first because they are always sorted by gen DESC
 
-                                                if (trace)
+                                                if (trace) {
                                                         SLog("Lowest = ", lowestDID, ", masked = ", decoders[toAdvance[0]].second->test(lowestDID), "\n");
+                                                }
 
                                                 if (!decoders[toAdvance[0]].second->test(lowestDID)) {
                                                         auto       it   = decoders[toAdvance[0]].first.second;
                                                         const auto freq = it->freq;
 
                                                         if (freq > termHitsCapacity) {
-                                                                if (termHitsStorage)
+                                                                if (termHitsStorage) {
                                                                         std::free(termHitsStorage);
+                                                                }
 
                                                                 termHitsCapacity = freq + 128;
                                                                 termHitsStorage  = (term_hit *)malloc(sizeof(term_hit) * termHitsCapacity);
@@ -307,7 +352,7 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                         enc->begin_document(lowestDID);
                                                         it->materialize_hits(&dws /* dummy */, termHitsStorage);
 
-                                                        for (uint32_t i{0}; i != freq; ++i) {
+                                                        for (uint32_t i{0}; i < freq; ++i) {
                                                                 const auto &th    = termHitsStorage[i];
                                                                 const auto  bytes = (uint8_t *)&th.payload;
 
@@ -328,8 +373,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
                                                                 delete decoders[idx].first.first;
                                                                 delete decoders[idx].second;
 
-                                                                if (!--rem)
+                                                                if (!--rem) {
                                                                         goto l10;
+                                                                }
 
                                                                 memmove(decoders + idx, decoders + idx + 1, (rem - idx) * sizeof(decoders[0]));
                                                         }
@@ -358,8 +404,9 @@ void Trinity::MergeCandidatesCollection::merge(Trinity::Codecs::IndexSession *is
 
                         terms->next();
                         if (terms->done()) {
-                                if (!--rem)
+                                if (!--rem) {
                                         goto l1;
+                                }
 
                                 memmove(all + idx, all + idx + 1, (rem - idx) * sizeof(all[0]));
                         }
@@ -376,10 +423,12 @@ Trinity::MergeCandidatesCollection::consider_tracked_sources(std::vector<uint64_
         uint32_t                                               lastNotCandidateIdx{UINT32_MAX};
 
         std::sort(trackedSources.begin(), trackedSources.end());
-        for (const auto &it : candidates)
-                candidatesGens.insert(it.gen);
 
-        for (uint32_t i{0}; i != cnt; ++i) {
+        for (const auto &it : candidates) {
+                candidatesGens.insert(it.gen);
+	}
+
+        for (uint32_t i{0}; i < cnt; ++i) {
                 const auto gen = trackedSources[i];
 
                 if (!candidatesGens.count(gen)) {
@@ -389,8 +438,9 @@ Trinity::MergeCandidatesCollection::consider_tracked_sources(std::vector<uint64_
                 } else if (lastNotCandidateIdx < i) {
                         // if there is 1+ other tracked sources, and any of those sources is NOT in candidatesGens, we need to retain the updated documentIDs
                         res.push_back({gen, IndexSourceRetention::RetainDocumentIDsUpdates});
-                } else
+                } else {
                         res.push_back({gen, IndexSourceRetention::Delete});
+		}
         }
 
         return res;
