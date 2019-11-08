@@ -60,13 +60,8 @@ else
 all: switch lib
 
 switch:
-	# if this fails, you probably missed
-	# git submodule update  --init Switch/ext/FastPFor
-	# git submodule update --init Switch/ext/streamvbyte
-	# git submodule update --init Switch/ext_snappy
-	# (cd Switch/ext/FastPFor && mkdir -p build && cd build && cmake ../ && make)
-	# (cd Switch/ext_snappy && mkdir -p build && cd build && cmake ../ && make)
-	# (cd Switch/ext/streamvbyte && mkdir -p build && cd build && cmake ../ && make)
+	# if this fails, you probably didn't get to import/build the submodules
+	# see https://github.com/phaistos-networks/Trinity/wiki/How-to-Build-Trinity
 endif
 
 
