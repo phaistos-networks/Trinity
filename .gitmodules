@@ -1,3 +1,9 @@
 [submodule "Switch/ext/FastPFor"]
 	path = Switch/ext/FastPFor
 	url = https://github.com/lemire/FastPFor.git
+[submodule "Switch/ext_snappy"]
+	path = Switch/ext_snappy
+	url = https://github.com/google/snappy.git
+[submodule "Switch/ext/streamvbyte"]
+	path = Switch/ext/streamvbyte
+	url = https://github.com/lemire/streamvbyte.git
