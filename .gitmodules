@@ -1,0 +1,3 @@
+[submodule "Switch/ext/FastPFor"]
+	path = Switch/ext/FastPFor
+	url = https://github.com/lemire/FastPFor.git
