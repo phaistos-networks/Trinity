@@ -36,16 +36,9 @@ else
 		-Wno-unknown-pragmas -Wno-missing-field-initializers -Wno-unused-parameter -Wno-sign-compare -Wno-invalid-offsetof   \
 		-fno-rtti -ffast-math  -D_REENTRANT -DREENTRANT  -g3 -ggdb -fno-omit-frame-pointer   \
 		-fno-strict-aliasing    -DLEAN_SWITCH  -ISwitch/ -Wno-uninitialized -Wno-unused-function -Wno-uninitialized -funroll-loops  -Ofast $(EXTRA_CFLAGS)
+	CXXFLAGS+=-I Switch/ext_snappy/build -I Switch/ext/FastPFor/headers/ -I Switch/ext/streamvbyte/include/
 	LDFLAGS:=-ldl -ffunction-sections -lpthread -ldl -lz  Switch/ext_snappy/build/libsnappy.a
 	SWITCH_LIB:=
-
-	ifeq ($(LUCENE_ENCODING_SCHEME),streamvbyte)
-		SWITCH_OBJS += /Switch/ext_snappy/build/libstreamvbyte_static.a
-	else ifeq ($(LUCENE_ENCODING_SCHEME),maskedvbyte)
-		# make sure you link against maskedvybte; -lmaskedvbyte
-	else
-		SWITCH_OBJS += =Switch/ext/FastPFor/build/libFastPFor.a
-	endif	
 endif
 
 OBJS:=percolator.o compilation_ctx.o similarity.o docset_iterators_scorers.o google_codec.o docset_spans.o lucene_codec.o queryexec_ctx.o docset_iterators.o utils.o codecs.o queries.o exec.o docidupdates.o indexer.o docwordspace.o terms.o segment_index_source.o index_source.o merge.o intersect.o
